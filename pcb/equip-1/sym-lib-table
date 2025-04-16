@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "CM4IO")(type "KiCad")(uri "/Users/felixwillen/Downloads/CM4IO-KiCAD(2)/CM4IO.kicad_sym")(options "")(descr ""))
+)
