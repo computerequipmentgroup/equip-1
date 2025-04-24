@@ -31,6 +31,8 @@ Basically every FireWire out.
 
 # documentation
 
+![CM4](images/cm4-arrived.jpeg)
+
 Download: https://github.com/raspberrypi/usbboot
 `brew install libusb`
 
