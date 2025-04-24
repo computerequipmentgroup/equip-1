@@ -44,6 +44,6 @@ If you get this error:
 Install this:
 `brew install pkg-config`
 
-Sometimes apple computers can not read the Pi after the it got flashed, ignore the message and go on to the Raspberry Pi Imager.
+Sometimes apple computers can not read the Pi after it got flashed, ignore the message and go on to the Raspberry Pi Imager.
 
 Install Raspberry Pi OS Lite (64-bit)
