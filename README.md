@@ -28,3 +28,22 @@
 - Sony VX2100
 
 Basically every FireWire out.
+
+# documentation
+
+Download: https://github.com/raspberrypi/usbboot
+`brew install libusb`
+
+Change directory to the extracted folder
+`make`
+`sudo ./rpiboot`
+
+If you get this error:
+`main.c:1:10: fatal error: 'libusb.h' file not found`
+
+Install this:
+`brew install pkg-config`
+
+Sometimes apple computers can not read the Pi after the it got flashed, ignore the message and go on to the Raspberry Pi Imager.
+
+Install Raspberry Pi OS Lite (64-bit)
