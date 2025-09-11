@@ -140,7 +140,7 @@
 			(subtractmaskfromsilk no)
 			(outputformat 1)
 			(mirror no)
-			(drillshape 1)
+			(drillshape 0)
 			(scaleselection 1)
 			(outputdirectory "")
 		)
@@ -2030,7 +2030,7 @@
 			(layers "F.Cu" "F.Mask" "F.Paste")
 			(pinfunction "37")
 			(pintype "unspecified+no_connect")
-			(uuid "a5a8070c-5f83-4425-9dd0-dcd7740ebea9")
+			(uuid "b21f4e84-eafe-40d2-a93f-458a7eb9de54")
 		)
 		(embedded_fonts no)
 		(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/CONN-SMD_X3113WVS-36-9TV01.wrl"

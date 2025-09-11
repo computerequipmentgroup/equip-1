@@ -139,7 +139,7 @@
         "min_track_width": 0.0,
         "min_via_annular_width": 0.1,
         "min_via_diameter": 0.5,
-        "solder_mask_to_copper_clearance": 0.0,
+        "solder_mask_to_copper_clearance": 0.005,
         "use_height_for_length_calcs": true
       },
       "teardrop_options": [
@@ -505,7 +505,7 @@
       "idf": "",
       "netlist": "",
       "plot": "",
-      "pos_files": "",
+      "pos_files": "bom-cpl/",
       "specctra_dsn": "",
       "step": "",
       "svg": "",
@@ -577,12 +577,144 @@
           "label": "Datasheet",
           "name": "Datasheet",
           "show": true
+        },
+        {
+          "group_by": false,
+          "label": "Capacitance",
+          "name": "Capacitance",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Category",
+          "name": "Category",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Class",
+          "name": "Class",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "LCSC",
+          "name": "LCSC",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "LCSC Part",
+          "name": "LCSC Part",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Manufacturer",
+          "name": "Manufacturer",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Minimum Qty",
+          "name": "Minimum Qty",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Operating Temperature Range",
+          "name": "Operating Temperature Range",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Overload Voltage (Max)",
+          "name": "Overload Voltage (Max)",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Part",
+          "name": "Part",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Power(Watts)",
+          "name": "Power(Watts)",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Price",
+          "name": "Price",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Process",
+          "name": "Process",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Resistance",
+          "name": "Resistance",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Stock",
+          "name": "Stock",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Temperature Coefficient",
+          "name": "Temperature Coefficient",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Tolerance",
+          "name": "Tolerance",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Type",
+          "name": "Type",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Voltage Rated",
+          "name": "Voltage Rated",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Attrition Qty",
+          "name": "Attrition Qty",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "Description",
+          "name": "Description",
+          "show": false
+        },
+        {
+          "group_by": false,
+          "label": "#",
+          "name": "${ITEM_NUMBER}",
+          "show": false
         }
       ],
       "filter_string": "",
       "group_symbols": true,
       "include_excluded_from_bom": true,
-      "name": "Default Editing",
+      "name": "",
       "sort_asc": true,
       "sort_field": "Reference"
     },
