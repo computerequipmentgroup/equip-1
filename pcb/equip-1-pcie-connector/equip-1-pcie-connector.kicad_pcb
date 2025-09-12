@@ -3901,13 +3901,13 @@
 		(embedded_fonts no)
 		(model "${EASYEDA2KICAD}/easyeda2kicad.3dshapes/TSOT-23-6_L2.9-W1.6-H1.1-LS2.8-P0.95.wrl"
 			(offset
-				(xyz -914.67 685.53 -0)
+				(xyz -914.67 685.53 0)
 			)
 			(scale
 				(xyz 1 1 1)
 			)
 			(rotate
-				(xyz 0 0 180)
+				(xyz -0 -0 180)
 			)
 		)
 		(model "/Users/felixwillen/Documents/KiCad/easyeda2kicad/easyeda2kicad.3dshapes/TSOT-23-6_L2.9-W1.6-H1.1-LS2.8-P0.95.wrl"
@@ -3918,7 +3918,7 @@
 				(xyz 1 1 1)
 			)
 			(rotate
-				(xyz 0 0 0)
+				(xyz -0 -0 -180)
 			)
 		)
 	)

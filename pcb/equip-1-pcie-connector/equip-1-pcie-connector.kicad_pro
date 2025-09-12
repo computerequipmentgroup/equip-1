@@ -507,7 +507,7 @@
       "plot": "",
       "pos_files": "bom-cpl/",
       "specctra_dsn": "",
-      "step": "",
+      "step": "equip-1-pcie-connector.step",
       "svg": "",
       "vrml": ""
     },
