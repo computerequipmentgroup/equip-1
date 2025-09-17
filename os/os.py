@@ -11,17 +11,18 @@ class RecorderState:
     def __init__(self):
         self.mode = "idle"         # "idle" or "recording"
         self.start_time = None
-        self.process = None        # will hold dvgrab Popen
+        self.process = None        # holds dvgrab Popen when running
 
     def toggle(self):
         if self.mode == "idle":
             # enter recording
             self.mode = "recording"
             self.start_time = time.time()
-            #self.process = subprocess.Popen(
-            #    ["dvgrab", "--format", "dv2", "capture-"],
-            #    stdout=subprocess.PIPE
-            #)
+            # Uncomment when you want real recording:
+            # self.process = subprocess.Popen(
+            #     ["dvgrab", "--format", "dv2", "capture-"],
+            #     stdout=subprocess.PIPE
+            # )
         else:
             # stop recording
             self.mode = "idle"
@@ -55,16 +56,20 @@ font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 
 state = RecorderState()
 
-# Setup button on GPIO4_C4 = gpiochip4, line 20
-button = GPIO("/dev/gpiochip4", 20, "in")
+# Use header pin 31 → /dev/gpiochip1 line 8
+button = GPIO("/dev/gpiochip1", 8, "in")
+
+last_state = True  # button not pressed initially
 
 # === Main loop ===
 try:
     while True:
-        # Check button
-        if button.read() == 0:  # active low
+        # Check button with edge detection
+        current = button.read()
+        if last_state and not current:  # falling edge = press
             state.toggle()
             time.sleep(0.3)  # debounce
+        last_state = current
 
         # Build frame
         img = Image.new("1", device.size)
