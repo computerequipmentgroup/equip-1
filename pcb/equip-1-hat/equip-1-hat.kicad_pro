@@ -528,7 +528,7 @@
       "plot": "",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "equip-1-hat.glb",
+      "step": "../models/equip-1-hat.step",
       "svg": "",
       "vrml": ""
     },
@@ -650,7 +650,7 @@
   },
   "sheets": [
     [
-      "e63e39d7-6ac0-4ffd-8aa3-1841a4541b55",
+      "10ede35a-3922-4f86-b31c-4340a75035c8",
       "Root"
     ]
   ],

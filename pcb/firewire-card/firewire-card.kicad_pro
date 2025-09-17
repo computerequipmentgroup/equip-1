@@ -490,7 +490,7 @@
       "plot": "",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "firewire-card.glb",
+      "step": "../models/firewire-card.step",
       "svg": "",
       "vrml": ""
     },

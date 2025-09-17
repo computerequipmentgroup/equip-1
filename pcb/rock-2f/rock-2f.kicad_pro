@@ -269,7 +269,7 @@
       "plot": "",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "",
+      "step": "../models/rock-2f.glb",
       "svg": "",
       "vrml": ""
     },
