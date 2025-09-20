@@ -1,51 +1,44 @@
 # equip-1
 
-- Part one of computer equipment series
-- Records tapeless through digital out onto sd card
+Hardware needed:
 
-# parts
+- Radxa 2f 2Gb RAM 8Gb eMMC (Raspberry Pi needs testing)
+- [Rasperry Pi 5 PCIe Hat](https://de.aliexpress.com/item/1005007875203834.html) (Compatible with the 2f)
+- [VIA VT6315N Firewire card](https://de.aliexpress.com/item/1005005044278296.html)
+- A good firewire cable (Sometimes there are these transparent cables delivered with the firewire card, they did not work for me!)
 
-- Raspberry Pi CM4
-- FireWire Card
-- Custom PCB
-- Screen + Buttons
-- Printed case
-- Ports USB-C and FireWire
-- Battery
+Software:
 
-# questions
+- Rock 2f Custom Firewire Armbian Image
+- DVGrab
 
-- How small can we build this?
-- How much computational power do we need? Is a CM4 too much, can we take a smaller/slower computer?
-- Does the battery power to outlets at the same time?
-- What software do we use? There is this one: [DVGrab](https://github.com/ddennedy/dvgrab)
-- How much will the finished device cost?
+### Install custom os
 
-# compatible cameras
+[Use this guide](https://docs.radxa.com/en/rock2/rock2f/getting-started/install-os/maskrom) to install the provided image on the 2f.
+The provided image has the custom firewire kernels already installed, created by the [armbian-build tool](https://github.com/armbian/build). In the folder contains also the SPI loader file, which is needed for flashing the os on the 2f. Disconnect the 2f after installing the os.
 
-- Sony VX1000
-- Sony VX2000
-- Sony VX2100
+### Connect the hardware and first boot
 
-Basically every FireWire out.
+Attach the hat on the 2f, connect the ffc cable. and slide the firewire card in the PCIe connector.
 
-# documentation
+Once installed, boot the 2f and connect it to a screen and keyboard. Go through the setup.
 
-![CM4](images/cm4-arrived.jpeg)
+Use `lspci` to check if the firewire card got recognized.
 
-Download: https://github.com/raspberrypi/usbboot
-`brew install libusb`
+### DVGrab and recording
 
-Change directory to the extracted folder
-`make`
-`sudo ./rpiboot`
+If the firewire card shows up, it is now time to install [DVGrab](https://github.com/ddennedy/dvgrab)
 
-If you get this error:
-`main.c:1:10: fatal error: 'libusb.h' file not found`
+```
+sudo apt install dvgrab
+```
 
-Install this:
-`brew install pkg-config`
+Connect your camera to the setup and turn it on (Camera mode).
 
-Sometimes apple computers can not read the Pi after it got flashed, ignore the message and go on to the Raspberry Pi Imager.
+```
+dvgrab -buffers 20 name-
+```
 
-Install Raspberry Pi OS Lite (64-bit)
+You are now capturing DV footage via firewire on a self build device!
+
+If you like this project and want to know more about the development and future steps, feel free to [join this discord](https://discord.gg/KU3UhgPA7P). We are a tiny community building objects with computers!
