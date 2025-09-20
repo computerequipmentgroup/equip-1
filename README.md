@@ -45,4 +45,6 @@ You are now capturing DV footage via firewire on a self build device!
 
 To end the recording press `ctrl + c` and the .dv file will be saved in the destinations, where you started the command from.
 
+![equip-1 hardware setup](device.png)
+
 If you like this project and want to know more about the development and future steps, or even build your own version, feel free to [join this discord](https://discord.gg/KU3UhgPA7P). We are a tiny community building objects with computers!
