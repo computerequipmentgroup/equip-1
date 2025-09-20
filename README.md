@@ -9,7 +9,7 @@ Hardware:
 
 Software:
 
-- Rock 2f Custom Firewire Armbian Image
+- [Rock 2f Custom Firewire Armbian Image](https://drive.google.com/drive/folders/1kLxVSK0Dhzc2q1MnAXW4JjSZa23EkOea?usp=sharing)
 - [DVGrab](https://github.com/ddennedy/dvgrab)
 
 ### Install custom OS
