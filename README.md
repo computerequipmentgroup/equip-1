@@ -1,6 +1,6 @@
 ## equip-1 0.1 alpha
 
-Hardware needed:
+Hardware:
 
 - Radxa 2f 2Gb RAM 8Gb eMMC (Raspberry Pi needs testing)
 - [Rasperry Pi 5 PCIe Hat](https://de.aliexpress.com/item/1005007875203834.html) (Compatible with the 2f)
