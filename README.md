@@ -12,10 +12,10 @@ Software:
 - Rock 2f Custom Firewire Armbian Image
 - [DVGrab](https://github.com/ddennedy/dvgrab)
 
-### Install custom os
+### Install custom OS
 
 [Use this guide](https://docs.radxa.com/en/rock2/rock2f/getting-started/install-os/maskrom) to install the provided image on the 2f.
-The provided image has the custom firewire kernels already installed, created by the [armbian-build tool](https://github.com/armbian/build). The folder also contains the SPI loader file, which is needed for flashing the os on the 2f. Disconnect the 2f after installing the os.
+The provided image has the custom firewire kernels already installed, created by the [armbian-build tool](https://github.com/armbian/build). The folder also contains the SPI loader file, which is needed for flashing the OS on the 2f. Disconnect the 2f after you finished the installation.
 
 ### Connect the hardware and first boot
 
