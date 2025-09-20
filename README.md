@@ -10,7 +10,7 @@ Hardware needed:
 Software:
 
 - Rock 2f Custom Firewire Armbian Image
-- DVGrab
+- [DVGrab](https://github.com/ddennedy/dvgrab)
 
 ### Install custom os
 
@@ -27,7 +27,7 @@ Use `lspci` to check if the firewire card got recognized.
 
 ### DVGrab and recording
 
-If the firewire card shows up, it is now time to install [DVGrab](https://github.com/ddennedy/dvgrab).
+If the firewire card shows up, it is now time to install DVGrab.
 
 ```
 sudo apt install dvgrab
