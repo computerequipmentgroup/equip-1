@@ -47,4 +47,14 @@ To end the recording press `ctrl + c` and the .dv file will be saved in the dest
 
 ![equip-1 hardware setup](device.png)
 
+### Making it portable
+
+Adding a NEEWER 10500mAh NP-F970 battery can power this setup via the usb-c port.
+
+![equip-1 portable](portable.gif)
+
+To control the device, a small button and an OLED screen are added using the GPIO pins of the 2F.
+
+![equip-1 portable](interface.gif)
+
 If you like this project and want to know more about the development and future steps, or even build your own version, feel free to [join this discord](https://discord.gg/KU3UhgPA7P). We are a tiny community building objects with computers!
