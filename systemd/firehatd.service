@@ -1,0 +1,25 @@
+[Unit]
+Description=Firehat recorder daemon
+After=network.target firehat-ap.service
+Wants=firehat-ap.service
+
+[Service]
+Type=simple
+User=firehat
+Group=firehat
+WorkingDirectory=/opt/firehat
+Environment=FIREHAT_CAPTURE_DIR=/home/firehat/captures
+Environment=FIREHAT_HOST=0.0.0.0
+Environment=FIREHAT_PORT=8000
+Environment=FIREHAT_WEB_DIR=/opt/firehat/uis/web/.output/public
+Environment=FIREHAT_AP_ENABLED=1
+Environment=FIREHAT_AP_IFACE=wlan0
+Environment=FIREHAT_AP_SSID=Firehat
+Environment=FIREHAT_AP_PASSWORD=firesecret
+EnvironmentFile=-/etc/firehat/ap.env
+ExecStart=/opt/firehat/.venv/bin/python -m firehatd.main
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

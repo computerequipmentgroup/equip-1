@@ -1,0 +1,38 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0b0f14;
+  color: #f4f7fb;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #0b0f14; }
+a { color: inherit; }
+button {
+  border: 0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  background: #243244;
+  color: #f4f7fb;
+  font-weight: 700;
+}
+button.primary { background: #e63946; }
+button:disabled { opacity: 0.45; }
+.page { max-width: 980px; margin: 0 auto; padding: 1rem; }
+.nav { display: flex; gap: .75rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.nav-links { display: flex; gap: .75rem; }
+.card { background: #121a24; border: 1px solid #243244; border-radius: 18px; padding: 1rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.big { font-size: clamp(2.6rem, 12vw, 6rem); line-height: 1; font-weight: 800; letter-spacing: -0.06em; }
+.big.small { font-size: clamp(2rem, 8vw, 3.5rem); }
+.label { color: #94a3b8; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; }
+.status { display: inline-flex; align-items: center; gap: .5rem; padding: .45rem .65rem; border-radius: 999px; background: #243244; }
+.dot { width: .7rem; height: .7rem; border-radius: 999px; background: #64748b; }
+.dot.recording { background: #e63946; box-shadow: 0 0 18px #e63946; }
+.actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; }
+.deck-hero h1 { margin: .2rem 0; font-size: clamp(2rem, 8vw, 4rem); letter-spacing: -0.05em; }
+.deck-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .75rem; margin-top: 1rem; }
+.timecode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: clamp(1.6rem, 7vw, 3rem); margin: .5rem 0 0; }
+.list { display: grid; gap: .75rem; }
+.row { display: flex; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid #243244; }
+.error { color: #ffb4a2; }

@@ -1,0 +1,14 @@
+[Unit]
+Description=Firehat Wi-Fi access point
+Requires=NetworkManager.service
+After=NetworkManager.service
+Before=firehatd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/firehat/ap.env
+ExecStart=/opt/firehat/scripts/firehat-ap-nm.sh
+
+[Install]
+WantedBy=multi-user.target

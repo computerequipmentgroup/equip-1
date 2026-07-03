@@ -1,0 +1,62 @@
+# macOS / editor noise
+.DS_Store
+.AppleDouble
+.LSOverride
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+build/
+dist/
+
+# Logs / runtime files
+*.log
+*.pid
+*.sock
+
+# Firehat captures and generated media
+captures/
+*.dv
+*.avi
+*.mov
+*.mp4
+*.mkv
+*.dvgrab.log
+
+# Nuxt / Node
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+.nuxt/
+.output/
+.cache/
+*.tsbuildinfo
+
+# Environment / local config
+.env
+.env.*
+!.env.example
+
+# Hardware/local test artifacts
+*.sqlite
+*.sqlite3

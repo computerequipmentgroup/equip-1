@@ -1,0 +1,16 @@
+[Unit]
+Description=Firehat HDMI kiosk
+After=firehatd.service graphical.target
+Wants=firehatd.service
+
+[Service]
+Type=simple
+User=firehat
+Group=firehat
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/chromium --kiosk --noerrdialogs --disable-infobars http://127.0.0.1:8000/
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical.target

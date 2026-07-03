@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+
+from .service import CommandError, FirehatDaemon
+
+
+daemon = FirehatDaemon.from_env()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await daemon.start_monitor()
+    await daemon.publish_state()
+    try:
+        yield
+    finally:
+        await daemon.shutdown()
+
+
+app = FastAPI(title="Firehat Daemon", version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/api/state")
+async def get_state() -> dict:
+    return await daemon.snapshot()
+
+
+@app.get("/api/storage")
+async def get_storage() -> dict:
+    state = await daemon.snapshot()
+    return state["storage"]
+
+
+@app.get("/api/captures")
+async def get_captures() -> list[dict]:
+    return await daemon.list_captures()
+
+
+@app.post("/api/commands/start-recording")
+async def start_recording() -> dict:
+    try:
+        return await daemon.start_recording()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/stop-recording")
+async def stop_recording() -> dict:
+    return await daemon.stop_recording()
+
+
+@app.post("/api/commands/rescan-camera")
+async def rescan_camera() -> dict:
+    return await daemon.rescan_camera()
+
+
+@app.post("/api/commands/deck-play")
+async def deck_play() -> dict:
+    try:
+        return await daemon.deck_command("play")
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/deck-stop")
+async def deck_stop() -> dict:
+    try:
+        return await daemon.deck_command("stop")
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/deck-rewind")
+async def deck_rewind() -> dict:
+    try:
+        return await daemon.deck_command("rewind")
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/deck-fast-forward")
+async def deck_fast_forward() -> dict:
+    try:
+        return await daemon.deck_command("fast-forward")
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/clear-error")
+async def clear_error() -> dict:
+    return await daemon.clear_error()
+
+
+@app.post("/api/commands/shutdown")
+async def shutdown_host() -> dict:
+    return await daemon.shutdown_host()
+
+
+@app.post("/api/commands/reboot")
+async def reboot_host() -> dict:
+    return await daemon.reboot_host()
+
+
+@app.websocket("/api/events")
+async def events(websocket: WebSocket) -> None:
+    await websocket.accept()
+    await websocket.send_json({"type": "state", "state": await daemon.snapshot()})
+    try:
+        async with daemon.events.subscribe() as queue:
+            while True:
+                event = await queue.get()
+                await websocket.send_json(event)
+    except WebSocketDisconnect:
+        return
+
+
+def _mount_static_web() -> None:
+    web_dir = Path(os.environ.get("FIREHAT_WEB_DIR", "uis/web/.output/public"))
+    if web_dir.exists():
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+
+
+_mount_static_web()
