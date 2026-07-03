@@ -1,5 +1,6 @@
 fastapi>=0.128.0
-uvicorn[standard]>=0.38.0
+uvicorn>=0.38.0
+websockets>=14.0
 luma.oled>=3.14.0
 Pillow>=11.0.0
 python-periphery>=2.4.1

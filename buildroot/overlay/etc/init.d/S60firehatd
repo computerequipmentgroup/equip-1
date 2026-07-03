@@ -1,0 +1,43 @@
+#!/bin/sh
+# Firehat FastAPI recorder daemon for BusyBox init.
+
+PIDFILE=/var/run/firehatd.pid
+LOGFILE=/var/log/firehatd.log
+APPDIR=/opt/firehat
+
+export PYTHONPATH="$APPDIR/lib:$APPDIR"
+export FIREHAT_CAPTURE_DIR="${FIREHAT_CAPTURE_DIR:-/data/captures}"
+export FIREHAT_HOST="${FIREHAT_HOST:-0.0.0.0}"
+export FIREHAT_PORT="${FIREHAT_PORT:-8000}"
+export FIREHAT_WEB_DIR="${FIREHAT_WEB_DIR:-$APPDIR/uis/web/.output/public}"
+export FIREHAT_AP_ENABLED="${FIREHAT_AP_ENABLED:-0}"
+
+case "$1" in
+    start)
+        echo "Starting firehatd..."
+        mkdir -p /var/run /var/log "$FIREHAT_CAPTURE_DIR"
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "firehatd already running"
+            exit 0
+        fi
+        cd "$APPDIR" || exit 1
+        /usr/bin/python3 -m firehatd.main >>"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        echo "Stopping firehatd..."
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

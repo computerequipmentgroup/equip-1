@@ -1,0 +1,41 @@
+#!/bin/sh
+# Firehat OLED/buttons frontend for BusyBox init.
+
+PIDFILE=/var/run/firehat-oled.pid
+LOGFILE=/var/log/firehat-oled.log
+APPDIR=/opt/firehat
+
+export PYTHONPATH="$APPDIR/lib:$APPDIR"
+export EQUIP_1_BOARD_TYPE="${EQUIP_1_BOARD_TYPE:-rock2f}"
+export FIREHAT_API_BASE="${FIREHAT_API_BASE:-http://127.0.0.1:8000/api}"
+export FIREHAT_FONT_DIR="${FIREHAT_FONT_DIR:-$APPDIR/fonts}"
+
+case "$1" in
+    start)
+        echo "Starting firehat OLED UI..."
+        mkdir -p /var/run /var/log
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "firehat OLED UI already running"
+            exit 0
+        fi
+        cd "$APPDIR" || exit 1
+        /usr/bin/python3 -m uis.oled >>"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        echo "Stopping firehat OLED UI..."
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

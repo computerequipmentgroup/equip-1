@@ -135,11 +135,13 @@ class FirehatDaemon:
         return state
 
     async def shutdown_host(self) -> dict[str, str]:
-        subprocess.Popen(["sudo", "shutdown", "-h", "now"])
+        command = ["shutdown", "-h", "now"] if os.geteuid() == 0 else ["sudo", "shutdown", "-h", "now"]
+        subprocess.Popen(command)
         return {"status": "scheduled"}
 
     async def reboot_host(self) -> dict[str, str]:
-        subprocess.Popen(["sudo", "reboot"])
+        command = ["reboot"] if os.geteuid() == 0 else ["sudo", "reboot"]
+        subprocess.Popen(command)
         return {"status": "scheduled"}
 
     async def list_captures(self) -> list[dict]:

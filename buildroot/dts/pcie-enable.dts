@@ -1,0 +1,22 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3528";
+
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            pcie_en: pcie-en {
+                compatible = "regulator-fixed";
+                regulator-name = "pcie_en";
+                regulator-min-microvolt = <3300000>;
+                regulator-max-microvolt = <3300000>;
+                gpio = <&gpio1 4 0>;
+                enable-active-high;
+                regulator-boot-on;
+                regulator-always-on;
+            };
+        };
+    };
+};

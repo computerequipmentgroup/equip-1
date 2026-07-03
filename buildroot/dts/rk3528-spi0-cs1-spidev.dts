@@ -1,0 +1,22 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3528";
+
+    fragment@0 {
+        target = <&spi0>;
+        __overlay__ {
+            status = "okay";
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            spidev@1 {
+                compatible = "rohm,dh2228fv";
+                reg = <1>;
+                spi-max-frequency = <10000000>;
+                status = "okay";
+            };
+        };
+    };
+};

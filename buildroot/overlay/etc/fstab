@@ -1,0 +1,7 @@
+# /etc/fstab — equip-1
+# <device>       <mount>    <type>  <options>              <dump> <pass>
+/dev/root        /          auto    rw,noatime             0      1
+proc             /proc      proc    defaults               0      0
+sysfs            /sys       sysfs   defaults               0      0
+devtmpfs         /dev       devtmpfs defaults               0      0
+tmpfs            /tmp       tmpfs   size=16M               0      0

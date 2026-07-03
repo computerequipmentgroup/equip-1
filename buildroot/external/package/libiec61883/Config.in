@@ -1,0 +1,8 @@
+config BR2_PACKAGE_LIBIEC61883
+	bool "libiec61883"
+	select BR2_PACKAGE_LIBRAW1394
+	help
+	  Library implementing IEC 61883 (DV/HDV/MPEG2-TS over IEEE 1394
+	  isochronous transport). Required by dvgrab.
+
+	  https://ieee1394.docs.kernel.org/

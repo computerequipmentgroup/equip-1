@@ -1,0 +1,13 @@
+# Build output
+output/
+
+# Compiled DT overlays (generated during build)
+overlay/boot/overlay-user/*.dtbo
+
+# Copied application files/dependencies (generated during build from repo root)
+overlay/opt/firehat/firehatd/
+overlay/opt/firehat/uis/
+overlay/opt/firehat/fonts/
+overlay/opt/firehat/requirements.txt
+overlay/opt/firehat/lib/
+overlay/opt/firehat/.requirements.sha256

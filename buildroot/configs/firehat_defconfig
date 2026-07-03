@@ -1,0 +1,98 @@
+# Equip-1 Buildroot defconfig for Radxa ROCK 2F (RK3528A)
+# Minimal image targeting fast boot and small size
+
+# Architecture: AArch64 (Cortex-A53)
+BR2_aarch64=y
+
+# Toolchain
+BR2_TOOLCHAIN_BUILDROOT_GLIBC=y
+BR2_KERNEL_HEADERS_6_1=y
+# C++ support — required by dvgrab (vendored via br2-external)
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+BR2_INSTALL_LIBSTDCPP=y
+
+# Kernel — vendor 6.1.x (matches armbian's working RK3528 support)
+BR2_LINUX_KERNEL=y
+BR2_LINUX_KERNEL_CUSTOM_GIT=y
+BR2_LINUX_KERNEL_CUSTOM_REPO_URL="https://github.com/armbian/linux-rockchip.git"
+BR2_LINUX_KERNEL_CUSTOM_REPO_VERSION="rk-6.1-rkr6.1"
+BR2_LINUX_KERNEL_USE_DEFCONFIG=y
+BR2_LINUX_KERNEL_DEFCONFIG="rockchip_linux"
+BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="linux.config"
+BR2_LINUX_KERNEL_DTS_SUPPORT=y
+BR2_LINUX_KERNEL_INTREE_DTS_NAME="rockchip/rk3528-rock-2f"
+BR2_LINUX_KERNEL_INSTALL_TARGET=y
+
+# U-Boot (requires rkbin blobs — cloned to ~/rkbin on VM)
+BR2_TARGET_UBOOT=y
+BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE="2025.07"
+BR2_TARGET_UBOOT_BOARD_DEFCONFIG="generic-rk3528"
+BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES="u-boot.config"
+BR2_TARGET_UBOOT_NEEDS_DTC=y
+BR2_TARGET_UBOOT_USE_BINMAN=y
+BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.20.elf ROCKCHIP_TPL=RKBIN_PATH/bin/rk35/rk3528_ddr_1056MHz_v1.11.bin"
+# Filesystem — ~1GB system partition; recordings live on a separate exFAT
+# partition created from the rest of the SD on first boot (see S15data).
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="1G"
+
+# Init system — BusyBox init for fast boot
+BR2_INIT_BUSYBOX=y
+
+# System
+BR2_TARGET_GENERIC_HOSTNAME="equip-1"
+BR2_TARGET_GENERIC_ISSUE="Equip-1 DV Recorder"
+BR2_TARGET_GENERIC_ROOT_PASSWD="equip1"
+BR2_TARGET_GENERIC_PASSWD_SHA512=y
+BR2_SYSTEM_DHCP="wlan0"
+
+# Python 3 (for os.py application)
+BR2_PACKAGE_PYTHON3=y
+BR2_PACKAGE_PYTHON3_PIP=y
+BR2_PACKAGE_ZLIB=y
+
+# I2C tools (for OLED display)
+BR2_PACKAGE_I2C_TOOLS=y
+
+# Recordings partition tooling: sgdisk (create), mkfs.exfat (format), partprobe
+BR2_PACKAGE_GPTFDISK=y
+BR2_PACKAGE_EXFATPROGS=y
+BR2_PACKAGE_PARTED=y
+
+# WiFi
+BR2_PACKAGE_WPA_SUPPLICANT=y
+BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y
+BR2_PACKAGE_DROPBEAR=y
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_WIRELESS=y
+BR2_PACKAGE_IW=y
+BR2_PACKAGE_CRDA=y
+
+# FireWire (IEEE 1394) support
+BR2_PACKAGE_LIBRAW1394=y
+
+# dvgrab for DV capture
+BR2_PACKAGE_DVGRAB=y
+
+# GPIO/peripheral access
+BR2_PACKAGE_LIBGPIOD=y
+
+# Disable unnecessary packages for minimal image
+BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y
+BR2_SYSTEM_BIN_SH_BUSYBOX=y
+
+# No graphics stack (headless + OLED only)
+# No audio stack
+# No desktop environment
+
+# Overlay
+BR2_ROOTFS_OVERLAY="overlay"
+
+# SD card image generation
+BR2_ROOTFS_POST_BUILD_SCRIPT="post-build.sh"
+BR2_ROOTFS_POST_IMAGE_SCRIPT="support/scripts/genimage.sh"
+BR2_ROOTFS_POST_SCRIPT_ARGS="-c genimage.cfg"
+BR2_PACKAGE_HOST_GENIMAGE=y

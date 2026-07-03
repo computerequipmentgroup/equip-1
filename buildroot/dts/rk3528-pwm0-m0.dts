@@ -1,0 +1,17 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3528";
+
+    /* Enable PWM0 on its m0 pin (GPIO4_C3) to drive the Firehat buzzer
+       with hardware PWM instead of jittery software bit-banging. */
+    fragment@0 {
+        target = <&pwm0>;
+        __overlay__ {
+            status = "okay";
+            pinctrl-names = "active";
+            pinctrl-0 = <&pwm0m0_pins>;
+        };
+    };
+};

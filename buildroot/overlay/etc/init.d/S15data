@@ -1,0 +1,35 @@
+#!/bin/sh
+# Mount the recordings data partition at /data.
+#
+# The recordings partition (exFAT, label EQUIP1) is created by flash.sh on the
+# host when the card is written. Here we just find it (partition 2 of the boot
+# disk) and mount it at /data so the app can write captures to /data/captures.
+# If it isn't present, /data falls back to the rootfs so recording still works.
+
+DATA_MNT="/data"
+
+case "$1" in
+    start)
+        # Boot disk = the disk holding the rootfs (found via its filesystem label).
+        DISK=$(blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1 | sed 's/p[0-9]*$//')
+        PART=""
+        case "$DISK" in
+            *mmcblk*|*nvme*) PART="${DISK}p2" ;;
+            /dev/?*)         PART="${DISK}2" ;;
+        esac
+
+        mkdir -p "$DATA_MNT"
+        if [ -n "$PART" ] && [ -b "$PART" ]; then
+            grep -q " $DATA_MNT exfat" /proc/mounts || \
+                mount -t exfat "$PART" "$DATA_MNT" 2>/dev/null
+        fi
+        mkdir -p "$DATA_MNT/captures"
+        ;;
+    stop)
+        umount "$DATA_MNT" 2>/dev/null
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac

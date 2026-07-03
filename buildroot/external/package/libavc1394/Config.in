@@ -1,0 +1,8 @@
+config BR2_PACKAGE_LIBAVC1394
+	bool "libavc1394"
+	select BR2_PACKAGE_LIBRAW1394
+	help
+	  Library for the 1394 Trade Association AV/C (Audio/Video Control)
+	  protocol, used to control camcorder transports. Required by dvgrab.
+
+	  https://sourceforge.net/projects/libavc1394/

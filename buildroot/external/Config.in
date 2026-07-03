@@ -1,0 +1,4 @@
+source "$BR2_EXTERNAL_EQUIP1_PATH/package/libdv/Config.in"
+source "$BR2_EXTERNAL_EQUIP1_PATH/package/libavc1394/Config.in"
+source "$BR2_EXTERNAL_EQUIP1_PATH/package/libiec61883/Config.in"
+source "$BR2_EXTERNAL_EQUIP1_PATH/package/dvgrab/Config.in"

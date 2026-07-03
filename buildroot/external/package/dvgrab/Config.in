@@ -1,0 +1,15 @@
+config BR2_PACKAGE_DVGRAB
+	bool "dvgrab"
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_LIBRAW1394
+	select BR2_PACKAGE_LIBAVC1394
+	select BR2_PACKAGE_LIBIEC61883
+	select BR2_PACKAGE_LIBDV
+	help
+	  Capture DV and HDV video and audio from FireWire (IEEE 1394)
+	  camcorders, with AV/C transport control.
+
+	  https://sourceforge.net/projects/kino/
+
+comment "dvgrab needs a toolchain w/ C++"
+	depends on !BR2_INSTALL_LIBSTDCPP

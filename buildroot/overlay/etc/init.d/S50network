@@ -1,0 +1,53 @@
+#!/bin/sh
+# Start WiFi + DHCP
+
+case "$1" in
+    start)
+        echo "Starting WiFi..."
+        (
+            load_fw_module="$(find /lib/modules -type f -name aic_load_fw.ko | head -1)"
+            wlan_module="$(find /lib/modules -type f -name aic8800_fdrv.ko | head -1)"
+
+            modprobe aic_load_fw aic_fw_path=/lib/firmware/aic8800_fw/USB 2>/dev/null || true
+            if [ -n "$load_fw_module" ] && [ ! -d /sys/module/aic_load_fw ]; then
+                insmod "$load_fw_module" aic_fw_path=/lib/firmware/aic8800_fw/USB 2>/dev/null || true
+            fi
+
+            sleep 1
+
+            modprobe aic8800_fdrv 2>/dev/null || true
+            if [ -n "$wlan_module" ] && [ ! -d /sys/module/aic8800_fdrv ]; then
+                insmod "$wlan_module" 2>/dev/null || true
+            fi
+
+            for _ in $(seq 1 30); do
+                if ip link show wlan0 >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 1
+            done
+
+            if ! ip link show wlan0 >/dev/null 2>&1; then
+                echo "wlan0 not present yet; skipping WiFi startup"
+                exit 0
+            fi
+
+            ip link set wlan0 up 2>/dev/null || true
+            if ! wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf; then
+                echo "wpa_supplicant failed to start"
+                exit 1
+            fi
+            udhcpc -i wlan0 -b
+            # Disable power save (avoids dropped connections)
+            iw dev wlan0 set power_save off 2>/dev/null || true
+        ) &
+        ;;
+    stop)
+        killall wpa_supplicant 2>/dev/null
+        killall udhcpc 2>/dev/null
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
