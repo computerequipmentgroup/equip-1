@@ -100,8 +100,9 @@ merge_dt_overlays() {
     #   rk3528-i2c0-m1 : OLED bus (40-pin header pins 3/5)
     #   pcie-enable    : pcie_en regulator (GPIO1_A4) powering the Firehat's VIA
     #                    VT6315N FireWire controller — without it PCIe never links.
-    #   rk3528-pwm0-m0 : PWM0 on GPIO4_C3 for hardware-PWM buzzer drive.
-    local overlays="rk3528-i2c0-m1.dtbo pcie-enable.dtbo rk3528-pwm0-m0.dtbo"
+    #   rk3528-pwm0-m0    : PWM0 on GPIO4_C3 for hardware-PWM buzzer drive.
+    #   rk3528-spi0-spidev: SPI0 on header pin 19 (MOSI) for RGB LED chain.
+    local overlays="rk3528-i2c0-m1.dtbo pcie-enable.dtbo rk3528-pwm0-m0.dtbo rk3528-spi0-spidev.dtbo"
 
     if ! command -v fdtoverlay >/dev/null 2>&1; then
         echo "ERROR: fdtoverlay not found (install device-tree-compiler)"
@@ -146,7 +147,23 @@ merge_dt_overlays() {
         echo "ERROR: pwm0 not enabled after merge"
         return 1
     fi
+
+    # Sanity check: confirm SPI0/spidev (RGB LEDs on header pin 19 MOSI) is enabled.
+    if fdtget "$dtb" /spi@ff9c0000 status 2>/dev/null | grep -q okay; then
+        echo "==> DTB merge OK: spi0 status=okay"
+    else
+        echo "ERROR: spi0 not enabled after merge"
+        return 1
+    fi
 }
+
+# The generated S40network comes from BR2_SYSTEM_DHCP. It can persist in an
+# incremental target tree after the defconfig stops setting that option, and it
+# races our AIC8800/WPA-aware S50network script.
+if [ -e "${TARGET_DIR}/etc/init.d/S40network" ]; then
+    rm -f "${TARGET_DIR}/etc/init.d/S40network"
+    echo "==> Removed stale generated S40network; S50network owns Wi-Fi."
+fi
 
 # Copy u-boot-rockchip.bin to images/ (buildroot only installs u-boot.bin by default)
 UBOOT_ROCKCHIP=$(find "${BUILD_DIR}" -maxdepth 2 -name "u-boot-rockchip.bin" -path "*/uboot-*" 2>/dev/null | head -1)

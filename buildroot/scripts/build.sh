@@ -16,6 +16,7 @@ DEFCONFIG_BASENAME="$(basename "$DEFCONFIG")"
 MAX_HEAL_ATTEMPTS="${MAX_HEAL_ATTEMPTS:-3}"
 BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
+FORCE_PYTHON_CLEAN="${FORCE_PYTHON_CLEAN:-0}"
 FORCE_PYTHON_DEPS="${FORCE_PYTHON_DEPS:-0}"
 CORRUPT_KERNEL_THRESHOLD="${CORRUPT_KERNEL_THRESHOLD:-50}"
 
@@ -153,10 +154,12 @@ SSH="ssh $SSH_OPTS admin@$VM_IP"
 run_build_attempt() {
     local attempt="$1"
     local attempt_force_kernel_clean="$FORCE_KERNEL_CLEAN"
+    local attempt_force_python_clean="$FORCE_PYTHON_CLEAN"
     local attempt_force_python_deps="$FORCE_PYTHON_DEPS"
 
     if [ "$attempt" -gt 1 ]; then
         attempt_force_kernel_clean=1
+        attempt_force_python_clean=1
         attempt_force_python_deps=1
     fi
 
@@ -179,6 +182,7 @@ run_build_attempt() {
         DEFCONFIG_BASENAME="$DEFCONFIG_BASENAME" \
         BUILD_JOBS="$BUILD_JOBS" \
         FORCE_KERNEL_CLEAN="$attempt_force_kernel_clean" \
+        FORCE_PYTHON_CLEAN="$attempt_force_python_clean" \
         FORCE_PYTHON_DEPS="$attempt_force_python_deps" \
         CORRUPT_KERNEL_THRESHOLD="$CORRUPT_KERNEL_THRESHOLD" \
         bash -s <<'BUILDSSH'
@@ -187,6 +191,7 @@ set -euo pipefail
 DEFCONFIG_BASENAME="${DEFCONFIG_BASENAME:-firehat_defconfig}"
 BUILD_JOBS="${BUILD_JOBS:-4}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
+FORCE_PYTHON_CLEAN="${FORCE_PYTHON_CLEAN:-0}"
 FORCE_PYTHON_DEPS="${FORCE_PYTHON_DEPS:-0}"
 CORRUPT_KERNEL_THRESHOLD="${CORRUPT_KERNEL_THRESHOLD:-50}"
 
@@ -276,6 +281,35 @@ if ! grep -q '^BR2_TOOLCHAIN_BUILDROOT_GLIBC=y$' .config \
     exit 1
 fi
 echo "==> Config verified: $(grep 'BR2_TOOLCHAIN_BUILDROOT_LIBC=' .config)"
+if grep -q '^BR2_PACKAGE_PYTHON3_SSL=y$' .config; then
+    echo "==> Config verified: Python SSL enabled"
+else
+    echo "ERROR: BR2_PACKAGE_PYTHON3_SSL is not enabled after olddefconfig"
+    exit 1
+fi
+if grep -q '^BR2_PACKAGE_PYTHON3_ZLIB=y$' .config; then
+    echo "==> Config verified: Python zlib enabled"
+else
+    echo "ERROR: BR2_PACKAGE_PYTHON3_ZLIB is not enabled after olddefconfig"
+    exit 1
+fi
+if grep -q '^BR2_PACKAGE_HOSTAPD=y$' .config; then
+    echo "==> Config verified: hostapd enabled"
+else
+    echo "ERROR: BR2_PACKAGE_HOSTAPD is not enabled after olddefconfig"
+    exit 1
+fi
+if grep -q '^BR2_PACKAGE_DNSMASQ=y$' .config; then
+    echo "==> Config verified: dnsmasq enabled"
+else
+    echo "ERROR: BR2_PACKAGE_DNSMASQ is not enabled after olddefconfig"
+    exit 1
+fi
+
+if [ "$FORCE_PYTHON_CLEAN" = "1" ]; then
+    echo "==> Cleaning Python build so SSL/zlib extensions are rebuilt..."
+    make python3-dirclean 2>/dev/null || true
+fi
 
 if [ "$FORCE_KERNEL_CLEAN" = "1" ]; then
     for kdir in output/build/linux-*/; do

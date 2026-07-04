@@ -10,10 +10,16 @@ export FIREHAT_CAPTURE_DIR="${FIREHAT_CAPTURE_DIR:-/data/captures}"
 export FIREHAT_HOST="${FIREHAT_HOST:-0.0.0.0}"
 export FIREHAT_PORT="${FIREHAT_PORT:-8000}"
 export FIREHAT_WEB_DIR="${FIREHAT_WEB_DIR:-$APPDIR/uis/web/.output/public}"
-export FIREHAT_AP_ENABLED="${FIREHAT_AP_ENABLED:-0}"
+export FIREHAT_AP_ENABLED="${FIREHAT_AP_ENABLED:-1}"
+export FIREHAT_AP_IFACE="${FIREHAT_AP_IFACE:-wlan0}"
+export FIREHAT_AP_SSID="${FIREHAT_AP_SSID:-Firehat}"
+export FIREHAT_AP_PASSWORD="${FIREHAT_AP_PASSWORD:-firesecret}"
+export FIREHAT_AP_IP="${FIREHAT_AP_IP:-10.42.0.1}"
+export FIREHAT_CAPTIVE_PORT="${FIREHAT_CAPTIVE_PORT:-80}"
 
 case "$1" in
     start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S60firehatd start" >> /var/log/boot-crumb.log 2>/dev/null || true
         echo "Starting firehatd..."
         mkdir -p /var/run /var/log "$FIREHAT_CAPTURE_DIR"
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then

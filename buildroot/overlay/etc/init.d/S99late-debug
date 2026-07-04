@@ -1,0 +1,176 @@
+#!/bin/sh
+# Late no-UART debug capture.
+# Runs after normal init scripts, waits for async device/service startup, then
+# writes a broad snapshot to /data/late-debug.log on the exFAT partition.
+
+LOG=/data/late-debug.log
+ROOT_LOG=/var/log/late-debug.log
+
+section() {
+    echo "" >>"$LOG" 2>/dev/null || true
+    echo "===== $* =====" >>"$LOG" 2>/dev/null || true
+}
+
+capture_cmd() {
+    section "$*"
+    "$@" >>"$LOG" 2>&1 || echo "command failed: $*" >>"$LOG" 2>/dev/null || true
+}
+
+append_file() {
+    FILE="$1"
+    section "$FILE"
+    if [ -e "$FILE" ]; then
+        cat "$FILE" >>"$LOG" 2>&1 || true
+    else
+        echo "missing: $FILE" >>"$LOG" 2>/dev/null || true
+    fi
+}
+
+try_extra_dhcp() {
+    section "extra DHCP attempts"
+    for IFACE in eth0 end0 enp0s0 enp1s0 en*; do
+        [ -e "/sys/class/net/$IFACE" ] || continue
+        [ "$IFACE" = "lo" ] && continue
+        echo "trying $IFACE" >>"$LOG" 2>/dev/null || true
+        ip link set "$IFACE" up >>"$LOG" 2>&1 || true
+        if command -v udhcpc >/dev/null 2>&1; then
+            udhcpc -i "$IFACE" -n -q -t 3 >>"$LOG" 2>&1 || true
+        fi
+    done
+}
+
+capture_api_state() {
+    section "firehat API probe"
+    python3 - <<'PY' >>"$LOG" 2>&1 || true
+import json
+import time
+import urllib.request
+
+url = "http://127.0.0.1:8000/api/state"
+started = time.monotonic()
+try:
+    with urllib.request.urlopen(url, timeout=8.0) as response:
+        body = response.read().decode("utf-8", errors="replace")
+    elapsed = time.monotonic() - started
+    data = json.loads(body)
+    print(f"ok elapsed={elapsed:.3f}s mode={data.get('mode')!r}")
+    print(f"camera={data.get('camera')}")
+    storage = data.get("storage") or {}
+    print(f"storage_minutes={storage.get('recording_minutes_available')}")
+    network = dict(data.get("network") or {})
+    if "password" in network:
+        network["password"] = "<redacted>"
+    print(f"network={network}")
+    error = data.get("error")
+    if error:
+        print(f"error={error}")
+except Exception as exc:
+    elapsed = time.monotonic() - started
+    print(f"failed elapsed={elapsed:.3f}s error={exc!r}")
+PY
+}
+
+capture_wifi_details() {
+    section "wifi details"
+    if [ -e /sys/class/net/wlan0 ]; then
+        echo "carrier=$(cat /sys/class/net/wlan0/carrier 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
+        echo "operstate=$(cat /sys/class/net/wlan0/operstate 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
+        ip -s link show wlan0 >>"$LOG" 2>&1 || true
+        if command -v iw >/dev/null 2>&1; then
+            iw dev >>"$LOG" 2>&1 || true
+            iw dev wlan0 info >>"$LOG" 2>&1 || true
+            iw dev wlan0 link >>"$LOG" 2>&1 || true
+            iw dev wlan0 get power_save >>"$LOG" 2>&1 || true
+        fi
+        if command -v wpa_cli >/dev/null 2>&1; then
+            wpa_cli -i wlan0 status >>"$LOG" 2>&1 || true
+            wpa_cli -i wlan0 list_networks >>"$LOG" 2>&1 || true
+        else
+            echo "wpa_cli missing" >>"$LOG" 2>/dev/null || true
+        fi
+        section "/etc/wpa_supplicant.conf (redacted)"
+        sed -E 's/^(\s*psk=).*/\1<redacted>/' /etc/wpa_supplicant.conf >>"$LOG" 2>&1 || true
+    else
+        echo "wlan0 missing" >>"$LOG" 2>/dev/null || true
+    fi
+}
+
+run_capture() {
+    mkdir -p /data /var/log 2>/dev/null || true
+    : >"$LOG" 2>/dev/null || true
+
+    echo "late-debug started at $(date 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
+    echo "uptime: $(cat /proc/uptime 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
+
+    append_file /proc/cmdline
+    append_file /proc/modules
+    append_file /proc/interrupts
+
+    capture_cmd uname -a
+    capture_cmd mount
+    capture_cmd blkid
+    capture_cmd df -h
+    capture_cmd ls -l /etc/init.d
+    capture_cmd ps w
+    capture_cmd python3 -c "import ssl, zlib; print(ssl.OPENSSL_VERSION); print(zlib.ZLIB_VERSION)"
+
+    capture_cmd ls -l /sys/class/net
+    capture_cmd ip link
+    capture_cmd ip addr
+    capture_cmd ip route
+    capture_wifi_details
+    try_extra_dhcp
+    capture_wifi_details
+    capture_cmd ip addr
+    capture_cmd ip route
+
+    section "device nodes"
+    ls -l /dev/fw* /dev/i2c* /dev/gpiochip* /dev/spidev* /dev/input* >>"$LOG" 2>&1 || true
+
+    section "pci devices"
+    find /sys/bus/pci/devices -maxdepth 2 -type f \( -name vendor -o -name device -o -name class \) -print -exec cat {} \; >>"$LOG" 2>&1 || true
+
+    section "usb devices"
+    find /sys/bus/usb/devices -maxdepth 2 -type f \( -name idVendor -o -name idProduct -o -name product -o -name manufacturer \) -print -exec cat {} \; >>"$LOG" 2>&1 || true
+
+    if command -v i2cdetect >/dev/null 2>&1; then
+        capture_cmd i2cdetect -l
+        for BUS in 0 1 8; do
+            [ -e "/dev/i2c-$BUS" ] || continue
+            capture_cmd i2cdetect -r -y "$BUS"
+        done
+    fi
+
+    append_file /var/log/messages
+    append_file /var/log/network.log
+    append_file /var/log/firehatd.log
+    capture_api_state
+    append_file /var/log/firehat-oled.log
+    append_file /var/log/boot-debug.log
+
+    capture_cmd dmesg
+
+    echo "late-debug finished at $(date 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
+    cp "$LOG" "$ROOT_LOG" 2>/dev/null || true
+    sync
+}
+
+case "$1" in
+    start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S99late-debug start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        # Always copy boot crumb log to /data so it's visible on the exFAT partition.
+        cp /var/log/boot-crumb.log /data/boot-crumb.log 2>/dev/null || true
+        sync
+        [ "${FIREHAT_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.firehat-debug ] || exit 0
+        (
+            sleep 60
+            run_capture
+        ) &
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac

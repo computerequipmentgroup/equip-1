@@ -1,53 +1,251 @@
 #!/bin/sh
-# Start WiFi + DHCP
+# Production network startup for Equip-1.
+# Default mode is a self-contained Wi-Fi access point for phone/laptop control.
+# Set FIREHAT_WIFI_MODE=client to use /etc/wpa_supplicant.conf instead.
+
+LOGFILE=/var/log/network.log
+HOSTAPD_PID=/var/run/hostapd-firehat.pid
+DNSMASQ_PID=/var/run/dnsmasq-firehat.pid
+HOSTAPD_CONF=/var/run/hostapd-firehat.conf
+HOSTAPD_LOG=/var/log/hostapd.log
+DNSMASQ_LOG=/var/log/dnsmasq.log
+
+WIFI_MODE="${FIREHAT_WIFI_MODE:-ap}"
+AP_IFACE="${FIREHAT_AP_IFACE:-wlan0}"
+AP_SSID="${FIREHAT_AP_SSID:-Firehat}"
+AP_PASSWORD="${FIREHAT_AP_PASSWORD:-firesecret}"
+AP_IP="${FIREHAT_AP_IP:-10.42.0.1}"
+AP_CIDR="${FIREHAT_AP_CIDR:-24}"
+AP_CHANNEL="${FIREHAT_AP_CHANNEL:-6}"
+AP_DHCP_START="${FIREHAT_AP_DHCP_START:-10.42.0.10}"
+AP_DHCP_END="${FIREHAT_AP_DHCP_END:-10.42.0.100}"
+AP_DHCP_LEASE="${FIREHAT_AP_DHCP_LEASE:-12h}"
+AP_COUNTRY="${FIREHAT_AP_COUNTRY:-}"
+
+log() {
+    mkdir -p /var/log 2>/dev/null || true
+    echo "$(date 2>/dev/null || true) $*" >>"$LOGFILE" 2>/dev/null || true
+    echo "$*"
+}
+
+redact_value() {
+    sed -E 's/(passphrase=|wpa_passphrase=|psk=).*/\1<redacted>/'
+}
+
+load_wifi_modules() {
+    load_fw_module="$(find /lib/modules -type f -name aic_load_fw.ko | head -1)"
+    wlan_module="$(find /lib/modules -type f -name aic8800_fdrv.ko | head -1)"
+
+    modprobe aic_load_fw aic_fw_path=/lib/firmware/aic8800_fw/USB >>"$LOGFILE" 2>&1 || true
+    if [ -n "$load_fw_module" ] && [ ! -d /sys/module/aic_load_fw ]; then
+        insmod "$load_fw_module" aic_fw_path=/lib/firmware/aic8800_fw/USB >>"$LOGFILE" 2>&1 || true
+    fi
+
+    sleep 1
+
+    modprobe aic8800_fdrv >>"$LOGFILE" 2>&1 || true
+    if [ -n "$wlan_module" ] && [ ! -d /sys/module/aic8800_fdrv ]; then
+        insmod "$wlan_module" >>"$LOGFILE" 2>&1 || true
+    fi
+}
+
+wait_for_iface() {
+    iface="$1"
+    for _ in $(seq 1 30); do
+        if ip link show "$iface" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+stop_network_services() {
+    if [ -f "$HOSTAPD_PID" ]; then
+        kill "$(cat "$HOSTAPD_PID")" 2>/dev/null || true
+        rm -f "$HOSTAPD_PID"
+    fi
+    if [ -f "$DNSMASQ_PID" ]; then
+        kill "$(cat "$DNSMASQ_PID")" 2>/dev/null || true
+        rm -f "$DNSMASQ_PID"
+    fi
+    killall hostapd 2>/dev/null || true
+    killall dnsmasq 2>/dev/null || true
+    killall wpa_supplicant 2>/dev/null || true
+    killall udhcpc 2>/dev/null || true
+}
+
+write_hostapd_conf() {
+    mkdir -p /var/run /var/log 2>/dev/null || true
+    {
+        echo "interface=$AP_IFACE"
+        echo "driver=nl80211"
+        echo "ssid=$AP_SSID"
+        echo "hw_mode=g"
+        echo "channel=$AP_CHANNEL"
+        echo "ieee80211n=1"
+        echo "wmm_enabled=1"
+        echo "auth_algs=1"
+        echo "ignore_broadcast_ssid=0"
+        echo "wpa=2"
+        echo "wpa_key_mgmt=WPA-PSK"
+        echo "wpa_pairwise=CCMP"
+        echo "rsn_pairwise=CCMP"
+        echo "wpa_passphrase=$AP_PASSWORD"
+        if [ -n "$AP_COUNTRY" ]; then
+            echo "country_code=$AP_COUNTRY"
+            echo "ieee80211d=1"
+        fi
+    } >"$HOSTAPD_CONF"
+    chmod 600 "$HOSTAPD_CONF" 2>/dev/null || true
+}
+
+start_ap() {
+    log "Starting WiFi AP: ssid=$AP_SSID iface=$AP_IFACE ip=$AP_IP/$AP_CIDR channel=$AP_CHANNEL"
+
+    if [ ${#AP_PASSWORD} -lt 8 ] || [ ${#AP_PASSWORD} -gt 63 ]; then
+        log "AP password must be 8..63 characters for WPA2-PSK"
+        return 1
+    fi
+    if ! command -v hostapd >/dev/null 2>&1; then
+        log "hostapd missing; cannot start AP"
+        return 1
+    fi
+    if ! command -v dnsmasq >/dev/null 2>&1; then
+        log "dnsmasq missing; cannot start AP DHCP"
+        return 1
+    fi
+
+    load_wifi_modules
+    if ! wait_for_iface "$AP_IFACE"; then
+        log "$AP_IFACE not present; cannot start AP"
+        return 1
+    fi
+
+    stop_network_services
+    ip link set "$AP_IFACE" down >>"$LOGFILE" 2>&1 || true
+    ip addr flush dev "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
+    ip addr add "$AP_IP/$AP_CIDR" dev "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
+    ip link set "$AP_IFACE" up >>"$LOGFILE" 2>&1 || true
+    iw dev "$AP_IFACE" set power_save off >>"$LOGFILE" 2>&1 || true
+
+    write_hostapd_conf
+    log "hostapd config:"
+    redact_value <"$HOSTAPD_CONF" >>"$LOGFILE" 2>&1 || true
+
+    : >"$HOSTAPD_LOG" 2>/dev/null || true
+    : >"$DNSMASQ_LOG" 2>/dev/null || true
+    if ! hostapd -B -P "$HOSTAPD_PID" -f "$HOSTAPD_LOG" "$HOSTAPD_CONF" >>"$LOGFILE" 2>&1; then
+        log "hostapd failed; see $HOSTAPD_LOG"
+        cat "$HOSTAPD_LOG" >>"$LOGFILE" 2>&1 || true
+        return 1
+    fi
+
+    dnsmasq \
+        --no-resolv \
+        --interface="$AP_IFACE" \
+        --bind-interfaces \
+        --listen-address="$AP_IP" \
+        --dhcp-range="$AP_DHCP_START,$AP_DHCP_END,$AP_DHCP_LEASE" \
+        --dhcp-option="3,$AP_IP" \
+        --dhcp-option="6,$AP_IP" \
+        --dhcp-option="114,http://$AP_IP/" \
+        --address="/equip-1/$AP_IP" \
+        --address="/equip-1.local/$AP_IP" \
+        --address="/firehat.local/$AP_IP" \
+        --address="/#/$AP_IP" \
+        --pid-file="$DNSMASQ_PID" \
+        --log-facility="$DNSMASQ_LOG" >>"$LOGFILE" 2>&1 || {
+            log "dnsmasq failed; see $DNSMASQ_LOG"
+            cat "$DNSMASQ_LOG" >>"$LOGFILE" 2>&1 || true
+            return 1
+        }
+
+    ip addr show "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
+    log "WiFi AP ready: http://$AP_IP:8000/"
+}
+
+wpa_status() {
+    if command -v wpa_cli >/dev/null 2>&1; then
+        wpa_cli -i "$AP_IFACE" status >>"$LOGFILE" 2>&1 || true
+    fi
+}
+
+wait_for_wifi_ready() {
+    for _ in $(seq 1 60); do
+        if [ "$(cat /sys/class/net/$AP_IFACE/carrier 2>/dev/null)" = "1" ]; then
+            log "$AP_IFACE carrier is up"
+            return 0
+        fi
+        if command -v wpa_cli >/dev/null 2>&1; then
+            STATE="$(wpa_cli -i "$AP_IFACE" status 2>/dev/null | sed -n 's/^wpa_state=//p' | tail -1)"
+            [ -n "$STATE" ] && log "wpa_state=$STATE"
+            if [ "$STATE" = "COMPLETED" ]; then
+                return 0
+            fi
+        fi
+        sleep 1
+    done
+    log "$AP_IFACE did not associate within 60s; starting DHCP anyway for continued background retries"
+    wpa_status
+    return 1
+}
+
+start_client() {
+    log "Starting WiFi client on $AP_IFACE"
+    load_wifi_modules
+    if ! wait_for_iface "$AP_IFACE"; then
+        log "$AP_IFACE not present; skipping WiFi client startup"
+        return 0
+    fi
+
+    stop_network_services
+    ip link set "$AP_IFACE" up >>"$LOGFILE" 2>&1 || true
+    iw dev "$AP_IFACE" set power_save off >>"$LOGFILE" 2>&1 || true
+    ip addr show "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
+    sed -E 's/^(\s*psk=).*/\1<redacted>/' /etc/wpa_supplicant.conf >>"$LOGFILE" 2>&1 || true
+
+    if ! wpa_supplicant -B -i "$AP_IFACE" -c /etc/wpa_supplicant.conf >>"$LOGFILE" 2>&1; then
+        log "wpa_supplicant failed to start"
+        return 1
+    fi
+    wait_for_wifi_ready || true
+    wpa_status
+    udhcpc -i "$AP_IFACE" -b >>"$LOGFILE" 2>&1 || true
+}
 
 case "$1" in
     start)
-        echo "Starting WiFi..."
-        (
-            load_fw_module="$(find /lib/modules -type f -name aic_load_fw.ko | head -1)"
-            wlan_module="$(find /lib/modules -type f -name aic8800_fdrv.ko | head -1)"
-
-            modprobe aic_load_fw aic_fw_path=/lib/firmware/aic8800_fw/USB 2>/dev/null || true
-            if [ -n "$load_fw_module" ] && [ ! -d /sys/module/aic_load_fw ]; then
-                insmod "$load_fw_module" aic_fw_path=/lib/firmware/aic8800_fw/USB 2>/dev/null || true
-            fi
-
-            sleep 1
-
-            modprobe aic8800_fdrv 2>/dev/null || true
-            if [ -n "$wlan_module" ] && [ ! -d /sys/module/aic8800_fdrv ]; then
-                insmod "$wlan_module" 2>/dev/null || true
-            fi
-
-            for _ in $(seq 1 30); do
-                if ip link show wlan0 >/dev/null 2>&1; then
-                    break
-                fi
-                sleep 1
-            done
-
-            if ! ip link show wlan0 >/dev/null 2>&1; then
-                echo "wlan0 not present yet; skipping WiFi startup"
-                exit 0
-            fi
-
-            ip link set wlan0 up 2>/dev/null || true
-            if ! wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf; then
-                echo "wpa_supplicant failed to start"
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S50network start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        mkdir -p /var/run /var/log 2>/dev/null || true
+        : >"$LOGFILE" 2>/dev/null || true
+        log "Starting network startup sequence mode=$WIFI_MODE"
+        case "$WIFI_MODE" in
+            ap|access_point|hotspot)
+                start_ap
+                ;;
+            client|station|sta)
+                start_client
+                ;;
+            off|disabled|none)
+                log "WiFi disabled by FIREHAT_WIFI_MODE=$WIFI_MODE"
+                ;;
+            *)
+                log "Unknown FIREHAT_WIFI_MODE=$WIFI_MODE; expected ap/client/off"
                 exit 1
-            fi
-            udhcpc -i wlan0 -b
-            # Disable power save (avoids dropped connections)
-            iw dev wlan0 set power_save off 2>/dev/null || true
-        ) &
+                ;;
+        esac
         ;;
     stop)
-        killall wpa_supplicant 2>/dev/null
-        killall udhcpc 2>/dev/null
+        stop_network_services
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
         ;;
     *)
-        echo "Usage: $0 {start|stop}"
+        echo "Usage: $0 {start|stop|restart}"
         exit 1
         ;;
 esac

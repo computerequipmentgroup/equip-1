@@ -1,0 +1,261 @@
+#!/bin/sh
+# Expose the EQUIP1 exFAT recordings partition as a USB Mass Storage gadget.
+# This is an exclusive mode: /data must be unmounted while the host computer has
+# block-level access to the partition.
+
+set -u
+
+GADGET_NAME="${FIREHAT_USB_GADGET_NAME:-firehat}"
+GADGET_DIR="/sys/kernel/config/usb_gadget/$GADGET_NAME"
+ACTIVE_FILE="/run/firehat-usb-storage.active"
+LOGFILE="/var/log/usb-storage.log"
+DATA_MNT="${FIREHAT_DATA_MNT:-/data}"
+RO="${FIREHAT_USB_STORAGE_READONLY:-0}"
+
+log() {
+    mkdir -p /var/log /run 2>/dev/null || true
+    line="$(date 2>/dev/null || true) $*"
+    echo "$line" >>"$LOGFILE" 2>/dev/null || true
+    if grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
+        echo "$line" >>"$DATA_MNT/usb-storage.log" 2>/dev/null || true
+    fi
+    echo "$*"
+}
+
+root_disk_from_rootfs() {
+    rootdev="$(blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1)"
+    case "$rootdev" in
+        *mmcblk*p[0-9]*|*nvme*n[0-9]*p[0-9]*) echo "${rootdev%p[0-9]*}" ;;
+        /dev/*[0-9]) echo "${rootdev%[0-9]*}" ;;
+        *) echo "$rootdev" ;;
+    esac
+}
+
+data_part_from_rootfs_disk() {
+    disk="$(root_disk_from_rootfs)"
+    [ -n "$disk" ] || return 1
+    case "$disk" in
+        *mmcblk*|*nvme*) echo "${disk}p2" ;;
+        /dev/?*)         echo "${disk}2" ;;
+        *)               return 1 ;;
+    esac
+}
+
+data_part() {
+    mounted="$(awk -v m="$DATA_MNT" '$2 == m { print $1; exit }' /proc/mounts 2>/dev/null || true)"
+    if [ -n "$mounted" ] && [ -b "$mounted" ]; then
+        echo "$mounted"
+        return 0
+    fi
+    if [ -s "$ACTIVE_FILE" ]; then
+        saved="$(sed -n 's/^part=//p' "$ACTIVE_FILE" | head -1)"
+        if [ -n "$saved" ] && [ -b "$saved" ]; then
+            echo "$saved"
+            return 0
+        fi
+    fi
+    data_part_from_rootfs_disk
+}
+
+blkid_field() {
+    field="$1"
+    part="$2"
+    # util-linux blkid supports `-o value -s FIELD`; BusyBox blkid may ignore
+    # those flags and print `/dev/xxx: LABEL="..." UUID="..." TYPE="..."`.
+    value="$(blkid -o value -s "$field" "$part" 2>/dev/null || true)"
+    case "$value" in
+        *"$field="*) ;;
+        *LABEL=*|*UUID=*|*TYPE=*|/dev/*:*) ;;
+        *) [ -n "$value" ] && { echo "$value"; return 0; } ;;
+    esac
+    blkid "$part" 2>/dev/null | sed -n "s/.*$field=\"\([^\"]*\)\".*/\1/p" | head -1
+}
+
+check_data_part() {
+    part="$1"
+    [ -b "$part" ] || { log "Data partition not found: $part"; return 1; }
+
+    type="$(blkid_field TYPE "$part")"
+    label="$(blkid_field LABEL "$part")"
+    if [ -n "$type" ] && [ "$type" != "exfat" ]; then
+        log "Refusing to export $part: expected exfat, got '${type:-unknown}'"
+        return 1
+    fi
+    if [ "$label" != "EQUIP1" ] && [ "${FIREHAT_USB_STORAGE_ALLOW_UNLABELED:-0}" != "1" ]; then
+        log "Refusing to export $part: expected label EQUIP1, got '${label:-none}'"
+        return 1
+    fi
+    if [ -z "$type" ]; then
+        log "Warning: blkid did not report TYPE for $part; trusting EQUIP1 label"
+    fi
+}
+
+mount_configfs() {
+    mkdir -p /sys/kernel/config 2>/dev/null || true
+    if ! grep -q ' /sys/kernel/config configfs ' /proc/mounts 2>/dev/null; then
+        mount -t configfs none /sys/kernel/config || return 1
+    fi
+}
+
+first_udc() {
+    for udc in /sys/class/udc/*; do
+        [ -e "$udc" ] || continue
+        basename "$udc"
+        return 0
+    done
+    return 1
+}
+
+serial_number() {
+    if [ -r /proc/device-tree/serial-number ]; then
+        tr -d '\000\n' </proc/device-tree/serial-number
+        return 0
+    fi
+    if [ -r /etc/machine-id ]; then
+        head -c 32 /etc/machine-id
+        return 0
+    fi
+    echo "000000000001"
+}
+
+remove_gadget() {
+    if [ ! -d "$GADGET_DIR" ]; then
+        return 0
+    fi
+    if [ -e "$GADGET_DIR/UDC" ]; then
+        echo "" >"$GADGET_DIR/UDC" 2>/dev/null || true
+    fi
+    rm -f "$GADGET_DIR/configs/c.1/mass_storage.0" 2>/dev/null || true
+    if [ -d "$GADGET_DIR/functions/mass_storage.0" ]; then
+        echo "" >"$GADGET_DIR/functions/mass_storage.0/lun.0/file" 2>/dev/null || true
+    fi
+    rmdir "$GADGET_DIR/functions/mass_storage.0" 2>/dev/null || true
+    rmdir "$GADGET_DIR/configs/c.1/strings/0x409" 2>/dev/null || true
+    rmdir "$GADGET_DIR/configs/c.1" 2>/dev/null || true
+    rmdir "$GADGET_DIR/strings/0x409" 2>/dev/null || true
+    rmdir "$GADGET_DIR" 2>/dev/null || true
+}
+
+remount_data() {
+    part="$1"
+    [ -n "$part" ] && [ -b "$part" ] || return 1
+    mkdir -p "$DATA_MNT" 2>/dev/null || true
+    if ! grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
+        mount -t exfat "$part" "$DATA_MNT" || return 1
+    fi
+    mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
+}
+
+fail_start() {
+    part="$1"
+    shift
+    msg="$*"
+    log "$msg"
+    remove_gadget
+    if remount_data "$part"; then
+        log "USB disk mode aborted; remounted $DATA_MNT"
+    else
+        log "USB disk mode aborted; could not remount $DATA_MNT"
+    fi
+    return 1
+}
+
+start_mode() {
+    part="$(data_part || true)"
+    [ -n "$part" ] || { log "Could not locate EQUIP1 partition"; return 1; }
+    check_data_part "$part" || return 1
+
+    if pidof dvgrab >/dev/null 2>&1; then
+        log "Refusing USB disk mode while dvgrab is running"
+        return 1
+    fi
+
+    mkdir -p /run /var/log "$DATA_MNT" 2>/dev/null || true
+    if [ -s "$ACTIVE_FILE" ]; then
+        log "USB disk mode already active"
+        return 0
+    fi
+
+    log "Starting USB disk mode for $part"
+    sync
+    if grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
+        if ! umount "$DATA_MNT"; then
+            log "Could not unmount $DATA_MNT; refusing to export live filesystem"
+            return 1
+        fi
+    fi
+
+    modprobe libcomposite 2>>"$LOGFILE" || true
+    mount_configfs || { fail_start "$part" "Could not mount configfs"; return 1; }
+    udc="$(first_udc || true)"
+    [ -n "$udc" ] || { fail_start "$part" "No USB device controller found under /sys/class/udc"; return 1; }
+
+    remove_gadget
+    mkdir -p "$GADGET_DIR/strings/0x409" "$GADGET_DIR/configs/c.1/strings/0x409" || { fail_start "$part" "Could not create USB gadget config"; return 1; }
+
+    # Linux Foundation vendor/product IDs commonly used by file-backed storage
+    # gadgets. They identify this as a generic USB Mass Storage device.
+    echo 0x1d6b >"$GADGET_DIR/idVendor"
+    echo 0x0104 >"$GADGET_DIR/idProduct"
+    echo 0x0200 >"$GADGET_DIR/bcdUSB"
+    echo 0x0100 >"$GADGET_DIR/bcdDevice"
+
+    serial_number >"$GADGET_DIR/strings/0x409/serialnumber"
+    echo "Equip" >"$GADGET_DIR/strings/0x409/manufacturer"
+    echo "Equip-1 Captures" >"$GADGET_DIR/strings/0x409/product"
+    echo "EQUIP1" >"$GADGET_DIR/configs/c.1/strings/0x409/configuration"
+    echo 500 >"$GADGET_DIR/configs/c.1/MaxPower"
+
+    mkdir -p "$GADGET_DIR/functions/mass_storage.0" || { fail_start "$part" "Could not create mass-storage function"; return 1; }
+    echo "$RO" >"$GADGET_DIR/functions/mass_storage.0/lun.0/ro"
+    echo 1 >"$GADGET_DIR/functions/mass_storage.0/lun.0/removable"
+    echo 0 >"$GADGET_DIR/functions/mass_storage.0/stall" 2>/dev/null || true
+    echo "$part" >"$GADGET_DIR/functions/mass_storage.0/lun.0/file" || { fail_start "$part" "Could not attach $part to USB mass-storage function"; return 1; }
+    ln -s "$GADGET_DIR/functions/mass_storage.0" "$GADGET_DIR/configs/c.1/mass_storage.0" || { fail_start "$part" "Could not link mass-storage function"; return 1; }
+
+    echo "$udc" >"$GADGET_DIR/UDC" || { fail_start "$part" "Could not bind USB gadget to $udc"; return 1; }
+    {
+        echo "part=$part"
+        echo "udc=$udc"
+        echo "readonly=$RO"
+    } >"$ACTIVE_FILE"
+    log "USB disk ready: exported $part via $udc"
+}
+
+stop_mode() {
+    part="$(data_part || true)"
+    log "Stopping USB disk mode"
+    sync
+    remove_gadget
+
+    if [ -n "$part" ] && [ -b "$part" ]; then
+        if command -v fsck.exfat >/dev/null 2>&1 && [ "${FIREHAT_USB_STORAGE_SKIP_FSCK:-0}" != "1" ]; then
+            log "Checking exFAT filesystem on $part"
+            fsck.exfat -a "$part" >>"$LOGFILE" 2>&1 || true
+        fi
+        if ! remount_data "$part"; then
+            log "Could not remount $part at $DATA_MNT"
+            return 1
+        fi
+    fi
+    rm -f "$ACTIVE_FILE"
+    log "USB disk mode stopped; $DATA_MNT mounted"
+}
+
+status_mode() {
+    if [ -s "$ACTIVE_FILE" ]; then
+        echo "active"
+        cat "$ACTIVE_FILE"
+        exit 0
+    fi
+    echo "inactive"
+    exit 1
+}
+
+case "${1:-}" in
+    start) start_mode ;;
+    stop) stop_mode ;;
+    restart) stop_mode; start_mode ;;
+    status) status_mode ;;
+    *) echo "Usage: $0 {start|stop|restart|status}"; exit 2 ;;
+esac

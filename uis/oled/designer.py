@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .display import OledFontSet, render_oled_image
-from .screens import BootScreen, DeckScreen, NetworkScreen, RecordingScreen, Screen, StorageScreen, SystemScreen
+from .screens import BootScreen, DeckScreen, NetworkScreen, RecordingScreen, Screen, StorageScreen, SystemScreen, UsbTransferScreen
 
 WIDTH = 128
 HEIGHT = 64
@@ -83,6 +83,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
         "network": {},
         "error": {"message": "Daemon offline", "detail": "Connection refused"},
     }
+    usb_transfer = _base_state("usb_transfer")
     return {
         "boot": boot,
         "ready": ready,
@@ -93,6 +94,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
         "storage_full": storage_full,
         "error": error,
         "offline": offline,
+        "usb_transfer": usb_transfer,
     }
 
 
@@ -113,9 +115,10 @@ class DesignerAppAdapter:
 
 class DesignerSession:
     def __init__(self) -> None:
-        self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), NetworkScreen(), SystemScreen()]
+        self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), UsbTransferScreen(), NetworkScreen(), SystemScreen()]
         self.boot_screen = BootScreen()
-        self.boot_duration_seconds = 2.5
+        self.boot_duration_seconds = 3.0
+        self.boot_hold_seconds = 1.1
         self.screen_index = 0
         self.scenario_name = "ready"
         self.custom_state: dict[str, Any] | None = None
@@ -193,8 +196,10 @@ class DesignerSession:
         del self.command_log[20:]
         if name == "start-recording":
             self.set_scenario("recording")
-        elif name in {"stop-recording", "clear-error"}:
+        elif name in {"stop-recording", "clear-error", "usb-storage-stop"}:
             self.set_scenario("ready")
+        elif name == "usb-storage-start":
+            self.set_scenario("usb_transfer")
         elif name.startswith("deck-"):
             if self.custom_state is None:
                 self.custom_state = self.state
@@ -231,7 +236,7 @@ HTML = """
     :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { min-height: 100vh; margin: 0; background: #000; color: #213040; display: grid; place-items: center; }
     main { max-width: 880px; margin: 0; padding: 2em 4em; display: grid; grid-template-columns: max-content 300px; align-items: center; gap: 24px; transform: scale(1.3); transform-origin: center; }
-    .previewPanel { position: relative; isolation: isolate; overflow: hidden; justify-self: center; background: radial-gradient(circle at 28% 18%, rgba(255,255,255,.30), rgba(255,255,255,.11) 34%, rgba(210,225,235,.09) 70%), linear-gradient(145deg, rgba(255,255,255,.27), rgba(170,190,205,.19)); backdrop-filter: blur(18px) saturate(115%); border-radius: 25px; padding: 3.4em 2.4em; border: 0; box-shadow: inset 0 3px 18px rgba(255,255,255,.66), inset 0 -22px 38px rgba(115,135,150,.22), 0 34px 110px rgba(82, 103, 125, .38), 0 8px 28px rgba(0,0,0,.28); width: fit-content; }
+    .previewPanel { --preview-padding-y: 3.4em; --preview-padding-x: 2.4em; position: relative; isolation: isolate; overflow: hidden; justify-self: center; background: radial-gradient(circle at 28% 18%, rgba(255,255,255,.30), rgba(255,255,255,.11) 34%, rgba(210,225,235,.09) 70%), linear-gradient(145deg, rgba(255,255,255,.27), rgba(170,190,205,.19)); backdrop-filter: blur(18px) saturate(115%); border-radius: 25px; padding: var(--preview-padding-y) var(--preview-padding-x); border: 0; box-shadow: inset 0 3px 18px rgba(255,255,255,.66), inset 0 -22px 38px rgba(115,135,150,.22), 0 34px 110px rgba(82, 103, 125, .38), 0 8px 28px rgba(0,0,0,.28); width: fit-content; }
     .controlsPanel { padding: 0; display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; }
     .previewControls { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 0.7em; }
     .previewWrap { padding: 2em 1.8em; border-radius: 1.1em; display: grid; place-items: center; background: black; }
@@ -247,6 +252,7 @@ HTML = """
     .buttons button { position: relative; overflow: hidden; width: 28px; height: 28px; padding: 0; border-radius: 8px; box-shadow: inset 0 2px 3px rgba(255,255,255,.18), inset 0 -3px 5px rgba(0,0,0,.85), 0 2px 0 rgba(255,255,255,.08); }
     .buttons button::before { content: ""; position: absolute; inset: 1px; border-radius: 6px; background: linear-gradient(135deg, rgba(255,255,255,.34), transparent 42%), repeating-radial-gradient(circle at 30% 20%, rgba(255,255,255,.18) 0 1px, transparent 1px 4px); opacity: .82; mix-blend-mode: screen; pointer-events: none; }
     .buttons button::after { content: ""; position: absolute; inset: 4px; border-radius: 4px; border: 1px solid rgba(255,255,255,.16); box-shadow: inset 0 1px 2px rgba(255,255,255,.18), inset 0 -1px 2px rgba(0,0,0,.7); pointer-events: none; }
+    .rangeControl { width: 100%; accent-color: #7ff4ff; }
     .log { min-height: 48px; max-height: 90px; overflow: auto; margin: 0; padding: 0; list-style: none; color: rgba(223, 231, 237, .55); font-size: 11px; }
     @media (max-width: 860px) { main {grid-template-columns: 1fr; padding: 18px; } }
   </style>
@@ -266,12 +272,15 @@ HTML = """
     <section class="controlsPanel">
       <select id="screen" title="Screen"></select>
       <select id="scenario" title="Scenario"></select>
+      <input id="paddingSlider" class="rangeControl" type="range" min="0" max="100" value="100" title="Panel padding" aria-label="Panel padding" />
       <textarea id="state" title="State JSON"></textarea>
       <ul id="log" class="log"></ul>
     </section>
   </main>
 <script>
 const preview = document.querySelector('#preview');
+const previewPanel = document.querySelector('.previewPanel');
+const paddingSlider = document.querySelector('#paddingSlider');
 const screenSelect = document.querySelector('#screen');
 const scenarioSelect = document.querySelector('#scenario');
 const stateBox = document.querySelector('#state');
@@ -333,6 +342,16 @@ async function pressButton(name) {
 document.querySelectorAll('[data-button]').forEach(button => button.addEventListener('click', async () => {
   await pressButton(button.dataset.button);
 }));
+
+function setPreviewPadding(value) {
+  const amount = Number(value) / 100;
+  const y = 0.4 + (3.4 - 0.4) * amount;
+  const x = 0.4 + (2.4 - 0.4) * amount;
+  previewPanel.style.setProperty('--preview-padding-y', `${y.toFixed(2)}em`);
+  previewPanel.style.setProperty('--preview-padding-x', `${x.toFixed(2)}em`);
+}
+paddingSlider.addEventListener('input', () => setPreviewPadding(paddingSlider.value));
+setPreviewPadding(paddingSlider.value);
 
 document.addEventListener('keydown', async event => {
   if (event.target.matches('input, textarea, select, button')) return;
@@ -411,6 +430,7 @@ def preview_png() -> Response:
             "state": session.state,
             "boot_elapsed": session.boot_elapsed,
             "boot_duration_seconds": session.boot_duration_seconds,
+            "boot_hold_seconds": session.boot_hold_seconds,
         },
         WIDTH,
         HEIGHT,

@@ -18,6 +18,7 @@ button {
 }
 button.primary { background: #e63946; }
 button:disabled { opacity: 0.45; }
+.button { display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; padding: 0.85rem 1rem; background: #243244; color: #f4f7fb; font-weight: 700; text-decoration: none; }
 .page { max-width: 980px; margin: 0 auto; padding: 1rem; }
 .nav { display: flex; gap: .75rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .nav-links { display: flex; gap: .75rem; }
@@ -35,4 +36,5 @@ button:disabled { opacity: 0.45; }
 .timecode { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: clamp(1.6rem, 7vw, 3rem); margin: .5rem 0 0; }
 .list { display: grid; gap: .75rem; }
 .row { display: flex; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid #243244; }
+.row .actions { align-items: center; justify-content: flex-end; margin-top: 0; }
 .error { color: #ffb4a2; }

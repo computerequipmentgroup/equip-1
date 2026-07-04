@@ -51,8 +51,9 @@ class BootScreen(Screen):
         return False
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
-        elapsed = float(context.get("boot_elapsed", time.monotonic() % 2.5))
-        duration = max(0.1, float(context.get("boot_duration_seconds", 2.5)))
+        elapsed = float(context.get("boot_elapsed", time.monotonic() % 3.0))
+        duration = max(0.1, float(context.get("boot_duration_seconds", 3.0)))
+        hold = max(0.0, float(context.get("boot_hold_seconds", 1.1)))
 
         font = _font(context, "font_boot")
         lines = ("equip-1", "firehat")
@@ -75,11 +76,11 @@ class BootScreen(Screen):
             text_positions.append((x, y, bbox))
             y_cursor += text_height + line_gap
 
-        fade_start = duration * 0.24
+        fade_start = min(hold, duration - 0.1)
         if elapsed <= fade_start:
             return
 
-        fade = max(0.0, min(1.0, (elapsed - fade_start) / (duration - fade_start)))
+        fade = max(0.0, min(1.0, (elapsed - fade_start) / max(0.1, duration - fade_start)))
         fade_eased = fade * fade * (3.0 - 2.0 * fade)
         threshold = int(fade_eased * 256)
 
@@ -177,6 +178,9 @@ class RecordingScreen(Screen):
         elif mode == "error":
             _center(draw, width, CONTENT_Y, "ERROR", font_big)
             _center(draw, width, CONTENT_Y + 30, "press clear", font_medium)
+        elif mode == "usb_transfer":
+            _center(draw, width, CONTENT_Y, "USB", font_big)
+            _center(draw, width, CONTENT_Y + 30, "disk mode", font_medium)
         else:
             _center(draw, width, CONTENT_Y, "00:00:00", font_big)
 
@@ -205,16 +209,17 @@ def _wifi_qr_payload(ssid: str, password: str) -> str:
     return f"WIFI:T:WPA;S:{_wifi_qr_escape(ssid)};P:{_wifi_qr_escape(password)};;"
 
 
-def _wifi_qr_image(ssid: str, password: str, max_size: int):
+def _qr_image(payload: str, max_size: int):
     from PIL import Image
     import qrcode
 
     qr = qrcode.QRCode(
+        version=3,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=1,
         border=1,
     )
-    qr.add_data(_wifi_qr_payload(ssid, password))
+    qr.add_data(payload)
     qr.make(fit=True)
     # OLED pixels are visible when they are white/lit.  Render the QR modules
     # as lit pixels on the black OLED background; normal black-on-white QR
@@ -224,43 +229,72 @@ def _wifi_qr_image(ssid: str, password: str, max_size: int):
     scaled_size = (image.width * scale, image.height * scale)
     if scaled_size != image.size and max(scaled_size) <= max_size:
         image = image.resize(scaled_size, Image.Resampling.NEAREST)
+    if image.size != (max_size, max_size):
+        canvas = Image.new("1", (max_size, max_size), 0)
+        canvas.paste(image, ((max_size - image.width) // 2, (max_size - image.height) // 2))
+        image = canvas
     return image
+
+
+def _wifi_qr_image(ssid: str, password: str, max_size: int):
+    return _qr_image(_wifi_qr_payload(ssid, password), max_size)
+
+
+def _url_qr_image(url: str, max_size: int):
+    return _qr_image(url, max_size)
 
 
 class NetworkScreen(Screen):
     title = "NETWORK"
 
     def __init__(self) -> None:
-        self.show_qr = False
+        self.qr_mode: str | None = None
         self._qr_key: tuple[str, str] | None = None
         self._qr_image = None
 
+    def _available_qr_modes(self, network: dict) -> list[str]:
+        modes = []
+        if network.get("ssid") and network.get("password"):
+            modes.append("wifi")
+        if network.get("url"):
+            modes.append("url")
+        return modes
+
     def on_select(self, app) -> None:
         network = (app.state or {}).get("network") or {}
-        if network.get("ssid") and network.get("password"):
-            self.show_qr = not self.show_qr
+        modes = self._available_qr_modes(network)
+        if not modes:
+            self.qr_mode = None
+            return
+        if self.qr_mode not in modes:
+            self.qr_mode = modes[0]
+            return
+        idx = modes.index(self.qr_mode)
+        self.qr_mode = modes[idx + 1] if idx + 1 < len(modes) else None
 
     def on_up(self, app) -> bool:
-        if self.show_qr:
-            self.show_qr = False
+        if self.qr_mode:
+            self.qr_mode = None
             return True
         return False
 
     def on_down(self, app) -> bool:
-        if self.show_qr:
-            self.show_qr = False
+        if self.qr_mode:
+            self.qr_mode = None
             return True
         return False
 
-    def _render_qr(self, draw, width: int, height: int, ssid: str, password: str, font) -> None:
+    def _render_qr(self, draw, width: int, height: int, label: str, key: tuple[str, str], payload: str, font) -> None:
         try:
-            key = (ssid, password)
+            qr_max_size = min(width, height)
             if self._qr_key != key or self._qr_image is None:
-                self._qr_image = _wifi_qr_image(ssid, password, min(width, height))
+                self._qr_image = _qr_image(payload, qr_max_size)
                 self._qr_key = key
             x = (width - self._qr_image.width) // 2
             y = (height - self._qr_image.height) // 2
             draw.image.paste(self._qr_image, (x, y))
+            draw.rectangle((0, 0, 20, LINE_HEIGHT - 1), fill=0)
+            draw.text((0, 0), label, font=font, fill=255)
         except Exception:
             draw.text((0, HEADER_Y), "NETWORK", font=font, fill=255)
             draw.text((0, CONTENT_Y), "QR unavailable", font=font, fill=255)
@@ -272,11 +306,15 @@ class NetworkScreen(Screen):
         font = _font(context, "font_medium")
         ssid = network.get("ssid")
         password = network.get("password")
-        if self.show_qr and ssid and password:
-            self._render_qr(draw, width, height, str(ssid), str(password), font)
+        url = network.get("url")
+        if self.qr_mode == "wifi" and ssid and password:
+            self._render_qr(draw, width, height, "AP", ("wifi", str(ssid), str(password)), _wifi_qr_payload(str(ssid), str(password)), font)
+            return
+        if self.qr_mode == "url" and url:
+            self._render_qr(draw, width, height, "URL", ("url", str(url)), str(url), font)
             return
 
-        self.show_qr = False
+        self.qr_mode = None
         draw.text((0, HEADER_Y), "NETWORK", font=font, fill=255)
         if ssid:
             draw.text((0, CONTENT_Y), f"WiFi: {ssid}"[:21], font=font, fill=255)
@@ -372,20 +410,70 @@ class ErrorScreen(Screen):
         draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "Press to clear", font=font, fill=255)
 
 
+class UsbTransferScreen(Screen):
+    title = "TRANSFER"
+
+    def on_select(self, app) -> None:
+        state = app.state or {}
+        if state.get("mode") == "usb_transfer":
+            app.command("usb-storage-stop")
+        elif state.get("mode") != "recording":
+            app.command("usb-storage-start")
+
+    def can_navigate(self, state: dict[str, Any]) -> bool:
+        return state.get("mode") != "recording"
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        state = context.get("state") or {}
+        mode = state.get("mode", "offline")
+        font = _font(context, "font_medium")
+        draw.text((0, HEADER_Y), "TRANSFER", font=font, fill=255)
+        if mode == "usb_transfer":
+            draw.text((0, CONTENT_Y), "Disk active", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "Eject on PC", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "Press stop", font=font, fill=255)
+        elif mode == "recording":
+            draw.text((0, CONTENT_Y), "Stop recording", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "before USB", font=font, fill=255)
+        elif mode == "offline":
+            draw.text((0, CONTENT_Y), "Daemon offline", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "USB unavailable", font=font, fill=255)
+        elif mode == "error":
+            error = state.get("error") or {}
+            detail = str(error.get("detail") or error.get("message") or "Command failed")
+            draw.text((0, CONTENT_Y), "USB failed", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), detail[:20], font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "See SD log", font=font, fill=255)
+        else:
+            draw.text((0, CONTENT_Y), "Native file copy", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "Press to expose", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "EQUIP1 disk", font=font, fill=255)
+
+
 class SystemScreen(Screen):
     title = "SYSTEM"
 
     def __init__(self) -> None:
-        self.options = ["Shutdown", "Reboot", "Cancel"]
         self.selected = 0
         self.confirming = False
 
+    def _options(self, state: dict[str, Any]) -> list[str]:
+        if state.get("mode") == "usb_transfer":
+            return ["USB Stop", "Cancel"]
+        return ["USB Disk", "Shutdown", "Reboot", "Cancel"]
+
     def on_select(self, app) -> None:
+        options = self._options(app.state or {})
+        self.selected = min(self.selected, len(options) - 1)
         if not self.confirming:
             self.confirming = True
             return
-        choice = self.options[self.selected]
-        if choice == "Shutdown":
+        choice = options[self.selected]
+        if choice == "USB Disk":
+            app.command("usb-storage-start")
+        elif choice == "USB Stop":
+            app.command("usb-storage-stop")
+        elif choice == "Shutdown":
             app.command("shutdown")
         elif choice == "Reboot":
             app.command("reboot")
@@ -395,22 +483,32 @@ class SystemScreen(Screen):
     def on_up(self, app) -> bool:
         if not self.confirming:
             return False
-        self.selected = (self.selected - 1) % len(self.options)
+        options = self._options(app.state or {})
+        self.selected = (self.selected - 1) % len(options)
         return True
 
     def on_down(self, app) -> bool:
         if not self.confirming:
             return False
-        self.selected = (self.selected + 1) % len(self.options)
+        options = self._options(app.state or {})
+        self.selected = (self.selected + 1) % len(options)
         return True
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
+        state = context.get("state") or {}
+        options = self._options(state)
+        self.selected = min(self.selected, len(options) - 1)
         font = _font(context, "font_medium")
         draw.text((0, HEADER_Y), "SYSTEM", font=font, fill=255)
         if not self.confirming:
-            draw.text((0, CONTENT_Y), "Press for power", font=font, fill=255)
-            draw.text((0, CONTENT_Y + LINE_HEIGHT), "Shutdown/Reboot", font=font, fill=255)
+            if state.get("mode") == "usb_transfer":
+                draw.text((0, CONTENT_Y), "USB disk active", font=font, fill=255)
+                draw.text((0, CONTENT_Y + LINE_HEIGHT), "Eject then stop", font=font, fill=255)
+            else:
+                draw.text((0, CONTENT_Y), "USB disk / power", font=font, fill=255)
+                draw.text((0, CONTENT_Y + LINE_HEIGHT), "Press to choose", font=font, fill=255)
             return
-        for i, option in enumerate(self.options):
-            prefix = "> " if i == self.selected else "  "
-            draw.text((0, CONTENT_Y + i * LINE_HEIGHT), prefix + option, font=font, fill=255)
+        start = max(0, min(self.selected - 1, max(0, len(options) - 3)))
+        for row, option_index in enumerate(range(start, min(start + 3, len(options)))):
+            prefix = "> " if option_index == self.selected else "  "
+            draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + options[option_index], font=font, fill=255)

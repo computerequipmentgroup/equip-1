@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .service import CommandError, FirehatDaemon
@@ -40,6 +41,14 @@ async def get_storage() -> dict:
 @app.get("/api/captures")
 async def get_captures() -> list[dict]:
     return await daemon.list_captures()
+
+
+@app.get("/api/captures/{capture_name}/download")
+async def download_capture(capture_name: str) -> FileResponse:
+    path = await daemon.capture_path(capture_name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Capture not found")
+    return FileResponse(str(path), media_type="application/octet-stream", filename=path.name)
 
 
 @app.post("/api/commands/start-recording")
@@ -105,6 +114,22 @@ async def shutdown_host() -> dict:
 @app.post("/api/commands/reboot")
 async def reboot_host() -> dict:
     return await daemon.reboot_host()
+
+
+@app.post("/api/commands/usb-storage-start")
+async def usb_storage_start() -> dict:
+    try:
+        return await daemon.start_usb_storage()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/usb-storage-stop")
+async def usb_storage_stop() -> dict:
+    try:
+        return await daemon.stop_usb_storage()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.websocket("/api/events")

@@ -1,0 +1,25 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "rockchip,rk3528";
+
+    /* Enable SPI0 on the Rock 2F 40-pin header. Header pin 19 is SPI0_MOSI
+       (GPIO4_B2), used as the data line for the Firehat 3-pixel RGB chain. */
+    fragment@0 {
+        target = <&spi0>;
+        __overlay__ {
+            status = "okay";
+            pinctrl-names = "default";
+            pinctrl-0 = <&spi0_pins>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+
+            firehat_leds: spidev@0 {
+                compatible = "rohm,dh2228fv";
+                reg = <0>;
+                spi-max-frequency = <2400000>;
+            };
+        };
+    };
+};

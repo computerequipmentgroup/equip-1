@@ -1,0 +1,23 @@
+#!/bin/sh
+# Bring up loopback before local services use 127.0.0.1.
+
+case "$1" in
+    start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S10loopback start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        if command -v ip >/dev/null 2>&1; then
+            ip link set lo up 2>/dev/null || true
+            ip addr show dev lo 2>/dev/null | grep -q '127\.0\.0\.1' || \
+                ip addr add 127.0.0.1/8 dev lo 2>/dev/null || true
+            ip -6 addr show dev lo 2>/dev/null | grep -q '::1' || \
+                ip -6 addr add ::1/128 dev lo 2>/dev/null || true
+        elif command -v ifconfig >/dev/null 2>&1; then
+            ifconfig lo 127.0.0.1 up 2>/dev/null || true
+        fi
+        ;;
+    stop)
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac

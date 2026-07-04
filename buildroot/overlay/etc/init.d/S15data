@@ -10,6 +10,7 @@ DATA_MNT="/data"
 
 case "$1" in
     start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S15data start" >> /var/log/boot-crumb.log 2>/dev/null || true
         # Boot disk = the disk holding the rootfs (found via its filesystem label).
         DISK=$(blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1 | sed 's/p[0-9]*$//')
         PART=""
@@ -20,10 +21,25 @@ case "$1" in
 
         mkdir -p "$DATA_MNT"
         if [ -n "$PART" ] && [ -b "$PART" ]; then
-            grep -q " $DATA_MNT exfat" /proc/mounts || \
-                mount -t exfat "$PART" "$DATA_MNT" 2>/dev/null
+            if ! grep -q " $DATA_MNT exfat" /proc/mounts 2>/dev/null; then
+                # Mount with a background timeout. A corrupted exFAT from an
+                # unclean shutdown can cause mount to hang indefinitely.
+                mount -t exfat "$PART" "$DATA_MNT" 2>/dev/null &
+                MOUNT_PID=$!
+                (
+                    sleep 15
+                    kill "$MOUNT_PID" 2>/dev/null || true
+                    echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) exfat mount timeout after 15s" >> /var/log/boot-crumb.log 2>/dev/null || true
+                ) &
+                TIMER_PID=$!
+                wait "$MOUNT_PID" 2>/dev/null || true
+                kill "$TIMER_PID" 2>/dev/null || true
+            fi
         fi
         mkdir -p "$DATA_MNT/captures"
+        # Sync any existing boot crumb log to the data partition.
+        cp /var/log/boot-crumb.log "$DATA_MNT/boot-crumb.log" 2>/dev/null || true
+        sync
         ;;
     stop)
         umount "$DATA_MNT" 2>/dev/null

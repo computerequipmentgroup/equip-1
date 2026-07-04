@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -148,4 +149,30 @@ class ConsoleDisplay:
 def make_display(board: BoardConfig):
     if os.environ.get("FIREHAT_OLED_MOCK") == "1":
         return ConsoleDisplay()
-    return OledDisplay(board)
+
+    settle_delay = float(os.environ.get("FIREHAT_OLED_SETTLE_DELAY", "0"))
+    attempts = int(os.environ.get("FIREHAT_OLED_INIT_ATTEMPTS", "120"))
+    delay = float(os.environ.get("FIREHAT_OLED_INIT_DELAY", "1"))
+    if settle_delay > 0:
+        print(f"Waiting {settle_delay:g}s before OLED init", flush=True)
+        time.sleep(settle_delay)
+
+    last_error: OSError | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            display = OledDisplay(board)
+            if attempt > 1:
+                print(f"OLED init succeeded on attempt {attempt}/{attempts}", flush=True)
+            return display
+        except OSError as exc:
+            last_error = exc
+            print(
+                f"OLED init failed on i2c-{board.i2c_port} address 0x{board.oled_address:02x} "
+                f"(attempt {attempt}/{attempts}): {exc}",
+                flush=True,
+            )
+            if attempt < attempts:
+                time.sleep(delay)
+
+    assert last_error is not None
+    raise last_error

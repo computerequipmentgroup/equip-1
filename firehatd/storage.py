@@ -48,6 +48,22 @@ class StorageManager:
                     "path": str(path),
                     "size_bytes": stat.st_size,
                     "modified_at": stat.st_mtime,
+                    "download_url": f"/api/captures/{path.name}/download",
                 }
             )
         return captures
+
+    def capture_path(self, name: str) -> Path | None:
+        if not name or name != Path(name).name:
+            return None
+        path = self.capture_dir / name
+        try:
+            resolved_dir = self.capture_dir.resolve()
+            resolved_path = path.resolve()
+        except OSError:
+            return None
+        if resolved_path.parent != resolved_dir:
+            return None
+        if not resolved_path.is_file() or resolved_path.suffix.lower() not in CAPTURE_EXTENSIONS:
+            return None
+        return resolved_path

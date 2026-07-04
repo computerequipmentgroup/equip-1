@@ -14,6 +14,7 @@ const load = async () => {
 
 const sizeGb = (bytes: number) => `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 const modified = (seconds: number) => new Date(seconds * 1000).toLocaleString()
+const downloadUrl = (capture: any) => `${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}/download`
 
 onMounted(load)
 </script>
@@ -31,7 +32,10 @@ onMounted(load)
           <strong>{{ capture.name }}</strong>
           <div class="label">{{ modified(capture.modified_at) }}</div>
         </div>
-        <span>{{ sizeGb(capture.size_bytes) }}</span>
+        <div class="actions">
+          <span>{{ sizeGb(capture.size_bytes) }}</span>
+          <a class="button" :href="downloadUrl(capture)" :download="capture.name">Download</a>
+        </div>
       </div>
     </div>
     <p v-else>No captures yet.</p>

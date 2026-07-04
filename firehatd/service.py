@@ -38,6 +38,7 @@ class FirehatDaemon:
         self.host_url_port = host_url_port
         self._lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
+        self._usb_storage_task: asyncio.Task | None = None
         self._last_state: dict[str, Any] | None = None
         self.error: ErrorState | None = None
 
@@ -82,6 +83,8 @@ class FirehatDaemon:
             self._poll_recorder_unlocked()
             if self.recorder.state.active:
                 raise CommandError("Already recording")
+            if self._usb_transfer_active():
+                raise CommandError("USB disk mode is active")
             probe = self.camera.probe()
             if not probe.connected:
                 raise CommandError("No DV camera detected")
@@ -134,18 +137,76 @@ class FirehatDaemon:
         await self.events.publish({"type": "state", "state": state})
         return state
 
+    async def _prepare_power_transition(self) -> None:
+        async with self._lock:
+            if self.recorder.state.active:
+                await asyncio.to_thread(self.recorder.stop)
+            self._poll_recorder_unlocked()
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
+
     async def shutdown_host(self) -> dict[str, str]:
+        await self._prepare_power_transition()
         command = ["shutdown", "-h", "now"] if os.geteuid() == 0 else ["sudo", "shutdown", "-h", "now"]
         subprocess.Popen(command)
         return {"status": "scheduled"}
 
     async def reboot_host(self) -> dict[str, str]:
+        await self._prepare_power_transition()
         command = ["reboot"] if os.geteuid() == 0 else ["sudo", "reboot"]
         subprocess.Popen(command)
         return {"status": "scheduled"}
 
+    async def start_usb_storage(self) -> dict[str, Any]:
+        if self._usb_transfer_active():
+            return await self.publish_state()
+        if self._usb_storage_task and not self._usb_storage_task.done():
+            return await self.publish_state()
+        self._usb_storage_task = asyncio.create_task(self._run_usb_storage_start())
+        return await self.publish_state()
+
+    async def _run_usb_storage_start(self) -> None:
+        try:
+            await self._prepare_power_transition()
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["/usr/sbin/firehat-usb-storage", "start"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "USB disk mode failed").strip()
+                self.error = ErrorState(message="USB disk failed", detail=detail)
+            else:
+                self.error = None
+        except Exception as exc:
+            self.error = ErrorState(message="USB disk failed", detail=str(exc))
+        await self.publish_state()
+
+    async def stop_usb_storage(self) -> dict[str, Any]:
+        result = await asyncio.to_thread(
+            subprocess.run,
+            ["/usr/sbin/firehat-usb-storage", "stop"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "USB disk stop failed").strip()
+            self.error = ErrorState(message="USB disk stop failed", detail=detail)
+            raise CommandError(detail)
+        self.error = None
+        return await self.publish_state()
+
     async def list_captures(self) -> list[dict]:
         return await asyncio.to_thread(self.storage.list_captures)
+
+    async def capture_path(self, name: str) -> Path | None:
+        return await asyncio.to_thread(self.storage.capture_path, name)
 
     async def _monitor_loop(self) -> None:
         while True:
@@ -168,14 +229,36 @@ class FirehatDaemon:
         if error:
             self.error = ErrorState(message="Recording stopped", detail=error)
 
+    def _usb_transfer_active(self) -> bool:
+        return Path("/run/firehat-usb-storage.active").exists()
+
     def _snapshot_unlocked(self) -> DaemonState:
         self._poll_recorder_unlocked()
+        usb_transfer_active = self._usb_transfer_active()
         probe = self.camera.probe()
-        storage = self.storage.snapshot()
+        if usb_transfer_active:
+            storage = StorageState(
+                capture_dir=str(self.capture_dir),
+                total_bytes=0,
+                used_bytes=0,
+                free_bytes=0,
+                recording_minutes_available=0,
+            )
+        else:
+            snapshot = self.storage.snapshot()
+            storage = StorageState(
+                capture_dir=snapshot.capture_dir,
+                total_bytes=snapshot.total_bytes,
+                used_bytes=snapshot.used_bytes,
+                free_bytes=snapshot.free_bytes,
+                recording_minutes_available=snapshot.recording_minutes_available,
+            )
         deck = self.deck.probe(camera_connected=probe.connected)
 
         recording_active = self.recorder.state.active
-        if self.error:
+        if usb_transfer_active:
+            mode = "usb_transfer"
+        elif self.error:
             mode = "error"
         elif recording_active:
             mode = "recording"
@@ -200,13 +283,7 @@ class FirehatDaemon:
                 elapsed_seconds=self.recorder.elapsed_seconds(),
                 pid=self.recorder.state.pid,
             ),
-            storage=StorageState(
-                capture_dir=storage.capture_dir,
-                total_bytes=storage.total_bytes,
-                used_bytes=storage.used_bytes,
-                free_bytes=storage.free_bytes,
-                recording_minutes_available=storage.recording_minutes_available,
-            ),
+            storage=storage,
             network=get_network_state(self.host_url_port),
             deck=DeckState(
                 available=deck.available,

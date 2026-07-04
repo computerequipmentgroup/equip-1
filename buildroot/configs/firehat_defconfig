@@ -32,7 +32,7 @@ BR2_TARGET_UBOOT_BOARD_DEFCONFIG="generic-rk3528"
 BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES="u-boot.config"
 BR2_TARGET_UBOOT_NEEDS_DTC=y
 BR2_TARGET_UBOOT_USE_BINMAN=y
-BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.20.elf ROCKCHIP_TPL=RKBIN_PATH/bin/rk35/rk3528_ddr_1056MHz_v1.11.bin"
+BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.21.elf ROCKCHIP_TPL=RKBIN_PATH/bin/rk35/rk3528_ddr_1056MHz_v1.13.bin"
 # Filesystem — ~1GB system partition; recordings live on a separate exFAT
 # partition created from the rest of the SD on first boot (see S15data).
 BR2_TARGET_ROOTFS_EXT2=y
@@ -47,11 +47,18 @@ BR2_TARGET_GENERIC_HOSTNAME="equip-1"
 BR2_TARGET_GENERIC_ISSUE="Equip-1 DV Recorder"
 BR2_TARGET_GENERIC_ROOT_PASSWD="equip1"
 BR2_TARGET_GENERIC_PASSWD_SHA512=y
-BR2_SYSTEM_DHCP="wlan0"
+# Wi-Fi/AP/DHCP is handled by overlay/etc/init.d/S50network.
 
-# Python 3 (for os.py application)
+# Python 3 (for application services)
 BR2_PACKAGE_PYTHON3=y
 BR2_PACKAGE_PYTHON3_PIP=y
+# uvicorn imports Python's ssl module at startup; Buildroot omits _ssl
+# unless this is enabled.
+BR2_PACKAGE_PYTHON3_SSL=y
+# websockets imports Python's zlib module for permessage-deflate support;
+# Buildroot omits the extension unless this is enabled.
+BR2_PACKAGE_PYTHON3_ZLIB=y
+BR2_PACKAGE_OPENSSL=y
 BR2_PACKAGE_ZLIB=y
 
 # I2C tools (for OLED display)
@@ -62,9 +69,15 @@ BR2_PACKAGE_GPTFDISK=y
 BR2_PACKAGE_EXFATPROGS=y
 BR2_PACKAGE_PARTED=y
 
-# WiFi
+# WiFi + production access point
+BR2_PACKAGE_HOSTAPD=y
+BR2_PACKAGE_HOSTAPD_DRIVER_NL80211=y
+BR2_PACKAGE_HOSTAPD_CLI=y
+BR2_PACKAGE_DNSMASQ=y
+BR2_PACKAGE_DNSMASQ_DHCP=y
 BR2_PACKAGE_WPA_SUPPLICANT=y
 BR2_PACKAGE_WPA_SUPPLICANT_NL80211=y
+BR2_PACKAGE_WPA_SUPPLICANT_CLI=y
 BR2_PACKAGE_DROPBEAR=y
 BR2_PACKAGE_LINUX_FIRMWARE=y
 BR2_PACKAGE_LINUX_FIRMWARE_WIRELESS=y

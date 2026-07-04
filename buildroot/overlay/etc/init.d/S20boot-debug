@@ -1,0 +1,79 @@
+#!/bin/sh
+# No-UART boot/debug breadcrumbs.
+# Writes progress to /data/boot-debug.log, which should be readable from the
+# exFAT EQUIP1 partition after powering off and moving the SD card to a laptop.
+
+LOG=/data/boot-debug.log
+ROOT_LOG=/var/log/boot-debug.log
+STAMP=/tmp/boot-debug.started
+
+log_msg() {
+    mkdir -p /data /var/log 2>/dev/null || true
+    MSG="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) $*"
+    echo "$MSG" >> "$LOG" 2>/dev/null || true
+    echo "$MSG" >> "$ROOT_LOG" 2>/dev/null || true
+}
+
+try_ethernet_dhcp() {
+    for IFACE in eth0 end0 enp0s0 enp1s0 en*; do
+        [ -e "/sys/class/net/$IFACE" ] || continue
+        [ "$IFACE" = "lo" ] && continue
+        case "$IFACE" in
+            wlan*) continue ;;
+        esac
+
+        log_msg "bringing up $IFACE"
+        ip link set "$IFACE" up >>"$LOG" 2>&1 || true
+
+        # Non-blocking DHCP attempt. S50network still owns Wi-Fi later.
+        if command -v udhcpc >/dev/null 2>&1; then
+            log_msg "starting DHCP on $IFACE"
+            udhcpc -i "$IFACE" -n -q -t 5 >>"$LOG" 2>&1 || \
+                log_msg "DHCP failed on $IFACE"
+        fi
+    done
+}
+
+case "$1" in
+    start)
+        # Always write a minimal breadcrumb so we can tell init reached S20.
+        mkdir -p /var/log 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> /var/log/boot-crumb.log 2>/dev/null || true
+
+        [ "${FIREHAT_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.firehat-debug ] || exit 0
+        [ -e "$STAMP" ] && exit 0
+        touch "$STAMP" 2>/dev/null || true
+        mkdir -p /data /var/log 2>/dev/null || true
+        : >"$LOG" 2>/dev/null || true
+        : >"$ROOT_LOG" 2>/dev/null || true
+        (
+            # Give S15data a moment to mount /data if the block device is slow.
+            sleep 2
+            log_msg "==== boot-debug start ===="
+            log_msg "uname: $(uname -a 2>/dev/null)"
+            log_msg "cmdline: $(cat /proc/cmdline 2>/dev/null)"
+            log_msg "mounts:"
+            mount >>"$LOG" 2>&1 || true
+            log_msg "block devices:"
+            blkid >>"$LOG" 2>&1 || true
+            log_msg "network links before DHCP:"
+            ip addr >>"$LOG" 2>&1 || true
+            try_ethernet_dhcp
+            log_msg "network links after DHCP:"
+            ip addr >>"$LOG" 2>&1 || true
+            log_msg "routes:"
+            ip route >>"$LOG" 2>&1 || true
+            log_msg "init scripts present:"
+            ls -l /etc/init.d >>"$LOG" 2>&1 || true
+            sync
+            log_msg "==== boot-debug done ===="
+        ) &
+        ;;
+    stop)
+        log_msg "boot-debug stop"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}"
+        exit 1
+        ;;
+esac
