@@ -7,7 +7,7 @@ from .api_client import FirehatApiClient
 from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
-from .leds import make_boot_leds
+from .leds import STATUS_GAME, STATUS_READY, STATUS_RECORDING, make_boot_leds
 from .screens import BootScreen, DeckScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
 
 
@@ -115,13 +115,25 @@ class OledApp:
             self.buzzer.beep()
             self.current_screen.on_select(self)
 
+    def _status_led_color(self):
+        mode = (self.state or {}).get("mode")
+        if mode == "recording":
+            return STATUS_RECORDING
+        if isinstance(self.current_screen, GameScreen):
+            return STATUS_GAME
+        if mode == "idle":
+            return STATUS_READY
+        return None
+
     def render(self) -> None:
         boot_elapsed = time.monotonic() - self.boot_started_at
         if self.is_booting:
             self.leds.boot_marquee(boot_elapsed)
-        elif not self._boot_leds_cleared:
-            self.leds.clear()
-            self._boot_leds_cleared = True
+        else:
+            if not self._boot_leds_cleared:
+                self.leds.clear()
+                self._boot_leds_cleared = True
+            self.leds.set_status(self._status_led_color())
         screen = self.boot_screen if self.is_booting else self.current_screen
         fallback_state = {"mode": "boot"} if self.is_booting else {"mode": "offline"}
         self.display.render(
