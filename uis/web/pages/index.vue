@@ -56,6 +56,14 @@ const mockPreviewSrc = computed(
 const previewSrc = computed(() =>
   mock.value ? mockPreviewSrc.value : `${config.public.apiBase}/preview.mjpg?t=${previewNonce.value}`
 )
+// Absolute URL so it resolves inside a separate player app, not just the
+// dashboard's own origin. The daemon serves both the web UI and the stream.
+const streamUrl = computed(() => {
+  const base = import.meta.client ? window.location.origin : ''
+  return `${base}${config.public.apiBase}/stream.mkv`
+})
+// Displayed without the scheme so the URL reads cleaner; the href keeps it.
+const streamUrlLabel = computed(() => streamUrl.value.replace(/^https?:\/\//, ''))
 const previewStatus = computed(() => {
   if (previewing.value) return 'Live'
   if (mode.value === 'recording') return 'Recording'
@@ -296,7 +304,11 @@ onMounted(async () => {
       <p class="hero-subtitle" v-if="mode === 'usb_transfer'">
         Eject EQUIP1 on your computer, then stop USB disk mode.
       </p>
-      <p class="hero-subtitle" v-else>Unmount local storage and present the captures partition as a USB disk.</p>
+      <p class="hero-subtitle" v-else>
+        Watch at
+        <a class="stream-link" :href="streamUrl">{{ streamUrlLabel }}</a
+        >, or mount to present the captures partition as a USB disk.
+      </p>
       <div class="actions single">
         <button
           v-if="mode !== 'usb_transfer'"

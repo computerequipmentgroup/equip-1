@@ -85,6 +85,17 @@ async def live_preview() -> StreamingResponse:
     return StreamingResponse(stream, media_type=daemon.preview_media_type())
 
 
+@app.get("/api/stream.mkv")
+async def live_mkv_stream() -> StreamingResponse:
+    # Raw DV remuxed into Matroska for VLC and other network players. Open
+    # http://<device-ip>:8000/api/stream.mkv in VLC's "Open Network Stream".
+    try:
+        stream = await daemon.mkv_stream()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return StreamingResponse(stream, media_type=daemon.mkv_media_type())
+
+
 @app.post("/api/commands/start-recording")
 async def start_recording() -> dict:
     try:

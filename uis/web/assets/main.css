@@ -502,6 +502,12 @@ button:disabled {
   line-height: 1.32;
   margin-top: 0.6rem;
 }
+.stream-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
 .actions {
   display: grid;
   gap: 0.55rem;
@@ -509,6 +515,7 @@ button:disabled {
   margin-top: 1rem;
 }
 .actions.single {
+  grid-auto-rows: 1fr;
   grid-template-columns: 1fr;
 }
 .actions.three {

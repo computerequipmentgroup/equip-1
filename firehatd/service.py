@@ -273,10 +273,19 @@ class FirehatDaemon:
         return await asyncio.to_thread(self.storage.thumbnail_path, name)
 
     async def preview_stream(self):
+        return await self._acquire_stream("mjpeg")
+
+    async def mkv_stream(self):
+        return await self._acquire_stream("mkv")
+
+    async def _acquire_stream(self, kind: str):
+        # MJPEG (browser preview) and Matroska (VLC/network players) share the
+        # single FireWire claim and the preview busy-lock, so only one consumer
+        # is ever active at a time.
         state = await self.snapshot()
-        self._debug_log(f"preview requested mode={state['mode']} connected={state['camera']['connected']}", verbose=True)
+        self._debug_log(f"{kind} stream requested mode={state['mode']} connected={state['camera']['connected']}", verbose=True)
         if state["mode"] == "usb_transfer":
-            raise CommandError("Live preview is not available in USB disk mode")
+            raise CommandError("Live streaming is not available in USB disk mode")
         if not state["camera"]["connected"]:
             raise CommandError("No DV camera detected")
         try:
@@ -284,17 +293,22 @@ class FirehatDaemon:
                 active_seconds = self.preview.active_seconds
                 stale_after = float(os.environ.get("FIREHAT_PREVIEW_STALE_SECONDS", "12"))
                 if active_seconds < stale_after:
-                    raise CommandError(f"Preview already active ({active_seconds:.1f}s)")
-                self._debug_log(f"preview active for {active_seconds:.1f}s; stopping stale preview")
+                    raise CommandError(f"Stream already active ({active_seconds:.1f}s)")
+                self._debug_log(f"stream active for {active_seconds:.1f}s; stopping stale stream")
                 try:
                     await asyncio.wait_for(self.preview.stop(), timeout=4.0)
-                    self._debug_log("stale preview stopped before new preview")
+                    self._debug_log("stale stream stopped before new stream")
                 except asyncio.TimeoutError:
-                    self._debug_log("stale preview stop timed out; starting new preview anyway")
-            if state["mode"] == "recording":
-                prefix = state["recording"].get("filename")
-                if not prefix:
-                    raise CommandError("Recording file is not ready")
+                    self._debug_log("stale stream stop timed out; starting new stream anyway")
+            recording = state["mode"] == "recording"
+            prefix = state["recording"].get("filename") if recording else None
+            if recording and not prefix:
+                raise CommandError("Recording file is not ready")
+            if kind == "mkv":
+                if recording:
+                    return self.preview.stream_mkv_recording(self.capture_dir, prefix)
+                return self.preview.stream_mkv()
+            if recording:
                 return self.preview.stream_recording(self.capture_dir, prefix)
             return self.preview.stream()
         except Exception as exc:
@@ -302,6 +316,9 @@ class FirehatDaemon:
 
     def preview_media_type(self) -> str:
         return self.preview.media_type
+
+    def mkv_media_type(self) -> str:
+        return self.preview.mkv_media_type
 
     def _debug_log(self, message: str, verbose: bool = False) -> None:
         if verbose and os.environ.get("FIREHAT_DEBUG_LOGS") != "1" and not Path("/data/.firehat-debug").exists():

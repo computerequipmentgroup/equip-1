@@ -8,7 +8,7 @@ from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
 from .leds import make_boot_leds
-from .screens import BootScreen, DeckScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
+from .screens import BootScreen, DeckScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
 
 
 class OledApp:
@@ -22,12 +22,12 @@ class OledApp:
         self.buttons = make_buttons(self.board)
         self.buzzer = make_buzzer(self.board)
         self.leds = make_boot_leds()
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen()]
+        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen(), GameScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
         self.boot_duration_seconds = float(os.environ.get("FIREHAT_BOOT_DURATION_SECONDS", "3.0"))
         self.boot_hold_seconds = float(os.environ.get("FIREHAT_BOOT_HOLD_SECONDS", "1.1"))
-        self.frame_interval = float(os.environ.get("FIREHAT_OLED_FRAME_INTERVAL", str(1 / 30)))
+        self.frame_interval = float(os.environ.get("FIREHAT_OLED_FRAME_INTERVAL", str(1 / 60)))
         self.current_screen_idx = 0
         self.state: dict | None = None
         self._last_state_fetch = 0.0

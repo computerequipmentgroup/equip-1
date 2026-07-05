@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import random
 import time
+from pathlib import Path
 from typing import Any
 
 from .formatting import bytes_gb, hhmmss, percent
@@ -47,8 +50,48 @@ def _right(draw, width: int, y: int, text: str, font, fill: int = 255) -> None:
 class BootScreen(Screen):
     title = "BOOT"
 
+    def __init__(self) -> None:
+        # The morph target and the text-pixel layout are constant for the whole
+        # boot animation, so cache them instead of recomputing every frame.
+        self._target_cache: tuple[tuple[int, int, str], list[tuple[int, int]]] | None = None
+        self._text_cache: tuple[tuple[int, int], list[tuple[int, int, int]]] | None = None
+
     def can_navigate(self, state: dict[str, Any]) -> bool:
         return False
+
+    def _target_pixels(self, width: int, height: int, context: dict, mode: str) -> list[tuple[int, int]]:
+        key = (width, height, mode)
+        if self._target_cache is not None and self._target_cache[0] == key:
+            return self._target_cache[1]
+
+        from PIL import Image, ImageDraw
+
+        from .display import OledDraw
+
+        target = Image.new("1", (width, height))
+        target_state = context.get("state") or {}
+        if mode == "boot":
+            target_state = {"mode": "idle", "recording": {"active": False, "elapsed_seconds": 0}, "storage": {"recording_minutes_available": 0}}
+        RecordingScreen().render(OledDraw(target, ImageDraw.Draw(target)), width, height, {**context, "state": target_state})
+        pixels = list(target.getdata())
+        lit = [(i % width, i // width) for i, value in enumerate(pixels) if value]
+        self._target_cache = (key, lit)
+        return lit
+
+    def _text_pixels(self, width: int, height: int, text_positions, image) -> list[tuple[int, int, int]]:
+        key = (width, height)
+        if self._text_cache is not None and self._text_cache[0] == key:
+            return self._text_cache[1]
+        candidates: list[tuple[int, int, int]] = []
+        for x, y, bbox in text_positions:
+            for py in range(max(0, y + bbox[1]), min(height, y + bbox[3])):
+                for px in range(max(0, x + bbox[0]), min(width, x + bbox[2])):
+                    if image is not None and not image.getpixel((px, py)):
+                        continue
+                    seed = (px * 1103515245 + py * 12345 + 97) & 0x7FFFFFFF
+                    candidates.append((px, py, seed))
+        self._text_cache = (key, candidates)
+        return candidates
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
         elapsed = float(context.get("boot_elapsed", time.monotonic() % 3.0))
@@ -84,31 +127,17 @@ class BootScreen(Screen):
         fade_eased = fade * fade * (3.0 - 2.0 * fade)
         threshold = int(fade_eased * 256)
 
-        from PIL import Image, ImageDraw
-
-        from .display import OledDraw
-
-        target = Image.new("1", (width, height))
-        target_state = context.get("state") or {}
-        if target_state.get("mode") == "boot":
-            target_state = {"mode": "idle", "recording": {"active": False, "elapsed_seconds": 0}, "storage": {"recording_minutes_available": 0}}
-        RecordingScreen().render(OledDraw(target, ImageDraw.Draw(target)), width, height, {**context, "state": target_state})
-        target_pixels = [(px, py) for py in range(height) for px in range(width) if target.getpixel((px, py))]
+        target_mode = (context.get("state") or {}).get("mode") or "boot"
+        target_pixels = self._target_pixels(width, height, context, target_mode)
 
         image = getattr(draw, "image", None)
-        text_pixels: list[tuple[int, int, int]] = []
-        for x, y, bbox in text_positions:
-            for py in range(max(0, y + bbox[1]), min(height, y + bbox[3])):
-                for px in range(max(0, x + bbox[0]), min(width, x + bbox[2])):
-                    if image is not None and not image.getpixel((px, py)):
-                        continue
-                    seed = (px * 1103515245 + py * 12345 + 97) & 0x7FFFFFFF
-                    if seed % 256 < threshold:
-                        text_pixels.append((px, py, seed))
+        candidates = self._text_pixels(width, height, text_positions, image)
 
         drift = min(1.0, fade_eased * 1.08)
         morph_visibility = int((1.0 - max(0.0, min(1.0, (fade - 0.78) / 0.22))) * 256)
-        for px, py, seed in text_pixels:
+        for px, py, seed in candidates:
+            if seed % 256 >= threshold:
+                continue
             draw.point((px, py), fill=0)
             if not target_pixels or ((seed >> 8) % 256) >= morph_visibility:
                 continue
@@ -512,3 +541,184 @@ class SystemScreen(Screen):
         for row, option_index in enumerate(range(start, min(start + 3, len(options)))):
             prefix = "> " if option_index == self.selected else "  "
             draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + options[option_index], font=font, fill=255)
+
+
+class GameScreen(Screen):
+    """A one-button Flappy Cat clone. It autostarts and auto-restarts after a
+    crash; select flaps, up/down navigate away."""
+
+    title = "HAVE FUN"
+
+    # Play field: the header row is reserved for the title and high score.
+    TOP = 13
+    BIRD_X = 30
+    BIRD_R = 3
+    GRAVITY = 175.0
+    FLAP_V = -54.0
+    PIPE_W = 8
+    PIPE_GAP = 24
+    PIPE_SPEED = 34.0
+    PIPE_SPACING = 60
+    STEP = 1.0 / 60.0
+    RESTART_DELAY = 1.2  # seconds the crash is shown before auto-restart
+
+    def __init__(self) -> None:
+        self.mode = "playing"  # playing | dead
+        self.score = 0
+        self.highscore = self._load_highscore()
+        self.bird_y = 38.0
+        self.bird_vy = 0.0
+        self.pipes: list[dict[str, float | bool]] = []
+        self._last_t: float | None = None
+        self._accum = 0.0
+        self._dead_at = 0.0
+        self._start(64)
+
+    # --- persistence -----------------------------------------------------
+    def _highscore_path(self) -> Path | None:
+        override = os.environ.get("FIREHAT_FLAPPY_HIGHSCORE_FILE")
+        return Path(override) if override else None
+
+    def _load_highscore(self) -> int:
+        path = self._highscore_path()
+        if path is None:
+            return 0
+        try:
+            return int(path.read_text().strip() or "0")
+        except (OSError, ValueError):
+            return 0
+
+    def _save_highscore(self) -> None:
+        path = self._highscore_path()
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(str(self.highscore))
+        except OSError:
+            pass
+
+    # --- input -----------------------------------------------------------
+    def _flap(self) -> None:
+        self.bird_vy = self.FLAP_V
+
+    def _start(self, height: int) -> None:
+        self.mode = "playing"
+        self.score = 0
+        self.bird_y = (self.TOP + height) / 2.0
+        self.bird_vy = self.FLAP_V
+        self.pipes = []
+        self._accum = 0.0
+        self._last_t = None
+        self._spawn_pipe(128.0)
+
+    def on_select(self, app) -> None:
+        if self.mode == "playing":
+            self._flap()
+
+    def on_up(self, app) -> bool:
+        return False
+
+    def on_down(self, app) -> bool:
+        return False
+
+    # --- simulation ------------------------------------------------------
+    def _spawn_pipe(self, x: float) -> None:
+        half = self.PIPE_GAP // 2
+        center = random.randint(self.TOP + half + 2, 63 - half - 2)
+        self.pipes.append({"x": x, "center": float(center), "scored": False})
+
+    def _step(self, dt: float, height: int) -> None:
+        ground = height - 1
+        self.bird_vy += self.GRAVITY * dt
+        self.bird_y += self.bird_vy * dt
+
+        # The ceiling clamps the bird; only the ground and pipes are fatal.
+        if self.bird_y - self.BIRD_R < self.TOP:
+            self.bird_y = self.TOP + self.BIRD_R
+            self.bird_vy = 0.0
+        if self.bird_y + self.BIRD_R >= ground:
+            self.bird_y = ground - self.BIRD_R
+            self._game_over()
+            return
+
+        for pipe in self.pipes:
+            pipe["x"] = float(pipe["x"]) - self.PIPE_SPEED * dt
+            if not pipe["scored"] and float(pipe["x"]) + self.PIPE_W < self.BIRD_X:
+                pipe["scored"] = True
+                self.score += 1
+
+        self.pipes = [p for p in self.pipes if float(p["x"]) + self.PIPE_W > 0]
+        if not self.pipes or float(self.pipes[-1]["x"]) <= 128 - self.PIPE_SPACING:
+            self._spawn_pipe(128.0)
+
+        half = self.PIPE_GAP / 2.0
+        for pipe in self.pipes:
+            px = float(pipe["x"])
+            if self.BIRD_X + self.BIRD_R > px and self.BIRD_X - self.BIRD_R < px + self.PIPE_W:
+                gap_top = float(pipe["center"]) - half
+                gap_bottom = float(pipe["center"]) + half
+                if self.bird_y - self.BIRD_R < gap_top or self.bird_y + self.BIRD_R > gap_bottom:
+                    self._game_over()
+                    return
+
+    def _game_over(self) -> None:
+        self.mode = "dead"
+        self._dead_at = time.monotonic()
+        if self.score > self.highscore:
+            self.highscore = self.score
+            self._save_highscore()
+
+    def _advance(self, height: int) -> None:
+        now = time.monotonic()
+        # Hold the crash on screen briefly, then auto-restart.
+        if self.mode == "dead":
+            if now - self._dead_at >= self.RESTART_DELAY:
+                self._start(height)
+            else:
+                self._last_t = now
+                return
+        dt = 0.0 if self._last_t is None else now - self._last_t
+        self._last_t = now
+        if self.mode != "playing":
+            return
+        self._accum = min(0.25, self._accum + dt)
+        while self._accum >= self.STEP:
+            self._step(self.STEP, height)
+            self._accum -= self.STEP
+            if self.mode != "playing":
+                break
+
+    # --- rendering -------------------------------------------------------
+    def _draw_cat(self, draw, y: float) -> None:
+        x = self.BIRD_X
+        cy = int(y)
+        # Pointed ears at the top corners of the head.
+        draw.polygon([(x - 3, cy - 2), (x - 1, cy - 2), (x - 3, cy - 5)], fill=255)
+        draw.polygon([(x + 1, cy - 2), (x + 3, cy - 2), (x + 3, cy - 5)], fill=255)
+        # Head/body blob and a tail curling off the back.
+        draw.ellipse((x - 3, cy - 2, x + 3, cy + 3), fill=255)
+        draw.line((x - 3, cy + 2, x - 6, cy), fill=255)
+        draw.line((x - 6, cy, x - 6, cy - 2), fill=255)
+        draw.point((x + 1, cy), fill=0)  # eye, facing the direction of travel
+
+    def _draw_pipes(self, draw, height: int) -> None:
+        half = self.PIPE_GAP // 2
+        for pipe in self.pipes:
+            x = int(float(pipe["x"]))
+            center = int(float(pipe["center"]))
+            draw.rectangle((x, self.TOP, x + self.PIPE_W - 1, center - half), fill=255)
+            draw.rectangle((x, center + half, x + self.PIPE_W - 1, height - 1), fill=255)
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        font = _font(context, "font_medium")
+        self._advance(height)
+
+        self._draw_pipes(draw, height)
+        self._draw_cat(draw, self.bird_y)
+
+        # Header: title left, high score right, on a cleared strip.
+        draw.rectangle((0, 0, width - 1, self.TOP - 2), fill=0)
+        draw.text((0, HEADER_Y), self.title, font=font, fill=255)
+        _right(draw, width, HEADER_Y, f"HI:{self.highscore}", font)
+        _center(draw, width, HEADER_Y, str(self.score), font)

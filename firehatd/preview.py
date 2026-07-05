@@ -17,11 +17,17 @@ class PreviewSourceError(RuntimeError):
 
 
 class MjpegPreview:
-    """On-demand DV preview as browser-compatible MJPEG.
+    """On-demand DV streaming to browsers and network players.
 
-    Idle preview uses dvgrab as the FireWire reader and pipes raw DV into
-    ffmpeg. Recording preview follows the growing capture file and feeds it to
-    ffmpeg through stdin, so dvgrab remains the only FireWire reader/writer.
+    The browser preview is served as MJPEG; VLC and other network players are
+    served as remuxed Matroska (raw DV copied into an MKV container, no
+    transcode -- MPEG-TS cannot carry DV as a recognized codec). Both flavours
+    share the same FireWire claim and the same busy-lock, so only one consumer
+    is ever active at a time.
+
+    Idle streams use dvgrab as the FireWire reader and pipe raw DV into ffmpeg.
+    Recording streams follow the growing capture file and feed it to ffmpeg
+    through stdin, so dvgrab remains the only FireWire reader/writer.
     """
 
     boundary = "firehatframe"
@@ -29,8 +35,13 @@ class MjpegPreview:
     def __init__(self, ffmpeg_bin: str = "ffmpeg", dvgrab_bin: str = "dvgrab"):
         self.ffmpeg_bin = ffmpeg_bin
         self.dvgrab_bin = dvgrab_bin
-        self.fps = os.environ.get("FIREHAT_PREVIEW_FPS", "6")
-        self.size = os.environ.get("FIREHAT_PREVIEW_SIZE", "320:240")
+        # Idle preview defaults aim for VLC-like fidelity: full-rate, full-size
+        # MJPEG off the same DV source. Every value stays env-overridable so the
+        # feed can be dialed back on the device if CPU/bandwidth demands it.
+        self.fps = os.environ.get("FIREHAT_PREVIEW_FPS", "25")
+        self.size = os.environ.get("FIREHAT_PREVIEW_SIZE", "720:540")
+        # Recording preview stays modest -- dvgrab is writing the capture to disk
+        # at the same time, so the browser feed yields CPU to the recorder.
         self.recording_fps = os.environ.get("FIREHAT_PREVIEW_RECORDING_FPS", "2")
         self.recording_size = os.environ.get("FIREHAT_PREVIEW_RECORDING_SIZE", "480:360")
         self.video_filter = os.environ.get(
@@ -41,7 +52,7 @@ class MjpegPreview:
             "FIREHAT_PREVIEW_RECORDING_FILTER",
             f"fps={self.recording_fps},scale={self.recording_size}:force_original_aspect_ratio=increase,crop={self.recording_size},setsar=1",
         )
-        self.quality = os.environ.get("FIREHAT_PREVIEW_QUALITY", "8")
+        self.quality = os.environ.get("FIREHAT_PREVIEW_QUALITY", "4")
         self.recording_quality = os.environ.get("FIREHAT_PREVIEW_RECORDING_QUALITY", "5")
         self.recording_lag_bytes = int(os.environ.get("FIREHAT_PREVIEW_RECORDING_LAG_BYTES", "60000000"))
         self._active = False
@@ -52,6 +63,10 @@ class MjpegPreview:
     @property
     def media_type(self) -> str:
         return f"multipart/x-mixed-replace; boundary={self.boundary}"
+
+    @property
+    def mkv_media_type(self) -> str:
+        return "video/x-matroska"
 
     @property
     def active(self) -> bool:
@@ -70,12 +85,26 @@ class MjpegPreview:
         self._active_since = time.monotonic()
         return self._stream_dvgrab_claimed()
 
+    def stream_mkv(self) -> AsyncIterator[bytes]:
+        if self._active:
+            raise PreviewBusyError("Preview is already active")
+        self._active = True
+        self._active_since = time.monotonic()
+        return self._stream_dvgrab_claimed(mkv=True)
+
     def stream_recording(self, capture_dir: Path, prefix: str) -> AsyncIterator[bytes]:
         if self._active:
             raise PreviewBusyError("Preview is already active")
         self._active = True
         self._active_since = time.monotonic()
         return self._stream_recording_claimed(capture_dir, prefix)
+
+    def stream_mkv_recording(self, capture_dir: Path, prefix: str) -> AsyncIterator[bytes]:
+        if self._active:
+            raise PreviewBusyError("Preview is already active")
+        self._active = True
+        self._active_since = time.monotonic()
+        return self._stream_recording_claimed(capture_dir, prefix, mkv=True)
 
     async def stop(self) -> None:
         await asyncio.gather(
@@ -88,13 +117,15 @@ class MjpegPreview:
         self._active = False
         self._active_since = None
 
-    async def _stream_dvgrab_claimed(self) -> AsyncIterator[bytes]:
+    async def _stream_dvgrab_claimed(self, mkv: bool = False) -> AsyncIterator[bytes]:
         dvgrab_proc: asyncio.subprocess.Process | None = None
         ffmpeg_proc: asyncio.subprocess.Process | None = None
         tasks: list[asyncio.Task] = []
         frames = 0
+        label = "idle MKV stream" if mkv else "idle preview"
+        unit = "chunk" if mkv else "frame"
         try:
-            self._log("starting idle preview via dvgrab stdout", always=True)
+            self._log(f"starting {label} via dvgrab stdout", always=True)
             dvgrab_proc = await asyncio.create_subprocess_exec(
                 self.dvgrab_bin,
                 "-buffers",
@@ -108,7 +139,7 @@ class MjpegPreview:
             )
             self._source_process = dvgrab_proc
             ffmpeg_proc = await asyncio.create_subprocess_exec(
-                *self._ffmpeg_stdin_command(realtime=False),
+                *self._ffmpeg_stdin_command(realtime=False, mkv=mkv),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -123,11 +154,11 @@ class MjpegPreview:
                 tasks.append(asyncio.create_task(self._pump_stream(dvgrab_proc.stdout, ffmpeg_proc.stdin)))
             if ffmpeg_proc.stdout is None:
                 return
-            async for frame in self._jpeg_frames(ffmpeg_proc.stdout):
+            async for payload in self._emit(ffmpeg_proc.stdout, mkv):
                 frames += 1
                 if frames == 1:
-                    self._log("idle preview emitted first frame", always=True)
-                yield self._multipart_frame(frame)
+                    self._log(f"{label} emitted first {unit}", always=True)
+                yield payload
         finally:
             for task in tasks:
                 task.cancel()
@@ -141,17 +172,19 @@ class MjpegPreview:
             self._active_since = None
             dvgrab_rc = dvgrab_proc.returncode if dvgrab_proc is not None else "n/a"
             ffmpeg_rc = ffmpeg_proc.returncode if ffmpeg_proc is not None else "n/a"
-            self._log(f"idle preview stopped frames={frames} dvgrab_rc={dvgrab_rc} ffmpeg_rc={ffmpeg_rc}", always=True)
+            self._log(f"{label} stopped {unit}s={frames} dvgrab_rc={dvgrab_rc} ffmpeg_rc={ffmpeg_rc}", always=True)
 
-    async def _stream_recording_claimed(self, capture_dir: Path, prefix: str) -> AsyncIterator[bytes]:
+    async def _stream_recording_claimed(self, capture_dir: Path, prefix: str, mkv: bool = False) -> AsyncIterator[bytes]:
         proc: asyncio.subprocess.Process | None = None
         tasks: list[asyncio.Task] = []
         frames = 0
+        label = "recording MKV stream" if mkv else "recording preview"
+        unit = "chunk" if mkv else "frame"
         try:
             path = await self._wait_for_recording_file(capture_dir, prefix)
-            self._log(f"starting recording preview from {path.name}", always=True)
+            self._log(f"starting {label} from {path.name}", always=True)
             proc = await asyncio.create_subprocess_exec(
-                *self._ffmpeg_stdin_command(realtime=True, recording=True),
+                *self._ffmpeg_stdin_command(realtime=True, recording=True, mkv=mkv),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -164,11 +197,11 @@ class MjpegPreview:
                 tasks.append(asyncio.create_task(self._pump_growing_file(path, proc.stdin)))
             if proc.stdout is None:
                 return
-            async for frame in self._jpeg_frames(proc.stdout):
+            async for payload in self._emit(proc.stdout, mkv):
                 frames += 1
                 if frames == 1:
-                    self._log("recording preview emitted first frame", always=True)
-                yield self._multipart_frame(frame)
+                    self._log(f"{label} emitted first {unit}", always=True)
+                yield payload
         finally:
             for task in tasks:
                 task.cancel()
@@ -178,13 +211,35 @@ class MjpegPreview:
             self._active = False
             self._active_since = None
             ffmpeg_rc = proc.returncode if proc is not None else "n/a"
-            self._log(f"recording preview stopped frames={frames} ffmpeg_rc={ffmpeg_rc}", always=True)
+            self._log(f"{label} stopped {unit}s={frames} ffmpeg_rc={ffmpeg_rc}", always=True)
 
-    def _ffmpeg_stdin_command(self, realtime: bool, recording: bool = False) -> list[str]:
+    def _emit(self, stream: asyncio.StreamReader, mkv: bool) -> AsyncIterator[bytes]:
+        if mkv:
+            return self._raw_chunks(stream)
+        return self._multipart_mjpeg(stream)
+
+    async def _raw_chunks(self, stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
+        while True:
+            chunk = await stream.read(64 * 1024)
+            if not chunk:
+                return
+            yield chunk
+
+    async def _multipart_mjpeg(self, stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
+        async for frame in self._jpeg_frames(stream):
+            yield self._multipart_frame(frame)
+
+    def _ffmpeg_stdin_command(self, realtime: bool, recording: bool = False, mkv: bool = False) -> list[str]:
         command = [self.ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
         if realtime:
             command.append("-re")
-        command.extend(["-f", "dv", "-i", "pipe:0", *self._output_args(recording=recording)])
+        command.extend(["-f", "dv", "-i", "pipe:0"])
+        if mkv:
+            # Copy the DV stream straight into a live Matroska container (no
+            # transcode) -- cheap on the RK3528 and played natively by VLC.
+            command.extend(["-c", "copy", "-f", "matroska", "pipe:1"])
+        else:
+            command.extend(self._output_args(recording=recording))
         return command
 
     def _output_args(self, recording: bool = False) -> list[str]:
