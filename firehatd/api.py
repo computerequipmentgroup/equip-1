@@ -43,12 +43,31 @@ async def get_captures() -> list[dict]:
     return await daemon.list_captures()
 
 
+@app.post("/api/time")
+async def sync_time(payload: dict) -> dict:
+    now = payload.get("now")
+    if now is None:
+        raise HTTPException(status_code=400, detail="Missing 'now'")
+    try:
+        return await daemon.sync_time(float(now))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid 'now'") from exc
+
+
 @app.get("/api/captures/{capture_name}/download")
 async def download_capture(capture_name: str) -> FileResponse:
     path = await daemon.capture_path(capture_name)
     if path is None:
         raise HTTPException(status_code=404, detail="Capture not found")
     return FileResponse(str(path), media_type="application/octet-stream", filename=path.name)
+
+
+@app.get("/api/captures/{capture_name}/thumbnail")
+async def capture_thumbnail(capture_name: str) -> FileResponse:
+    path = await daemon.thumbnail_path(capture_name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return FileResponse(str(path), media_type="image/jpeg")
 
 
 @app.post("/api/commands/start-recording")
@@ -136,6 +155,7 @@ async def usb_storage_stop() -> dict:
 async def events(websocket: WebSocket) -> None:
     await websocket.accept()
     await websocket.send_json({"type": "state", "state": await daemon.snapshot()})
+    await websocket.send_json({"type": "captures", "captures": await daemon.list_captures()})
     try:
         async with daemon.events.subscribe() as queue:
             while True:

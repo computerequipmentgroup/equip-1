@@ -180,7 +180,7 @@ class RecordingScreen(Screen):
             _center(draw, width, CONTENT_Y + 30, "press clear", font_medium)
         elif mode == "usb_transfer":
             _center(draw, width, CONTENT_Y, "USB", font_big)
-            _center(draw, width, CONTENT_Y + 30, "disk mode", font_medium)
+            _center(draw, width, CONTENT_Y + 30, "transfer mode", font_medium)
         else:
             _center(draw, width, CONTENT_Y, "00:00:00", font_big)
 

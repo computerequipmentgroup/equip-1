@@ -18,6 +18,7 @@ BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSOR
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
 FORCE_PYTHON_CLEAN="${FORCE_PYTHON_CLEAN:-0}"
 FORCE_PYTHON_DEPS="${FORCE_PYTHON_DEPS:-0}"
+FORCE_FFMPEG_CLEAN="${FORCE_FFMPEG_CLEAN:-0}"
 CORRUPT_KERNEL_THRESHOLD="${CORRUPT_KERNEL_THRESHOLD:-50}"
 
 mkdir -p "$OUTPUT_DIR"
@@ -104,6 +105,30 @@ exec > >(tee -a "$LOG") 2>&1
 echo ""
 echo "========== Build started: $(date) =========="
 
+# Build the web UI into a static bundle on the host before staging it.
+# firehatd serves the captured files and dashboard from uis/web/.output/public,
+# so a fresh `nuxt generate` must run before the overlay is assembled — the
+# Buildroot build itself only copies the generated output, it does not build it.
+WEB_DIR="$ROOT_DIR/uis/web"
+if [ -f "$WEB_DIR/package.json" ]; then
+    if ! command -v npm >/dev/null 2>&1; then
+        echo "ERROR: npm is required to build the web UI but was not found on PATH."
+        exit 1
+    fi
+    echo "==> Building web UI (nuxt generate)..."
+    if [ -d "$WEB_DIR/node_modules" ]; then
+        ( cd "$WEB_DIR" && npm install --no-audit --no-fund )
+    else
+        ( cd "$WEB_DIR" && npm ci --no-audit --no-fund )
+    fi
+    ( cd "$WEB_DIR" && rm -rf .output .nuxt && npm run generate )
+    if [ ! -f "$WEB_DIR/.output/public/index.html" ]; then
+        echo "ERROR: nuxt generate did not produce .output/public/index.html"
+        exit 1
+    fi
+    echo "==> Web UI built: $WEB_DIR/.output/public"
+fi
+
 # Copy application source into overlay.
 # The desktop repo remains the source of truth; this stages a runnable copy at
 # /opt/firehat for the Buildroot image.
@@ -156,11 +181,13 @@ run_build_attempt() {
     local attempt_force_kernel_clean="$FORCE_KERNEL_CLEAN"
     local attempt_force_python_clean="$FORCE_PYTHON_CLEAN"
     local attempt_force_python_deps="$FORCE_PYTHON_DEPS"
+    local attempt_force_ffmpeg_clean="$FORCE_FFMPEG_CLEAN"
 
     if [ "$attempt" -gt 1 ]; then
         attempt_force_kernel_clean=1
         attempt_force_python_clean=1
         attempt_force_python_deps=1
+        attempt_force_ffmpeg_clean=1
     fi
 
     echo "==> Syncing files to VM for attempt $attempt/$MAX_HEAL_ATTEMPTS..."
@@ -184,6 +211,7 @@ run_build_attempt() {
         FORCE_KERNEL_CLEAN="$attempt_force_kernel_clean" \
         FORCE_PYTHON_CLEAN="$attempt_force_python_clean" \
         FORCE_PYTHON_DEPS="$attempt_force_python_deps" \
+        FORCE_FFMPEG_CLEAN="$attempt_force_ffmpeg_clean" \
         CORRUPT_KERNEL_THRESHOLD="$CORRUPT_KERNEL_THRESHOLD" \
         bash -s <<'BUILDSSH'
 set -euo pipefail
@@ -193,6 +221,7 @@ BUILD_JOBS="${BUILD_JOBS:-4}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
 FORCE_PYTHON_CLEAN="${FORCE_PYTHON_CLEAN:-0}"
 FORCE_PYTHON_DEPS="${FORCE_PYTHON_DEPS:-0}"
+FORCE_FFMPEG_CLEAN="${FORCE_FFMPEG_CLEAN:-0}"
 CORRUPT_KERNEL_THRESHOLD="${CORRUPT_KERNEL_THRESHOLD:-50}"
 
 hash_file() {
@@ -305,10 +334,32 @@ else
     echo "ERROR: BR2_PACKAGE_DNSMASQ is not enabled after olddefconfig"
     exit 1
 fi
+if grep -q '^BR2_PACKAGE_FFMPEG_SWSCALE=y$' .config; then
+    echo "==> Config verified: ffmpeg swscale enabled"
+else
+    echo "ERROR: BR2_PACKAGE_FFMPEG_SWSCALE is not enabled after olddefconfig"
+    exit 1
+fi
 
 if [ "$FORCE_PYTHON_CLEAN" = "1" ]; then
     echo "==> Cleaning Python build so SSL/zlib extensions are rebuilt..."
     make python3-dirclean 2>/dev/null || true
+fi
+
+# Buildroot does not rebuild a package when only a Config.in option changes, so a
+# previously-built ffmpeg can linger with swscale disabled (breaking thumbnail
+# generation). Self-heal by forcing a clean when the built binary disagrees with
+# the current .config.
+FFMPEG_TARGET_BIN=output/target/usr/bin/ffmpeg
+if grep -q '^BR2_PACKAGE_FFMPEG_SWSCALE=y$' .config \
+    && [ -f "$FFMPEG_TARGET_BIN" ] \
+    && grep -a -q -- '--disable-swscale' "$FFMPEG_TARGET_BIN"; then
+    echo "==> ffmpeg was built without swscale but config now enables it; forcing rebuild."
+    FORCE_FFMPEG_CLEAN=1
+fi
+if [ "$FORCE_FFMPEG_CLEAN" = "1" ]; then
+    echo "==> Cleaning ffmpeg build so swscale is rebuilt..."
+    make ffmpeg-dirclean 2>/dev/null || true
 fi
 
 if [ "$FORCE_KERNEL_CLEAN" = "1" ]; then

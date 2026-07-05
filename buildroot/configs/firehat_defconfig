@@ -90,6 +90,12 @@ BR2_PACKAGE_LIBRAW1394=y
 # dvgrab for DV capture
 BR2_PACKAGE_DVGRAB=y
 
+# ffmpeg extracts JPEG thumbnails from finished DV captures for the web UI.
+# swscale is required for the `scale` filter and DV->JPEG pixel-format
+# conversion; without it thumbnail generation fails silently.
+BR2_PACKAGE_FFMPEG=y
+BR2_PACKAGE_FFMPEG_SWSCALE=y
+
 # GPIO/peripheral access
 BR2_PACKAGE_LIBGPIOD=y
 

@@ -28,12 +28,14 @@ class FirehatDaemon:
         host_url_port: int = 8000,
         dvgrab_bin: str = "dvgrab",
         dvcont_bin: str = "dvcont",
+        ffmpeg_bin: str = "ffmpeg",
     ):
         self.capture_dir = Path(capture_dir).expanduser()
         self.storage = StorageManager(self.capture_dir)
         self.camera = FireWireCameraDetector()
         self.deck = DvcontDeckController(dvcont_bin=dvcont_bin)
         self.recorder = DvgrabRecorder(self.capture_dir, dvgrab_bin=dvgrab_bin)
+        self.ffmpeg_bin = ffmpeg_bin
         self.events = EventBus()
         self.host_url_port = host_url_port
         self._lock = asyncio.Lock()
@@ -48,7 +50,8 @@ class FirehatDaemon:
         port = int(os.environ.get("FIREHAT_PORT", "8000"))
         dvgrab_bin = os.environ.get("FIREHAT_DVGRAB_BIN", "dvgrab")
         dvcont_bin = os.environ.get("FIREHAT_DVCONT_BIN", "dvcont")
-        return cls(capture_dir=capture_dir, host_url_port=port, dvgrab_bin=dvgrab_bin, dvcont_bin=dvcont_bin)
+        ffmpeg_bin = os.environ.get("FIREHAT_FFMPEG_BIN", "ffmpeg")
+        return cls(capture_dir=capture_dir, host_url_port=port, dvgrab_bin=dvgrab_bin, dvcont_bin=dvcont_bin, ffmpeg_bin=ffmpeg_bin)
 
     async def start_monitor(self) -> None:
         if self._monitor_task is None:
@@ -105,11 +108,18 @@ class FirehatDaemon:
         return state
 
     async def stop_recording(self) -> dict[str, Any]:
+        thumbnail_prefix: str | None = None
         async with self._lock:
             if self.recorder.state.active:
+                thumbnail_prefix = self.recorder.state.filename
                 await asyncio.to_thread(self.recorder.stop)
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
+        if thumbnail_prefix:
+            # Push the freshly finished capture immediately, then push again once
+            # its thumbnail has been rendered, so the web UI updates live.
+            await self.publish_captures()
+            asyncio.create_task(self._generate_thumbnails(thumbnail_prefix))
         return state
 
     async def rescan_camera(self) -> dict[str, Any]:
@@ -129,6 +139,30 @@ class FirehatDaemon:
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         return state
+
+    async def sync_time(self, epoch_seconds: float) -> dict[str, Any]:
+        # The device has no RTC and no network time, so it boots at the epoch and
+        # captures get stamped 1980 (FAT default). A connected browser knows the
+        # real time, so let it bootstrap the clock -- but only while the system
+        # clock still looks unset, so a client with a wrong clock can't move an
+        # already-correct one.
+        applied = False
+        current = time.time()
+        # 1_600_000_000 == 2020-09-13; anything earlier means the clock is unset.
+        if current < 1_600_000_000 and epoch_seconds > 1_600_000_000:
+            try:
+                await asyncio.to_thread(self._apply_system_time, epoch_seconds)
+                applied = True
+            except Exception as exc:
+                print(f"Time sync failed: {exc}", flush=True)
+        return {"applied": applied, "now": time.time()}
+
+    def _apply_system_time(self, epoch_seconds: float) -> None:
+        stamp = datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        # BusyBox- and GNU-compatible: set the UTC system clock, then persist to
+        # the RTC if one exists (harmless no-op otherwise).
+        subprocess.run(["date", "-u", "-s", stamp], check=False, timeout=10)
+        subprocess.run(["hwclock", "-w"], check=False, timeout=10)
 
     async def clear_error(self) -> dict[str, Any]:
         async with self._lock:
@@ -205,8 +239,26 @@ class FirehatDaemon:
     async def list_captures(self) -> list[dict]:
         return await asyncio.to_thread(self.storage.list_captures)
 
+    async def publish_captures(self) -> list[dict]:
+        captures = await asyncio.to_thread(self.storage.list_captures)
+        await self.events.publish({"type": "captures", "captures": captures})
+        return captures
+
     async def capture_path(self, name: str) -> Path | None:
         return await asyncio.to_thread(self.storage.capture_path, name)
+
+    async def thumbnail_path(self, name: str) -> Path | None:
+        return await asyncio.to_thread(self.storage.thumbnail_path, name)
+
+    async def _generate_thumbnails(self, prefix: str) -> None:
+        try:
+            await asyncio.to_thread(self.storage.generate_thumbnails_for_prefix, prefix, self.ffmpeg_bin)
+        except Exception as exc:
+            print(f"Thumbnail generation failed for {prefix}: {exc}", flush=True)
+        finally:
+            # Re-publish so the web UI picks up the new thumbnail (or the capture
+            # even if thumbnailing failed).
+            await self.publish_captures()
 
     async def _monitor_loop(self) -> None:
         while True:
