@@ -24,7 +24,7 @@ case "$1" in
             if ! grep -q " $DATA_MNT exfat" /proc/mounts 2>/dev/null; then
                 # Mount with a background timeout. A corrupted exFAT from an
                 # unclean shutdown can cause mount to hang indefinitely.
-                mount -t exfat "$PART" "$DATA_MNT" 2>/dev/null &
+                mount -t exfat -o noatime,sync,dirsync "$PART" "$DATA_MNT" 2>/dev/null &
                 MOUNT_PID=$!
                 (
                     sleep 15

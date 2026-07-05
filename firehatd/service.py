@@ -13,7 +13,8 @@ from .deck import DeckCommand, DeckControlError, DvcontDeckController
 from .events import EventBus
 from .models import CameraState, DaemonState, DeckState, ErrorState, RecordingState, StorageState
 from .network import get_network_state
-from .recorder import DvgrabRecorder, RecorderError
+from .preview import MjpegPreview
+from .recorder import RecordingTracker
 from .storage import StorageManager
 
 
@@ -34,8 +35,9 @@ class FirehatDaemon:
         self.storage = StorageManager(self.capture_dir)
         self.camera = FireWireCameraDetector()
         self.deck = DvcontDeckController(dvcont_bin=dvcont_bin)
-        self.recorder = DvgrabRecorder(self.capture_dir, dvgrab_bin=dvgrab_bin)
+        self.recorder = RecordingTracker(self.capture_dir, dvgrab_bin=dvgrab_bin)
         self.ffmpeg_bin = ffmpeg_bin
+        self.preview = MjpegPreview(ffmpeg_bin=ffmpeg_bin, dvgrab_bin=dvgrab_bin)
         self.events = EventBus()
         self.host_url_port = host_url_port
         self._lock = asyncio.Lock()
@@ -70,6 +72,7 @@ class FirehatDaemon:
         await self.stop_monitor()
         if self.recorder.state.active:
             await asyncio.to_thread(self.recorder.stop)
+        await self.preview.stop()
         await self.publish_state()
 
     async def snapshot(self) -> dict[str, Any]:
@@ -97,10 +100,19 @@ class FirehatDaemon:
 
             now = datetime.now(timezone.utc)
             timestamp = now.strftime("%Y%m%d_%H%M%S")
+            self._debug_log(f"start-recording requested timestamp={timestamp}")
             try:
-                self.recorder.start(timestamp=timestamp, started_at_iso=now.isoformat())
+                try:
+                    await asyncio.wait_for(self.preview.stop(), timeout=4.0)
+                    self._debug_log("preview stopped before recorder start")
+                    await asyncio.sleep(float(os.environ.get("FIREHAT_PREVIEW_RELEASE_DELAY", "1.0")))
+                except asyncio.TimeoutError as exc:
+                    self._debug_log("preview stop timed out before recorder start; refusing to start recorder")
+                    raise CommandError("Preview is still releasing the camera; try recording again") from exc
+                await asyncio.to_thread(self.recorder.start, timestamp)
+                self._debug_log(f"recorder started filename={self.recorder.state.filename} pid={self.recorder.state.pid}")
                 self.error = None
-            except RecorderError as exc:
+            except OSError as exc:
                 self.error = ErrorState(message="Recorder failed", detail=str(exc))
                 raise CommandError(str(exc)) from exc
             state = self._snapshot_unlocked().to_dict()
@@ -112,7 +124,16 @@ class FirehatDaemon:
         async with self._lock:
             if self.recorder.state.active:
                 thumbnail_prefix = self.recorder.state.filename
+                self._debug_log(f"stop-recording requested filename={thumbnail_prefix} pid={self.recorder.state.pid}")
                 await asyncio.to_thread(self.recorder.stop)
+                self._debug_log(f"recorder stopped filename={thumbnail_prefix}")
+                if self.preview.active:
+                    try:
+                        timeout = float(os.environ.get("FIREHAT_PREVIEW_STOP_AFTER_RECORDING_TIMEOUT", "2.0"))
+                        await asyncio.wait_for(self.preview.stop(), timeout=timeout)
+                        self._debug_log("preview stopped after recorder stop")
+                    except asyncio.TimeoutError:
+                        self._debug_log("preview stop timed out after recorder stop")
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         if thumbnail_prefix:
@@ -175,6 +196,7 @@ class FirehatDaemon:
         async with self._lock:
             if self.recorder.state.active:
                 await asyncio.to_thread(self.recorder.stop)
+            await self.preview.stop()
             self._poll_recorder_unlocked()
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
@@ -250,12 +272,54 @@ class FirehatDaemon:
     async def thumbnail_path(self, name: str) -> Path | None:
         return await asyncio.to_thread(self.storage.thumbnail_path, name)
 
+    async def preview_stream(self):
+        state = await self.snapshot()
+        self._debug_log(f"preview requested mode={state['mode']} connected={state['camera']['connected']}", verbose=True)
+        if state["mode"] == "usb_transfer":
+            raise CommandError("Live preview is not available in USB disk mode")
+        if not state["camera"]["connected"]:
+            raise CommandError("No DV camera detected")
+        try:
+            if self.preview.active:
+                active_seconds = self.preview.active_seconds
+                stale_after = float(os.environ.get("FIREHAT_PREVIEW_STALE_SECONDS", "12"))
+                if active_seconds < stale_after:
+                    raise CommandError(f"Preview already active ({active_seconds:.1f}s)")
+                self._debug_log(f"preview active for {active_seconds:.1f}s; stopping stale preview")
+                try:
+                    await asyncio.wait_for(self.preview.stop(), timeout=4.0)
+                    self._debug_log("stale preview stopped before new preview")
+                except asyncio.TimeoutError:
+                    self._debug_log("stale preview stop timed out; starting new preview anyway")
+            if state["mode"] == "recording":
+                prefix = state["recording"].get("filename")
+                if not prefix:
+                    raise CommandError("Recording file is not ready")
+                return self.preview.stream_recording(self.capture_dir, prefix)
+            return self.preview.stream()
+        except Exception as exc:
+            raise CommandError(str(exc)) from exc
+
+    def preview_media_type(self) -> str:
+        return self.preview.media_type
+
+    def _debug_log(self, message: str, verbose: bool = False) -> None:
+        if verbose and os.environ.get("FIREHAT_DEBUG_LOGS") != "1" and not Path("/data/.firehat-debug").exists():
+            return
+        try:
+            stamp = datetime.now(timezone.utc).isoformat()
+            with open("/data/firehatd-debug.log", "a", encoding="utf-8") as handle:
+                handle.write(f"{stamp} {message}\n")
+        except OSError:
+            pass
+
     async def _generate_thumbnails(self, prefix: str) -> None:
         try:
             await asyncio.to_thread(self.storage.generate_thumbnails_for_prefix, prefix, self.ffmpeg_bin)
         except Exception as exc:
             print(f"Thumbnail generation failed for {prefix}: {exc}", flush=True)
         finally:
+            await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
             # Re-publish so the web UI picks up the new thumbnail (or the capture
             # even if thumbnailing failed).
             await self.publish_captures()
@@ -277,9 +341,11 @@ class FirehatDaemon:
             await asyncio.sleep(1.0)
 
     def _poll_recorder_unlocked(self) -> None:
-        error = self.recorder.poll_error()
-        if error:
-            self.error = ErrorState(message="Recording stopped", detail=error)
+        if self.recorder.state.active:
+            pid = self.recorder.state.pid
+            rc = self.recorder.poll()
+            if rc is not None:
+                self.error = ErrorState(message="Recording stopped", detail=f"dvgrab exited with status {rc} (pid {pid})")
 
     def _usb_transfer_active(self) -> bool:
         return Path("/run/firehat-usb-storage.active").exists()
@@ -305,8 +371,6 @@ class FirehatDaemon:
                 free_bytes=snapshot.free_bytes,
                 recording_minutes_available=snapshot.recording_minutes_available,
             )
-        deck = self.deck.probe(camera_connected=probe.connected)
-
         recording_active = self.recorder.state.active
         if usb_transfer_active:
             mode = "usb_transfer"
@@ -337,12 +401,16 @@ class FirehatDaemon:
             ),
             storage=storage,
             network=get_network_state(self.host_url_port),
+            # Deck status/timecode is no longer polled: probing it ran dvcont
+            # (AV/C transactions) on the FireWire bus every second, contending
+            # with the shared DV stream, and nothing consumes those fields. The
+            # on-demand transport commands (deck_command) still use dvcont.
             deck=DeckState(
-                available=deck.available,
-                status=deck.status,
-                timecode=deck.timecode,
+                available=probe.connected,
+                status="unknown",
+                timecode=None,
                 last_command=self.deck.last_command,
-                error=deck.error,
+                error=self.deck.last_error,
             ),
             error=self.error,
         )

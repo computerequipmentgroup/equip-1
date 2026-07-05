@@ -1,0 +1,22 @@
+{
+  "name": "Equip-1 DV Recorder",
+  "short_name": "Equip-1",
+  "description": "Local Equip-1 FireWire DV recorder dashboard",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "browser"],
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": ["utilities", "photo", "video"],
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

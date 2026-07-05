@@ -21,6 +21,10 @@ const headerChipClass = computed(() => ({
   ready: connected.value && mode.value === 'idle'
 }))
 
+const reloadPage = () => {
+  if (import.meta.client) window.location.reload()
+}
+
 onMounted(async () => {
   await syncTime()
   await refresh()
@@ -31,9 +35,9 @@ onMounted(async () => {
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <NuxtLink to="/" class="brand-mark" aria-label="Firehat dashboard">
+      <a href="/" class="brand-mark" aria-label="Firehat dashboard" @click.prevent="reloadPage">
         <span>equip-1</span>
-      </NuxtLink>
+      </a>
       <div class="header-chip" :class="headerChipClass">
         <span class="chip-dot" />
         {{ headerChipLabel }}

@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "nuxt dev --host 0.0.0.0",
+    "dev:mock": "NUXT_PUBLIC_FIREHAT_MOCK=1 nuxt dev --host 0.0.0.0",
     "build": "nuxt generate",
     "generate": "nuxt generate",
     "preview": "nuxt preview"

@@ -5,10 +5,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .service import CommandError, FirehatDaemon
+from .sysinfo import get_system_stats
 
 
 daemon = FirehatDaemon.from_env()
@@ -36,6 +37,11 @@ async def get_state() -> dict:
 async def get_storage() -> dict:
     state = await daemon.snapshot()
     return state["storage"]
+
+
+@app.get("/api/system")
+async def get_system() -> dict:
+    return get_system_stats()
 
 
 @app.get("/api/captures")
@@ -68,6 +74,15 @@ async def capture_thumbnail(capture_name: str) -> FileResponse:
     if path is None:
         raise HTTPException(status_code=404, detail="Thumbnail not found")
     return FileResponse(str(path), media_type="image/jpeg")
+
+
+@app.get("/api/preview.mjpg")
+async def live_preview() -> StreamingResponse:
+    try:
+        stream = await daemon.preview_stream()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return StreamingResponse(stream, media_type=daemon.preview_media_type())
 
 
 @app.post("/api/commands/start-recording")

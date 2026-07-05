@@ -141,7 +141,7 @@ remount_data() {
     [ -n "$part" ] && [ -b "$part" ] || return 1
     mkdir -p "$DATA_MNT" 2>/dev/null || true
     if ! grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
-        mount -t exfat "$part" "$DATA_MNT" || return 1
+        mount -t exfat -o noatime,sync,dirsync "$part" "$DATA_MNT" || return 1
     fi
     mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
 }

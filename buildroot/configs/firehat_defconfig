@@ -38,6 +38,12 @@ BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.21.elf
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_SIZE="1G"
+# The recordings-partition mount scripts (S15data, firehat-usb-storage) locate
+# the boot disk via `blkid | grep 'LABEL="rootfs"'`. BusyBox blkid only reports
+# the filesystem LABEL (not the GPT PARTLABEL), so the ext2 image must carry an
+# explicit "rootfs" filesystem label or /data never mounts and recordings
+# storage is "not recognized".
+BR2_TARGET_ROOTFS_EXT2_LABEL="rootfs"
 
 # Init system — BusyBox init for fast boot
 BR2_INIT_BUSYBOX=y
@@ -90,9 +96,9 @@ BR2_PACKAGE_LIBRAW1394=y
 # dvgrab for DV capture
 BR2_PACKAGE_DVGRAB=y
 
-# ffmpeg extracts JPEG thumbnails from finished DV captures for the web UI.
-# swscale is required for the `scale` filter and DV->JPEG pixel-format
-# conversion; without it thumbnail generation fails silently.
+# ffmpeg extracts JPEG thumbnails from finished DV captures and generates the
+# opt-in low-resolution MJPEG live preview for the web UI. swscale is required
+# for the `scale` filter and DV->JPEG pixel-format conversion.
 BR2_PACKAGE_FFMPEG=y
 BR2_PACKAGE_FFMPEG_SWSCALE=y
 

@@ -1,5 +1,177 @@
 type FirehatState = Record<string, any>
 type CaptureEntry = Record<string, any>
+type SystemStats = Record<string, any>
+
+const dvBytesPerSecond = Math.floor((216 * 1024 * 1024) / 60)
+
+const nowIso = () => new Date().toISOString()
+
+const isMockEnabled = () => {
+  const config = useRuntimeConfig()
+  const setting = String(config.public.firehatMock ?? '').toLowerCase()
+  return setting === '1' || setting === 'true' || (import.meta.dev && setting !== '0' && setting !== 'false')
+}
+
+const mockThumbnail = (label: string, color = '#5500ff') =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#050505"/><rect y="54" width="160" height="36" fill="${color}" opacity=".82"/><circle cx="116" cy="34" r="22" fill="#fff" opacity=".18"/><text x="10" y="78" fill="#fff" font-family="monospace" font-size="13">${label}</text></svg>`)}`
+
+const formatCaptureName = (date = new Date()) =>
+  `capture_${date.toISOString().slice(0, 19).replace(/[-:T]/g, '')}-001.dv`
+
+const mockCaptureRows = (): CaptureEntry[] => [
+  {
+    name: 'capture_20260704_211642-001.dv',
+    path: '/data/captures/capture_20260704_211642-001.dv',
+    size_bytes: 1_640_000_000,
+    modified_at: Date.now() / 1000 - 1800,
+    download_url: 'data:text/plain,mock capture',
+    thumbnail_url: mockThumbnail('capture 01', '#5500ff')
+  },
+  {
+    name: 'sony_trv900_tape_03.dv',
+    path: '/data/captures/sony_trv900_tape_03.dv',
+    size_bytes: 4_380_000_000,
+    modified_at: Date.now() / 1000 - 86_400,
+    download_url: 'data:text/plain,mock capture',
+    thumbnail_url: mockThumbnail('tape 03', '#2444ff')
+  },
+  {
+    name: 'family_archive_1999.dv',
+    path: '/data/captures/family_archive_1999.dv',
+    size_bytes: 2_210_000_000,
+    modified_at: Date.now() / 1000 - 604_800,
+    download_url: 'data:text/plain,mock capture',
+    thumbnail_url: mockThumbnail('1999', '#8844ff')
+  }
+]
+
+const mockSystemStats = (): SystemStats => ({
+  model: 'Radxa ROCK 2F / RK3528A',
+  cpu: {
+    load_1m: 0.74,
+    count: 4,
+    percent: 19
+  },
+  memory: {
+    total_bytes: 2 * 1024 * 1024 * 1024,
+    used_bytes: 820 * 1024 * 1024,
+    available_bytes: 1228 * 1024 * 1024,
+    percent: 40
+  },
+  temperature: {
+    celsius: 48.6,
+    percent: 57
+  }
+})
+
+const mockState = (): FirehatState => ({
+  mode: 'idle',
+  camera: {
+    connected: true,
+    name: 'Sony DCR-TRV900',
+    device: '/dev/fw1'
+  },
+  recording: {
+    active: false,
+    filename: null,
+    started_at: null,
+    elapsed_seconds: 0,
+    pid: null
+  },
+  storage: {
+    capture_dir: '/data/captures',
+    total_bytes: 119 * 1024 * 1024 * 1024,
+    used_bytes: 34 * 1024 * 1024 * 1024,
+    free_bytes: 85 * 1024 * 1024 * 1024,
+    recording_minutes_available: 393
+  },
+  network: {
+    mode: 'ap',
+    ssid: 'Firehat',
+    ip: '10.42.0.1',
+    dashboard_url: 'http://10.42.0.1:8000'
+  },
+  deck: {
+    available: true,
+    status: 'stopped',
+    timecode: '00:00:00:00',
+    last_command: null,
+    error: null
+  },
+  error: null
+})
+
+const tickMockState = (state: FirehatState | null) => {
+  if (!state?.recording?.active || !state.recording.started_at) return state
+  const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(state.recording.started_at)) / 1000))
+  const baseUsed = Number(state.storage.base_used_bytes || state.storage.used_bytes || 0)
+  state.recording.elapsed_seconds = elapsed
+  state.storage.used_bytes = baseUsed + elapsed * dvBytesPerSecond
+  state.storage.free_bytes = Math.max(0, Number(state.storage.total_bytes || 0) - state.storage.used_bytes)
+  state.storage.recording_minutes_available = Math.floor(state.storage.free_bytes / (216 * 1024 * 1024))
+  return state
+}
+
+const finishMockRecording = (state: FirehatState, captures: Ref<CaptureEntry[]>) => {
+  const elapsed = Math.max(1, Number(state.recording.elapsed_seconds || 1))
+  const filename = state.recording.filename || formatCaptureName()
+  captures.value = [
+    {
+      name: filename,
+      path: `/data/captures/${filename}`,
+      size_bytes: elapsed * dvBytesPerSecond,
+      modified_at: Date.now() / 1000,
+      download_url: 'data:text/plain,mock capture',
+      thumbnail_url: mockThumbnail('new capture', '#aa22ff')
+    },
+    ...captures.value.filter((capture) => capture.name !== filename)
+  ]
+  state.recording = {
+    active: false,
+    filename: null,
+    started_at: null,
+    elapsed_seconds: 0,
+    pid: null
+  }
+  state.mode = 'idle'
+  delete state.storage.base_used_bytes
+}
+
+const applyMockCommand = (state: Ref<FirehatState | null>, captures: Ref<CaptureEntry[]>, name: string) => {
+  if (!state.value) state.value = mockState()
+  const current = tickMockState(state.value) || mockState()
+  if (!captures.value.length) captures.value = mockCaptureRows()
+
+  if (name === 'start-recording') {
+    if (current.mode !== 'idle') throw new Error('Mock recorder is not ready')
+    const startedAt = nowIso()
+    current.mode = 'recording'
+    current.storage.base_used_bytes = current.storage.used_bytes
+    current.recording = {
+      active: true,
+      filename: formatCaptureName(new Date(startedAt)),
+      started_at: startedAt,
+      elapsed_seconds: 0,
+      pid: 4242
+    }
+  } else if (name === 'stop-recording') {
+    if (current.recording.active) finishMockRecording(current, captures)
+  } else if (name === 'rescan-camera') {
+    current.camera.connected = true
+    current.camera.name = 'Sony DCR-TRV900'
+    current.camera.device = '/dev/fw1'
+    if (current.mode === 'no_camera') current.mode = 'idle'
+  } else if (name === 'usb-storage-start') {
+    current.mode = 'usb_transfer'
+  } else if (name === 'usb-storage-stop') {
+    current.mode = 'idle'
+  } else if (name === 'clear-error') {
+    current.error = null
+    current.mode = 'idle'
+  }
+
+  state.value = { ...current }
+}
 
 export const useFirehatState = () => {
   const config = useRuntimeConfig()
@@ -8,11 +180,21 @@ export const useFirehatState = () => {
   const error = useState<string | null>('firehat-error', () => null)
   const ws = useState<WebSocket | null>('firehat-ws', () => null)
   const captures = useState<CaptureEntry[]>('firehat-captures', () => [])
+  const mockInterval = useState<ReturnType<typeof setInterval> | null>('firehat-mock-interval', () => null)
 
   const apiBase = config.public.apiBase as string
   const wsBase = config.public.wsBase as string
+  const mock = computed(() => isMockEnabled())
 
   const refresh = async () => {
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...(tickMockState(state.value) || mockState()) }
+      connected.value = true
+      error.value = null
+      return
+    }
+
     try {
       state.value = await $fetch<FirehatState>(`${apiBase}/state`)
       connected.value = true
@@ -24,6 +206,12 @@ export const useFirehatState = () => {
   }
 
   const command = async (name: string) => {
+    if (mock.value) {
+      applyMockCommand(state, captures, name)
+      connected.value = true
+      error.value = null
+      return
+    }
     state.value = await $fetch<FirehatState>(`${apiBase}/commands/${name}`, { method: 'POST' })
   }
 
@@ -31,7 +219,7 @@ export const useFirehatState = () => {
   // with a real date. Best-effort — the daemon only applies it when its own
   // clock is still unset.
   const syncTime = async () => {
-    if (!import.meta.client) return
+    if (!import.meta.client || mock.value) return
     try {
       await $fetch(`${apiBase}/time`, { method: 'POST', body: { now: Date.now() / 1000 } })
     } catch {
@@ -41,8 +229,15 @@ export const useFirehatState = () => {
 
   const connectEvents = () => {
     if (!import.meta.client) return
-    if (ws.value) return
 
+    if (mock.value) {
+      connected.value = true
+      if (mockInterval.value) return
+      mockInterval.value = setInterval(refresh, 1000)
+      return
+    }
+
+    if (ws.value) return
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = wsBase.startsWith('ws') ? wsBase : `${protocol}//${window.location.host}${wsBase}`
     ws.value = new WebSocket(url)
@@ -60,15 +255,46 @@ export const useFirehatState = () => {
     }
   }
 
-  return { state, connected, error, refresh, command, connectEvents, syncTime }
+  return { state, connected, error, refresh, command, connectEvents, syncTime, mock }
+}
+
+export const useFirehatSystem = () => {
+  const config = useRuntimeConfig()
+  const system = useState<SystemStats | null>('firehat-system', () => null)
+  const error = useState<string | null>('firehat-system-error', () => null)
+  const mock = computed(() => isMockEnabled())
+
+  const load = async () => {
+    if (mock.value) {
+      system.value = mockSystemStats()
+      error.value = null
+      return
+    }
+
+    try {
+      system.value = await $fetch<SystemStats>(`${config.public.apiBase}/system`)
+      error.value = null
+    } catch (err: any) {
+      error.value = err?.message || 'Could not load system stats'
+    }
+  }
+
+  return { system, error, load, mock }
 }
 
 export const useFirehatCaptures = () => {
   const config = useRuntimeConfig()
   const captures = useState<CaptureEntry[]>('firehat-captures', () => [])
   const error = useState<string | null>('firehat-captures-error', () => null)
+  const mock = computed(() => isMockEnabled())
 
   const load = async () => {
+    if (mock.value) {
+      if (!captures.value.length) captures.value = mockCaptureRows()
+      error.value = null
+      return
+    }
+
     try {
       captures.value = await $fetch<CaptureEntry[]>(`${config.public.apiBase}/captures`)
       error.value = null
@@ -77,8 +303,10 @@ export const useFirehatCaptures = () => {
     }
   }
 
-  const downloadUrl = (capture: CaptureEntry) =>
-    `${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}/download`
+  const downloadUrl = (capture: CaptureEntry) => {
+    if (mock.value && capture.download_url) return capture.download_url
+    return `${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}/download`
+  }
 
-  return { captures, error, load, downloadUrl }
+  return { captures, error, load, downloadUrl, mock }
 }
