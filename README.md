@@ -65,7 +65,7 @@ Firehat can bring up its own Wi-Fi so phones can join the device directly and op
 
 Defaults:
 
-- SSID: `Firehat`
+- SSID: `Equip-1`
 - Password: `firesecret`
 - Device URL: `http://10.42.0.1:8000`
 - Wi-Fi interface: `wlan0`
@@ -88,7 +88,7 @@ Override AP settings in `/etc/firehat/ap.env`:
 sudo mkdir -p /etc/firehat
 sudo tee /etc/firehat/ap.env >/dev/null <<'EOF'
 FIREHAT_AP_IFACE=wlan0
-FIREHAT_AP_SSID=Firehat
+FIREHAT_AP_SSID=Equip-1
 FIREHAT_AP_PASSWORD=firesecret
 FIREHAT_AP_IP=10.42.0.1/24
 EOF
@@ -97,7 +97,7 @@ sudo systemctl restart firehat-ap.service firehatd.service
 
 If `firehat-ap.service` fails, check that NetworkManager is running and that the Wi-Fi adapter supports AP mode (`iw list` should include `* AP`).
 
-On the OLED `NETWORK` screen, press the middle/select button to show a Wi-Fi QR code. Phones can scan it to join the `Firehat` network directly. Press middle/select again, or press up/down once, to leave the QR view.
+On the OLED `NETWORK` screen, press the middle/select button to show a Wi-Fi QR code. Phones can scan it to join the `Equip-1` network directly. Press middle/select again, or press up/down once, to leave the QR view.
 
 ## API
 

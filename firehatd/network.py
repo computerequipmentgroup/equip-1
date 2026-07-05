@@ -71,7 +71,7 @@ def get_network_state(port: int) -> NetworkState:
 
     ap_enabled = _env_enabled("FIREHAT_AP_ENABLED", default=True)
     ap_iface = os.environ.get("FIREHAT_AP_IFACE", "wlan0") if ap_enabled else None
-    ap_ssid = os.environ.get("FIREHAT_AP_SSID", "Firehat") if ap_enabled else None
+    ap_ssid = os.environ.get("FIREHAT_AP_SSID", "Equip-1") if ap_enabled else None
     ap_password = os.environ.get("FIREHAT_AP_PASSWORD", "firesecret") if ap_enabled else None
     ap_ip = get_interface_ipv4(ap_iface) if ap_iface else None
 
