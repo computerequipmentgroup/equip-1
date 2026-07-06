@@ -10,6 +10,7 @@ from typing import Any
 
 from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
+from .dvsource import DvSource
 from .events import EventBus
 from .models import CameraState, DaemonState, DeckState, ErrorState, RecordingState, StorageState
 from .network import get_network_state
@@ -35,9 +36,10 @@ class FirehatDaemon:
         self.storage = StorageManager(self.capture_dir)
         self.camera = FireWireCameraDetector()
         self.deck = DvcontDeckController(dvcont_bin=dvcont_bin)
-        self.recorder = RecordingTracker(self.capture_dir, dvgrab_bin=dvgrab_bin)
+        self.dv = DvSource(dvgrab_bin=dvgrab_bin)
+        self.recorder = RecordingTracker(self.capture_dir, source=self.dv)
         self.ffmpeg_bin = ffmpeg_bin
-        self.preview = MjpegPreview(ffmpeg_bin=ffmpeg_bin, dvgrab_bin=dvgrab_bin)
+        self.preview = MjpegPreview(self.dv, ffmpeg_bin=ffmpeg_bin)
         self.events = EventBus()
         self.host_url_port = host_url_port
         self._lock = asyncio.Lock()
@@ -73,6 +75,7 @@ class FirehatDaemon:
         if self.recorder.state.active:
             await asyncio.to_thread(self.recorder.stop)
         await self.preview.stop()
+        await self.dv.stop()
         await self.publish_state()
 
     async def snapshot(self) -> dict[str, Any]:
@@ -102,13 +105,10 @@ class FirehatDaemon:
             timestamp = now.strftime("%Y%m%d_%H%M%S")
             self._debug_log(f"start-recording requested timestamp={timestamp}")
             try:
-                try:
-                    await asyncio.wait_for(self.preview.stop(), timeout=4.0)
-                    self._debug_log("preview stopped before recorder start")
-                    await asyncio.sleep(float(os.environ.get("FIREHAT_PREVIEW_RELEASE_DELAY", "1.0")))
-                except asyncio.TimeoutError as exc:
-                    self._debug_log("preview stop timed out before recorder start; refusing to start recorder")
-                    raise CommandError("Preview is still releasing the camera; try recording again") from exc
+                # The FireWire device is already held by the shared DV source, so
+                # recording just opens a file on the live stream -- no preview
+                # hand-off, no device acquisition, effectively instant.
+                await self.dv.ensure_running(True)
                 await asyncio.to_thread(self.recorder.start, timestamp)
                 self._debug_log(f"recorder started filename={self.recorder.state.filename} pid={self.recorder.state.pid}")
                 self.error = None
@@ -127,13 +127,7 @@ class FirehatDaemon:
                 self._debug_log(f"stop-recording requested filename={thumbnail_prefix} pid={self.recorder.state.pid}")
                 await asyncio.to_thread(self.recorder.stop)
                 self._debug_log(f"recorder stopped filename={thumbnail_prefix}")
-                if self.preview.active:
-                    try:
-                        timeout = float(os.environ.get("FIREHAT_PREVIEW_STOP_AFTER_RECORDING_TIMEOUT", "2.0"))
-                        await asyncio.wait_for(self.preview.stop(), timeout=timeout)
-                        self._debug_log("preview stopped after recorder stop")
-                    except asyncio.TimeoutError:
-                        self._debug_log("preview stop timed out after recorder stop")
+                # Preview keeps running on the shared DV source; nothing to release.
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         if thumbnail_prefix:
@@ -197,6 +191,9 @@ class FirehatDaemon:
             if self.recorder.state.active:
                 await asyncio.to_thread(self.recorder.stop)
             await self.preview.stop()
+            # Release the FireWire device so USB disk mode / shutdown can unmount
+            # and power down cleanly.
+            await self.dv.stop()
             self._poll_recorder_unlocked()
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
@@ -300,17 +297,14 @@ class FirehatDaemon:
                     self._debug_log("stale stream stopped before new stream")
                 except asyncio.TimeoutError:
                     self._debug_log("stale stream stop timed out; starting new stream anyway")
+            # Both idle and recording preview read the same live DV stream; the
+            # only difference is a lighter filter while recording so the browser
+            # feed yields CPU to the capture write.
+            await self.dv.ensure_running(True)
             recording = state["mode"] == "recording"
-            prefix = state["recording"].get("filename") if recording else None
-            if recording and not prefix:
-                raise CommandError("Recording file is not ready")
             if kind == "mkv":
-                if recording:
-                    return self.preview.stream_mkv_recording(self.capture_dir, prefix)
-                return self.preview.stream_mkv()
-            if recording:
-                return self.preview.stream_recording(self.capture_dir, prefix)
-            return self.preview.stream()
+                return self.preview.stream_mkv(recording=recording)
+            return self.preview.stream(recording=recording)
         except Exception as exc:
             raise CommandError(str(exc)) from exc
 
@@ -347,6 +341,22 @@ class FirehatDaemon:
                 async with self._lock:
                     self._poll_recorder_unlocked()
                     state = self._snapshot_unlocked().to_dict()
+                # Keep the shared DV source claimed whenever a camera is present
+                # (and we are not handing the bus/disk to USB mode), so recording
+                # can start instantly on the already-flowing stream. Also stand
+                # down while a USB-storage start is still in flight: that flag
+                # only flips to "usb_transfer" once the helper succeeds, and the
+                # helper refuses to run while dvgrab is alive -- so we must not
+                # respawn the source in that window or we deadlock the hand-off.
+                want_source = (
+                    state["camera"]["connected"]
+                    and state["mode"] != "usb_transfer"
+                    and not self._usb_storage_starting()
+                )
+                try:
+                    await self.dv.ensure_running(want_source)
+                except Exception as exc:
+                    self._debug_log(f"dv source ensure_running failed: {exc}")
                 if state != self._last_state:
                     self._last_state = state
                     await self.events.publish({"type": "state", "state": state})
@@ -366,6 +376,11 @@ class FirehatDaemon:
 
     def _usb_transfer_active(self) -> bool:
         return Path("/run/firehat-usb-storage.active").exists()
+
+    def _usb_storage_starting(self) -> bool:
+        # True from the moment start_usb_storage schedules its task until that
+        # task finishes -- covering the window before the ".active" flag exists.
+        return self._usb_storage_task is not None and not self._usb_storage_task.done()
 
     def _snapshot_unlocked(self) -> DaemonState:
         self._poll_recorder_unlocked()

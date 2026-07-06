@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
+from .dvsource import DvSource
 
 
 @dataclass
@@ -19,89 +20,56 @@ class RecorderProcessState:
 
 
 class RecordingTracker:
-    """Owns the dvgrab recording process and recording metadata."""
+    """Toggles the recording sink on the shared DV source and owns metadata.
 
-    def __init__(self, capture_dir: str | os.PathLike[str], dvgrab_bin: str = "dvgrab"):
+    Recording no longer spawns its own dvgrab: the FireWire device is held
+    continuously by the shared ``DvSource``, so starting a capture is just
+    opening a file on the already-flowing stream. That makes record start
+    effectively instant -- there is no preview hand-off or device acquisition.
+    """
+
+    def __init__(self, capture_dir: str | os.PathLike[str], source: DvSource):
         self.capture_dir = Path(capture_dir).expanduser()
         self.capture_dir.mkdir(parents=True, exist_ok=True)
-        self.dvgrab_bin = dvgrab_bin
+        self.source = source
         self.state = RecorderProcessState()
-        self.process: subprocess.Popen | None = None
-        self.log_handle = None
+        self._intent = False
 
     def capture_prefix(self, timestamp: str) -> Path:
         return self.capture_dir / f"capture_{timestamp}"
 
     def start(self, timestamp: str | None = None) -> RecorderProcessState:
-        if self.process is not None and self.process.poll() is None:
+        if self.state.active:
             raise RuntimeError("Already recording")
         if timestamp is None:
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        prefix = self.capture_prefix(timestamp)
-        log_path = prefix.with_suffix(".dvgrab.log")
-        self.log_handle = log_path.open("ab", buffering=0)
-        command = [self.dvgrab_bin, "-buffers", "50", "-size", "0", str(prefix)]
-        self.process = subprocess.Popen(
-            command,
-            stdout=self.log_handle,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+        path = self.capture_prefix(timestamp).with_suffix(".dv")
+        self.source.start_recording(path)
+        self._intent = True
         self.state = RecorderProcessState(
             active=True,
-            filename=prefix.name,
+            filename=path.name,
             started_at_monotonic=time.monotonic(),
             started_at_iso=datetime.now(timezone.utc).isoformat(),
-            pid=self.process.pid,
+            pid=self.source._proc.pid if self.source._proc is not None else None,
         )
         return self.state
 
     def stop(self, timeout: float = 2.0) -> RecorderProcessState:
-        proc = self.process
-        if proc is not None and proc.poll() is None:
-            try:
-                os.killpg(proc.pid, signal.SIGINT)
-            except ProcessLookupError:
-                pass
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    proc.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    proc.wait(timeout=2.0)
-        self.process = None
-        if self.log_handle is not None:
-            try:
-                self.log_handle.close()
-            finally:
-                self.log_handle = None
+        self._intent = False
+        self.source.stop_recording()
         subprocess.run(["sync"], check=False, timeout=10)
         self.state = RecorderProcessState()
         return self.state
 
     def poll(self) -> int | None:
-        proc = self.process
-        if proc is None:
-            return None
-        rc = proc.poll()
-        if rc is not None:
-            if self.log_handle is not None:
-                try:
-                    self.log_handle.close()
-                finally:
-                    self.log_handle = None
-            self.process = None
+        # Surfaces an unexpected loss of the recording (e.g. dvgrab died or a
+        # disk write failed) the same way the old dvgrab-exit poll did.
+        if self._intent and not self.source.recording:
+            self._intent = False
             self.state = RecorderProcessState()
-        return rc
+            return 1
+        return None
 
     def elapsed_seconds(self) -> int:
         if not self.state.active or self.state.started_at_monotonic is None:

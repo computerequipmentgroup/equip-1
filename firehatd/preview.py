@@ -7,6 +7,8 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from .dvsource import DvSource
+
 
 class PreviewBusyError(RuntimeError):
     pass
@@ -22,26 +24,23 @@ class MjpegPreview:
     The browser preview is served as MJPEG; VLC and other network players are
     served as remuxed Matroska (raw DV copied into an MKV container, no
     transcode -- MPEG-TS cannot carry DV as a recognized codec). Both flavours
-    share the same FireWire claim and the same busy-lock, so only one consumer
-    is ever active at a time.
-
-    Idle streams use dvgrab as the FireWire reader and pipe raw DV into ffmpeg.
-    Recording streams follow the growing capture file and feed it to ffmpeg
-    through stdin, so dvgrab remains the only FireWire reader/writer.
+    subscribe to the single shared FireWire DV stream (``DvSource``) and share a
+    busy-lock, so only one consumer is ever active at a time and preview never
+    contends with the recorder for the device.
     """
 
     boundary = "firehatframe"
 
-    def __init__(self, ffmpeg_bin: str = "ffmpeg", dvgrab_bin: str = "dvgrab"):
+    def __init__(self, source: DvSource, ffmpeg_bin: str = "ffmpeg"):
+        self.source = source
         self.ffmpeg_bin = ffmpeg_bin
-        self.dvgrab_bin = dvgrab_bin
         # Idle preview defaults aim for VLC-like fidelity: full-rate, full-size
-        # MJPEG off the same DV source. Every value stays env-overridable so the
-        # feed can be dialed back on the device if CPU/bandwidth demands it.
+        # MJPEG off the shared DV source. Every value stays env-overridable so
+        # the feed can be dialed back on the device if CPU/bandwidth demands it.
         self.fps = os.environ.get("FIREHAT_PREVIEW_FPS", "25")
         self.size = os.environ.get("FIREHAT_PREVIEW_SIZE", "720:540")
-        # Recording preview stays modest -- dvgrab is writing the capture to disk
-        # at the same time, so the browser feed yields CPU to the recorder.
+        # Recording preview stays modest -- the recorder is writing the capture
+        # to disk at the same time, so the browser feed yields CPU to it.
         self.recording_fps = os.environ.get("FIREHAT_PREVIEW_RECORDING_FPS", "2")
         self.recording_size = os.environ.get("FIREHAT_PREVIEW_RECORDING_SIZE", "480:360")
         self.video_filter = os.environ.get(
@@ -54,11 +53,9 @@ class MjpegPreview:
         )
         self.quality = os.environ.get("FIREHAT_PREVIEW_QUALITY", "4")
         self.recording_quality = os.environ.get("FIREHAT_PREVIEW_RECORDING_QUALITY", "5")
-        self.recording_lag_bytes = int(os.environ.get("FIREHAT_PREVIEW_RECORDING_LAG_BYTES", "60000000"))
         self._active = False
         self._active_since: float | None = None
         self._process: asyncio.subprocess.Process | None = None
-        self._source_process: asyncio.subprocess.Process | None = None
 
     @property
     def media_type(self) -> str:
@@ -78,80 +75,46 @@ class MjpegPreview:
             return 0.0
         return max(0.0, time.monotonic() - self._active_since)
 
-    def stream(self) -> AsyncIterator[bytes]:
-        if self._active:
-            raise PreviewBusyError("Preview is already active")
-        self._active = True
-        self._active_since = time.monotonic()
-        return self._stream_dvgrab_claimed()
+    def stream(self, recording: bool = False) -> AsyncIterator[bytes]:
+        return self._begin(mkv=False, recording=recording)
 
-    def stream_mkv(self) -> AsyncIterator[bytes]:
-        if self._active:
-            raise PreviewBusyError("Preview is already active")
-        self._active = True
-        self._active_since = time.monotonic()
-        return self._stream_dvgrab_claimed(mkv=True)
+    def stream_mkv(self, recording: bool = False) -> AsyncIterator[bytes]:
+        return self._begin(mkv=True, recording=recording)
 
-    def stream_recording(self, capture_dir: Path, prefix: str) -> AsyncIterator[bytes]:
+    def _begin(self, mkv: bool, recording: bool) -> AsyncIterator[bytes]:
         if self._active:
             raise PreviewBusyError("Preview is already active")
         self._active = True
         self._active_since = time.monotonic()
-        return self._stream_recording_claimed(capture_dir, prefix)
-
-    def stream_mkv_recording(self, capture_dir: Path, prefix: str) -> AsyncIterator[bytes]:
-        if self._active:
-            raise PreviewBusyError("Preview is already active")
-        self._active = True
-        self._active_since = time.monotonic()
-        return self._stream_recording_claimed(capture_dir, prefix, mkv=True)
+        return self._stream(mkv=mkv, recording=recording)
 
     async def stop(self) -> None:
-        await asyncio.gather(
-            self._stop_process(self._source_process),
-            self._stop_process(self._process),
-            return_exceptions=True,
-        )
-        self._source_process = None
+        await self._stop_process(self._process)
         self._process = None
         self._active = False
         self._active_since = None
 
-    async def _stream_dvgrab_claimed(self, mkv: bool = False) -> AsyncIterator[bytes]:
-        dvgrab_proc: asyncio.subprocess.Process | None = None
+    async def _stream(self, mkv: bool, recording: bool) -> AsyncIterator[bytes]:
+        subscription = self.source.subscribe()
         ffmpeg_proc: asyncio.subprocess.Process | None = None
         tasks: list[asyncio.Task] = []
         frames = 0
-        label = "idle MKV stream" if mkv else "idle preview"
+        label = "MKV stream" if mkv else "preview"
         unit = "chunk" if mkv else "frame"
         try:
-            self._log(f"starting {label} via dvgrab stdout", always=True)
-            dvgrab_proc = await asyncio.create_subprocess_exec(
-                self.dvgrab_bin,
-                "-buffers",
-                "20",
-                "-format",
-                "raw",
-                "-",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            self._source_process = dvgrab_proc
+            self._log(f"starting {label} from shared DV source recording={recording}", always=True)
             ffmpeg_proc = await asyncio.create_subprocess_exec(
-                *self._ffmpeg_stdin_command(realtime=False, mkv=mkv),
+                *self._ffmpeg_stdin_command(recording=recording, mkv=mkv),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
             self._process = ffmpeg_proc
-            if dvgrab_proc.stderr is not None:
-                tasks.append(asyncio.create_task(self._drain_stderr("dvgrab", dvgrab_proc.stderr, always=True)))
             if ffmpeg_proc.stderr is not None:
                 tasks.append(asyncio.create_task(self._drain_stderr("ffmpeg", ffmpeg_proc.stderr, always=True)))
-            if dvgrab_proc.stdout is not None and ffmpeg_proc.stdin is not None:
-                tasks.append(asyncio.create_task(self._pump_stream(dvgrab_proc.stdout, ffmpeg_proc.stdin)))
+            if ffmpeg_proc.stdin is not None:
+                tasks.append(asyncio.create_task(self._pump_subscription(subscription, ffmpeg_proc.stdin)))
             if ffmpeg_proc.stdout is None:
                 return
             async for payload in self._emit(ffmpeg_proc.stdout, mkv):
@@ -160,57 +123,15 @@ class MjpegPreview:
                     self._log(f"{label} emitted first {unit}", always=True)
                 yield payload
         finally:
+            subscription.close()
             for task in tasks:
                 task.cancel()
-            await self._stop_process(dvgrab_proc)
             await self._stop_process(ffmpeg_proc)
-            if self._source_process is dvgrab_proc:
-                self._source_process = None
             if self._process is ffmpeg_proc:
                 self._process = None
             self._active = False
             self._active_since = None
-            dvgrab_rc = dvgrab_proc.returncode if dvgrab_proc is not None else "n/a"
             ffmpeg_rc = ffmpeg_proc.returncode if ffmpeg_proc is not None else "n/a"
-            self._log(f"{label} stopped {unit}s={frames} dvgrab_rc={dvgrab_rc} ffmpeg_rc={ffmpeg_rc}", always=True)
-
-    async def _stream_recording_claimed(self, capture_dir: Path, prefix: str, mkv: bool = False) -> AsyncIterator[bytes]:
-        proc: asyncio.subprocess.Process | None = None
-        tasks: list[asyncio.Task] = []
-        frames = 0
-        label = "recording MKV stream" if mkv else "recording preview"
-        unit = "chunk" if mkv else "frame"
-        try:
-            path = await self._wait_for_recording_file(capture_dir, prefix)
-            self._log(f"starting {label} from {path.name}", always=True)
-            proc = await asyncio.create_subprocess_exec(
-                *self._ffmpeg_stdin_command(realtime=True, recording=True, mkv=mkv),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            self._process = proc
-            if proc.stderr is not None:
-                tasks.append(asyncio.create_task(self._drain_stderr("ffmpeg", proc.stderr, always=True)))
-            if proc.stdin is not None:
-                tasks.append(asyncio.create_task(self._pump_growing_file(path, proc.stdin)))
-            if proc.stdout is None:
-                return
-            async for payload in self._emit(proc.stdout, mkv):
-                frames += 1
-                if frames == 1:
-                    self._log(f"{label} emitted first {unit}", always=True)
-                yield payload
-        finally:
-            for task in tasks:
-                task.cancel()
-            await self._stop_process(proc)
-            if self._process is proc:
-                self._process = None
-            self._active = False
-            self._active_since = None
-            ffmpeg_rc = proc.returncode if proc is not None else "n/a"
             self._log(f"{label} stopped {unit}s={frames} ffmpeg_rc={ffmpeg_rc}", always=True)
 
     def _emit(self, stream: asyncio.StreamReader, mkv: bool) -> AsyncIterator[bytes]:
@@ -229,11 +150,10 @@ class MjpegPreview:
         async for frame in self._jpeg_frames(stream):
             yield self._multipart_frame(frame)
 
-    def _ffmpeg_stdin_command(self, realtime: bool, recording: bool = False, mkv: bool = False) -> list[str]:
-        command = [self.ffmpeg_bin, "-hide_banner", "-loglevel", "error"]
-        if realtime:
-            command.append("-re")
-        command.extend(["-f", "dv", "-i", "pipe:0"])
+    def _ffmpeg_stdin_command(self, recording: bool = False, mkv: bool = False) -> list[str]:
+        # The shared DV source is inherently real-time, so no "-re" pacing is
+        # needed on the input.
+        command = [self.ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-f", "dv", "-i", "pipe:0"]
         if mkv:
             # Copy the DV stream straight into a live Matroska container (no
             # transcode) -- cheap on the RK3528 and played natively by VLC.
@@ -256,52 +176,20 @@ class MjpegPreview:
             "pipe:1",
         ]
 
-    async def _wait_for_recording_file(self, capture_dir: Path, prefix: str) -> Path:
-        for _ in range(100):
-            matches = [
-                path
-                for path in sorted(capture_dir.glob(f"{prefix}*"), key=lambda p: p.stat().st_mtime, reverse=True)
-                if path.is_file() and path.suffix.lower() in {".dv", ".avi", ".mov", ".mp4", ".mkv"}
-            ]
-            if matches:
-                return matches[0]
-            await asyncio.sleep(0.1)
-        raise PreviewSourceError("Recording file is not ready")
-
-    async def _pump_stream(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        while True:
-            chunk = await reader.read(64 * 1024)
-            if not chunk:
+    async def _pump_subscription(self, subscription, writer: asyncio.StreamWriter) -> None:
+        try:
+            async for chunk in subscription:
+                writer.write(chunk)
                 try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception:
-                    pass
-                return
-            writer.write(chunk)
+                    await writer.drain()
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+        finally:
             try:
-                await writer.drain()
-            except (BrokenPipeError, ConnectionResetError):
-                return
-
-    async def _pump_growing_file(self, path: Path, writer: asyncio.StreamWriter) -> None:
-        with path.open("rb") as handle:
-            try:
-                size = path.stat().st_size
-                if size > self.recording_lag_bytes:
-                    handle.seek(max(0, size - self.recording_lag_bytes))
-            except OSError:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
                 pass
-            while True:
-                chunk = await asyncio.to_thread(handle.read, 64 * 1024)
-                if chunk:
-                    writer.write(chunk)
-                    try:
-                        await writer.drain()
-                    except (BrokenPipeError, ConnectionResetError):
-                        return
-                else:
-                    await asyncio.sleep(0.1)
 
     async def _jpeg_frames(self, stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
         buffer = bytearray()
