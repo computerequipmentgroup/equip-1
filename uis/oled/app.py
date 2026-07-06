@@ -7,8 +7,8 @@ from .api_client import FirehatApiClient
 from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
-from .leds import STATUS_GAME, STATUS_READY, STATUS_RECORDING, make_boot_leds
-from .screens import BootScreen, DeckScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
+from .leds import STATUS_GAME, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, make_boot_leds
+from .screens import BootScreen, DeckScreen, GameScreen, LedTestScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
 
 
 class OledApp:
@@ -22,7 +22,7 @@ class OledApp:
         self.buttons = make_buttons(self.board)
         self.buzzer = make_buzzer(self.board)
         self.leds = make_boot_leds()
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen(), GameScreen()]
+        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen(), GameScreen(), LedTestScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
         self.boot_duration_seconds = float(os.environ.get("FIREHAT_BOOT_DURATION_SECONDS", "3.0"))
@@ -121,6 +121,8 @@ class OledApp:
             return STATUS_RECORDING
         if isinstance(self.current_screen, GameScreen):
             return STATUS_GAME
+        if mode == "no_camera":
+            return STATUS_NO_CAMERA
         if mode == "idle":
             return STATUS_READY
         return None
@@ -133,7 +135,11 @@ class OledApp:
             if not self._boot_leds_cleared:
                 self.leds.clear()
                 self._boot_leds_cleared = True
-            self.leds.set_status(self._status_led_color())
+            override = self.current_screen.led_override(self)
+            if override is not None:
+                self.leds.set_all(override)
+            else:
+                self.leds.set_status(self._status_led_color())
         screen = self.boot_screen if self.is_booting else self.current_screen
         fallback_state = {"mode": "boot"} if self.is_booting else {"mode": "offline"}
         self.display.render(

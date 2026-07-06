@@ -28,11 +28,13 @@ class Rgb:
         )
 
 
-# Status LED colors: fully saturated green when a camera is detected and ready
-# to record, fully saturated red while recording, purple on the game screen.
-STATUS_READY = Rgb(0, 255, 0)
-STATUS_RECORDING = Rgb(255, 0, 0)
-STATUS_GAME = Rgb(160, 0, 255)
+# Status LED colors, used as the exact emitted RGB value (no extra scaling):
+# dim green when a camera is ready, dim red while recording, dim blue when no
+# camera is attached, dim magenta on the game screen.
+STATUS_READY = Rgb(0, 16, 0)
+STATUS_RECORDING = Rgb(16, 0, 0)
+STATUS_NO_CAMERA = Rgb(0, 0, 16)
+STATUS_GAME = Rgb(16, 0, 16)
 
 
 class NullLeds:
@@ -40,6 +42,9 @@ class NullLeds:
         pass
 
     def set_status(self, color: "Rgb | None") -> None:
+        pass
+
+    def set_all(self, color: "Rgb") -> None:
         pass
 
     def clear(self) -> None:
@@ -76,11 +81,9 @@ class Ws2812SpiLeds:
         symbol_bits: int = 4,
         zero_symbol: int = 0b1000,
         one_symbol: int = 0b1110,
-        status_index: int = 2,
     ) -> None:
         self.device = device
         self.count = count
-        self.status_index = status_index
         self.speed_hz = speed_hz
         self.color_order = color_order.upper()
         self.color = color
@@ -134,13 +137,16 @@ class Ws2812SpiLeds:
         self.write(frame)
 
     def set_status(self, color: "Rgb | None") -> None:
-        """Light only the status LED (default the third one) with ``color``,
-        leaving the other LEDs off. Passing ``None`` turns the status LED off.
-        """
-        frame = [Rgb(0, 0, 0)] * self.count
-        if color is not None and 0 <= self.status_index < self.count:
-            frame[self.status_index] = color.scaled(self.brightness)
-        self.write(frame)
+        """Light all LEDs with ``color`` as the exact emitted value. Passing
+        ``None`` turns them off."""
+        fill = Rgb(0, 0, 0) if color is None else color
+        self.write([fill] * self.count)
+
+    def set_all(self, color: "Rgb") -> None:
+        """Drive every LED with ``color`` exactly as given, bypassing the fixed
+        status brightness. Used by the LED test screen so its alpha/opacity maps
+        straight to the emitted value."""
+        self.write([color] * self.count)
 
     def clear(self) -> None:
         off = [Rgb(0, 0, 0, 0)] * self.count
@@ -269,7 +275,6 @@ def make_boot_leds():
             symbol_bits=int(os.environ.get("FIREHAT_RGB_LED_SYMBOL_BITS", "4")),
             zero_symbol=_env_int_auto("FIREHAT_RGB_LED_ZERO_SYMBOL", 0b1000),
             one_symbol=_env_int_auto("FIREHAT_RGB_LED_ONE_SYMBOL", 0b1110),
-            status_index=int(os.environ.get("FIREHAT_STATUS_LED_INDEX", "2")),
         )
     except Exception as exc:
         print(f"RGB LEDs disabled: {exc}", flush=True)

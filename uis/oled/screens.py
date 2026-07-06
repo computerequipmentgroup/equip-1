@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .formatting import bytes_gb, hhmmss, percent
+from .leds import Rgb
 
 
 HEADER_Y = 0
@@ -28,6 +29,11 @@ class Screen:
 
     def can_navigate(self, state: dict[str, Any]) -> bool:
         return True
+
+    def led_override(self, app) -> "Rgb | None":
+        """Return a color to drive every LED while this screen is active, or
+        None to fall back to the default status-LED behavior."""
+        return None
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
         raise NotImplementedError
@@ -722,3 +728,84 @@ class GameScreen(Screen):
         draw.text((0, HEADER_Y), self.title, font=font, fill=255)
         _right(draw, width, HEADER_Y, f"HI:{self.highscore}", font)
         _center(draw, width, HEADER_Y, str(self.score), font)
+
+
+class LedTestScreen(Screen):
+    """Prototyping screen: auto-cycles the LEDs through a broad palette of colors
+    at a fixed opacity, shows the current RGBA on the OLED, and appends that value
+    to a file when Select is pressed."""
+
+    title = "LED TEST"
+
+    # Advance to the next color this often.
+    CYCLE_SECONDS = 1.5
+
+    # Fixed opacity/brightness applied to every color.
+    ALPHA = 64
+
+    # Every combination of these per-channel levels (skipping all-off) — a much
+    # wider palette than pure primaries: oranges, teals, pastels, greys, etc.
+    LEVELS: list[int] = [0, 128, 255]
+
+    def __init__(self) -> None:
+        import colorsys
+
+        colors = [
+            (r, g, b)
+            for r in self.LEVELS
+            for g in self.LEVELS
+            for b in self.LEVELS
+            if (r, g, b) != (0, 0, 0)
+        ]
+        # Sort by hue (then brightest first) so the cycle reads as a rainbow.
+        colors.sort(key=lambda c: (colorsys.rgb_to_hsv(c[0] / 255, c[1] / 255, c[2] / 255)[0], -sum(c)))
+        self.combos = colors
+        self.index = 0
+        self._last_advance = time.monotonic()
+        self._saved_flash_until = 0.0
+
+    def _current(self) -> tuple[int, int, int]:
+        return self.combos[self.index % len(self.combos)]
+
+    def _advance_if_due(self) -> None:
+        now = time.monotonic()
+        if now - self._last_advance >= self.CYCLE_SECONDS:
+            self.index = (self.index + 1) % len(self.combos)
+            self._last_advance = now
+
+    def led_override(self, app) -> "Rgb | None":
+        self._advance_if_due()
+        r, g, b = self._current()
+        return Rgb(r, g, b).scaled(self.ALPHA / 255.0)
+
+    # --- persistence -----------------------------------------------------
+    def _save_path(self) -> Path:
+        return Path(os.environ.get("FIREHAT_LED_TEST_FILE", "/home/firehat/led-test.txt"))
+
+    def on_select(self, app) -> None:
+        r, g, b = self._current()
+        path = self._save_path()
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a") as handle:
+                handle.write(f"rgba({r}, {g}, {b}, {self.ALPHA})\n")
+        except OSError:
+            pass
+        self._saved_flash_until = time.monotonic() + 1.0
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        self._advance_if_due()
+        r, g, b = self._current()
+        hex_code = f"#{r:02X}{g:02X}{b:02X}"
+        font = _font(context, "font_medium")
+
+        draw.text((0, HEADER_Y), self.title, font=font, fill=255)
+        _right(draw, width, HEADER_Y, f"{self.index + 1:02d}/{len(self.combos):02d}", font)
+        draw.text((0, 18), f"R{r:3d}  G{g:3d}", font=font, fill=255)
+        draw.text((0, 33), f"B{b:3d}  A{self.ALPHA:3d}", font=font, fill=255)
+
+        if time.monotonic() < self._saved_flash_until:
+            _center(draw, width, 49, "SAVED", font)
+        else:
+            draw.text((0, 49), hex_code, font=font, fill=255)
+            _right(draw, width, 49, "SEL=save", font)
