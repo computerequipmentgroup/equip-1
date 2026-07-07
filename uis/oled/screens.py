@@ -53,6 +53,31 @@ def _right(draw, width: int, y: int, text: str, font, fill: int = 255) -> None:
     draw.text((width - (bbox[2] - bbox[0]), y), text, font=font, fill=fill)
 
 
+def _storage_device_label(storage: dict[str, Any]) -> str:
+    kind = str(storage.get("device_kind") or "").lower()
+    if kind == "usb":
+        return "USB"
+    if kind == "sd":
+        return "SD CARD"
+    if kind == "nvme":
+        return "NVME"
+    if kind == "transfer":
+        return "USB XFER"
+    if kind == "rootfs":
+        return "ROOTFS"
+
+    device = str(storage.get("device") or "")
+    if device.startswith("/dev/sd"):
+        return "USB"
+    if device.startswith("/dev/mmcblk"):
+        return "SD CARD"
+    if device.startswith("/dev/nvme"):
+        return "NVME"
+    if device in {"rootfs", "/dev/root"}:
+        return "ROOTFS"
+    return "UNKNOWN"
+
+
 class BootScreen(Screen):
     title = "BOOT"
 
@@ -223,6 +248,15 @@ class RecordingScreen(Screen):
 class StorageScreen(Screen):
     title = "STORAGE"
 
+    def on_select(self, app) -> None:
+        state = app.state or {}
+        if state.get("mode") in {"recording", "usb_transfer", "offline"}:
+            return
+        app.command("storage-switch-usb")
+
+    def can_navigate(self, state: dict[str, Any]) -> bool:
+        return state.get("mode") != "recording"
+
     def render(self, draw, width: int, height: int, context: dict) -> None:
         state = context.get("state") or {}
         storage = state.get("storage") or {}
@@ -233,7 +267,7 @@ class StorageScreen(Screen):
         draw.text((0, HEADER_Y), "STORAGE", font=font, fill=255)
         draw.text((0, CONTENT_Y), f"Free: {bytes_gb(free)}", font=font, fill=255)
         draw.text((0, CONTENT_Y + LINE_HEIGHT), f"Used: {percent(used, total)}%", font=font, fill=255)
-        draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), f"Time: {storage.get('recording_minutes_available', 0)}m", font=font, fill=255)
+        draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), f"Device: {_storage_device_label(storage)}", font=font, fill=255)
 
 
 def _wifi_qr_escape(value: str) -> str:

@@ -177,6 +177,22 @@ async def usb_storage_stop() -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@app.post("/api/commands/storage-switch-usb")
+async def storage_switch_usb() -> dict:
+    try:
+        return await daemon.switch_storage_usb()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/commands/storage-switch-sd")
+async def storage_switch_sd() -> dict:
+    try:
+        return await daemon.switch_storage_sd()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.websocket("/api/events")
 async def events(websocket: WebSocket) -> None:
     await websocket.accept()

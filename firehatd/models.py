@@ -44,6 +44,10 @@ class StorageState:
     used_bytes: int = 0
     free_bytes: int = 0
     recording_minutes_available: int = 0
+    device: str | None = None
+    device_kind: str = "unknown"
+    mount_point: str | None = None
+    filesystem_type: str | None = None
 
 
 @dataclass

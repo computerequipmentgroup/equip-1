@@ -45,6 +45,10 @@ class FirehatDaemon:
         self._lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
         self._usb_storage_task: asyncio.Task | None = None
+        self._storage_switch_lock = asyncio.Lock()
+        self.auto_storage_switch = os.environ.get("FIREHAT_AUTO_STORAGE_SWITCH", "1") not in {"0", "false", "False", "no"}
+        self._auto_storage_cooldown_seconds = float(os.environ.get("FIREHAT_AUTO_STORAGE_COOLDOWN_SECONDS", "5"))
+        self._last_auto_storage_attempt_at: dict[str, float] = {"usb": 0.0, "sd": 0.0}
         self._last_state: dict[str, Any] | None = None
         self.error: ErrorState | None = None
 
@@ -255,6 +259,49 @@ class FirehatDaemon:
         self.error = None
         return await self.publish_state()
 
+    async def switch_storage_usb(self) -> dict[str, Any]:
+        return await self._switch_storage("usb")
+
+    async def switch_storage_sd(self) -> dict[str, Any]:
+        return await self._switch_storage("sd")
+
+    async def _switch_storage(self, target: str) -> dict[str, Any]:
+        async with self._storage_switch_lock:
+            await self._prepare_storage_switch()
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["/usr/sbin/firehat-storage-switch", target],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or f"Storage switch to {target} failed").strip()
+                self.error = ErrorState(message="Storage switch failed", detail=detail)
+                await self.publish_state()
+                raise CommandError(detail)
+            self.error = None
+            state = await self.publish_state()
+            await self.publish_captures()
+            return state
+
+    async def _prepare_storage_switch(self) -> None:
+        async with self._lock:
+            self._poll_recorder_unlocked()
+            if self.recorder.state.active:
+                raise CommandError("Stop recording before switching storage")
+            if self._usb_transfer_active() or self._usb_storage_starting():
+                raise CommandError("USB disk mode is active")
+            # Stop the shared DV/preview subprocesses before the helper checks
+            # for dvgrab. This avoids switching storage while any capture-related
+            # process is still alive, without silently stopping an active recording.
+            await self.preview.stop()
+            await self.dv.stop()
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
+
     async def list_captures(self) -> list[dict]:
         return await asyncio.to_thread(self.storage.list_captures)
 
@@ -360,6 +407,7 @@ class FirehatDaemon:
                 if state != self._last_state:
                     self._last_state = state
                     await self.events.publish({"type": "state", "state": state})
+                await self._auto_switch_storage_if_needed(state)
             except Exception as exc:  # keep daemon alive even if probing fails
                 async with self._lock:
                     self.error = ErrorState(message="Monitor failed", detail=str(exc))
@@ -373,6 +421,43 @@ class FirehatDaemon:
             rc = self.recorder.poll()
             if rc is not None:
                 self.error = ErrorState(message="Recording stopped", detail=f"dvgrab exited with status {rc} (pid {pid})")
+
+    async def _auto_switch_storage_if_needed(self, state: dict[str, Any]) -> None:
+        if not self.auto_storage_switch or self._storage_switch_lock.locked():
+            return
+        if self._usb_storage_starting() or state.get("mode") in {"recording", "usb_transfer"}:
+            return
+
+        storage = state.get("storage") or {}
+        kind = str(storage.get("device_kind") or "unknown")
+        usb_present = self._usb_block_present()
+
+        # If the active /data USB was pulled, restore the SD data partition.
+        # This is deliberately skipped while recording; hot-swapping the capture
+        # target underneath dvgrab is unsafe.
+        if kind == "usb" and not usb_present:
+            await self._auto_switch_storage("sd", "USB storage disappeared; switching back to SD")
+            return
+
+        # A newly inserted USB stick should become the capture volume when the
+        # system is idle. The helper still enforces the unambiguous-exFAT rules.
+        if usb_present and kind not in {"usb", "transfer"}:
+            await self._auto_switch_storage("usb", "USB storage detected; switching to USB")
+
+    async def _auto_switch_storage(self, target: str, reason: str) -> None:
+        now = time.monotonic()
+        if now - self._last_auto_storage_attempt_at.get(target, 0.0) < self._auto_storage_cooldown_seconds:
+            return
+        self._last_auto_storage_attempt_at[target] = now
+        self._debug_log(f"auto storage: {reason}")
+        try:
+            await self._switch_storage(target)
+        except Exception as exc:
+            self._debug_log(f"auto storage switch to {target} failed: {exc}")
+
+    @staticmethod
+    def _usb_block_present() -> bool:
+        return any(Path("/sys/block").glob("sd*"))
 
     def _usb_transfer_active(self) -> bool:
         return Path("/run/firehat-usb-storage.active").exists()
@@ -393,6 +478,10 @@ class FirehatDaemon:
                 used_bytes=0,
                 free_bytes=0,
                 recording_minutes_available=0,
+                device="USB-C",
+                device_kind="transfer",
+                mount_point=None,
+                filesystem_type=None,
             )
         else:
             snapshot = self.storage.snapshot()
@@ -402,6 +491,10 @@ class FirehatDaemon:
                 used_bytes=snapshot.used_bytes,
                 free_bytes=snapshot.free_bytes,
                 recording_minutes_available=snapshot.recording_minutes_available,
+                device=snapshot.device,
+                device_kind=snapshot.device_kind,
+                mount_point=snapshot.mount_point,
+                filesystem_type=snapshot.filesystem_type,
             )
         recording_active = self.recorder.state.active
         if usb_transfer_active:

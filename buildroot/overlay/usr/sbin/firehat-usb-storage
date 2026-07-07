@@ -1,5 +1,5 @@
 #!/bin/sh
-# Expose the EQUIP1 exFAT recordings partition as a USB Mass Storage gadget.
+# Expose the currently selected exFAT recordings partition as a USB Mass Storage gadget.
 # This is an exclusive mode: /data must be unmounted while the host computer has
 # block-level access to the partition.
 
@@ -22,13 +22,19 @@ log() {
     echo "$*"
 }
 
+partition_disk() {
+    part="$1"
+    case "$part" in
+        *mmcblk*p[0-9]*|*nvme*n[0-9]*p[0-9]*) echo "${part%p[0-9]*}" ;;
+        /dev/*[0-9])                              echo "${part%[0-9]*}" ;;
+        *)                                        echo "$part" ;;
+    esac
+}
+
 root_disk_from_rootfs() {
     rootdev="$(blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1)"
-    case "$rootdev" in
-        *mmcblk*p[0-9]*|*nvme*n[0-9]*p[0-9]*) echo "${rootdev%p[0-9]*}" ;;
-        /dev/*[0-9]) echo "${rootdev%[0-9]*}" ;;
-        *) echo "$rootdev" ;;
-    esac
+    [ -n "$rootdev" ] || return 1
+    partition_disk "$rootdev"
 }
 
 data_part_from_rootfs_disk() {
@@ -57,6 +63,17 @@ data_part() {
     data_part_from_rootfs_disk
 }
 
+part_source() {
+    part="$1"
+    disk="$(partition_disk "$part")"
+    root_disk="$(root_disk_from_rootfs 2>/dev/null || true)"
+    if [ -n "$root_disk" ] && [ "$disk" = "$root_disk" ]; then
+        echo "SD/rootfs-disk"
+    else
+        echo "USB/external"
+    fi
+}
+
 blkid_field() {
     field="$1"
     part="$2"
@@ -77,13 +94,21 @@ check_data_part() {
 
     type="$(blkid_field TYPE "$part")"
     label="$(blkid_field LABEL "$part")"
+    if [ -z "$type" ]; then
+        mounted_type="$(awk -v p="$part" '$1 == p { print $3; exit }' /proc/mounts 2>/dev/null || true)"
+        [ "$mounted_type" = "exfat" ] && type="exfat"
+    fi
     if [ -n "$type" ] && [ "$type" != "exfat" ]; then
         log "Refusing to export $part: expected exfat, got '${type:-unknown}'"
         return 1
     fi
-    if [ "$label" != "EQUIP1" ] && [ "${FIREHAT_USB_STORAGE_ALLOW_UNLABELED:-0}" != "1" ]; then
-        log "Refusing to export $part: expected label EQUIP1, got '${label:-none}'"
-        return 1
+    if [ "$label" != "EQUIP1" ]; then
+        if [ "$type" = "exfat" ]; then
+            log "Warning: exporting exFAT data partition $part without EQUIP1 label (label '${label:-none}')"
+        elif [ "${FIREHAT_USB_STORAGE_ALLOW_UNLABELED:-0}" != "1" ]; then
+            log "Refusing to export $part: expected exfat or label EQUIP1, got type '${type:-unknown}' label '${label:-none}'"
+            return 1
+        fi
     fi
     if [ -z "$type" ]; then
         log "Warning: blkid did not report TYPE for $part; trusting EQUIP1 label"
@@ -162,7 +187,7 @@ fail_start() {
 
 start_mode() {
     part="$(data_part || true)"
-    [ -n "$part" ] || { log "Could not locate EQUIP1 partition"; return 1; }
+    [ -n "$part" ] || { log "Could not locate data partition"; return 1; }
     check_data_part "$part" || return 1
 
     if pidof dvgrab >/dev/null 2>&1; then
@@ -176,7 +201,8 @@ start_mode() {
         return 0
     fi
 
-    log "Starting USB disk mode for $part"
+    source="$(part_source "$part")"
+    log "Starting USB disk mode for $source data partition $part"
     sync
     if grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
         if ! umount "$DATA_MNT"; then
@@ -218,8 +244,9 @@ start_mode() {
         echo "part=$part"
         echo "udc=$udc"
         echo "readonly=$RO"
+        echo "source=$source"
     } >"$ACTIVE_FILE"
-    log "USB disk ready: exported $part via $udc"
+    log "USB disk ready: exported $source data partition $part via $udc"
 }
 
 stop_mode() {
@@ -239,7 +266,11 @@ stop_mode() {
         fi
     fi
     rm -f "$ACTIVE_FILE"
-    log "USB disk mode stopped; $DATA_MNT mounted"
+    if [ -n "$part" ] && [ -b "$part" ]; then
+        log "USB disk mode stopped; $DATA_MNT mounted from $(part_source "$part") data partition $part"
+    else
+        log "USB disk mode stopped; $DATA_MNT mounted"
+    fi
 }
 
 status_mode() {

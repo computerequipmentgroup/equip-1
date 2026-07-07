@@ -6,6 +6,14 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+
+@dataclass(frozen=True)
+class MountInfo:
+    source: str
+    mount_point: str
+    filesystem_type: str
+
+
 DV_BYTES_PER_MINUTE = 216 * 1024 * 1024
 CAPTURE_EXTENSIONS = {".dv", ".avi", ".mov", ".mp4", ".mkv"}
 THUMBNAIL_EXTENSION = ".jpg"
@@ -18,6 +26,10 @@ class StorageSnapshot:
     used_bytes: int
     free_bytes: int
     recording_minutes_available: int
+    device: str | None = None
+    device_kind: str = "unknown"
+    mount_point: str | None = None
+    filesystem_type: str | None = None
 
 
 class StorageManager:
@@ -26,14 +38,106 @@ class StorageManager:
         self.capture_dir.mkdir(parents=True, exist_ok=True)
 
     def snapshot(self) -> StorageSnapshot:
-        total, used, free = shutil.disk_usage(self.capture_dir)
+        mount = self._mount_for_capture_dir()
+        if self._mount_source_missing(mount):
+            # Avoid statvfs on a stale USB mount; it may fail or block after the
+            # underlying /dev/sd* node disappeared.
+            return self._unavailable_snapshot(mount)
+
+        try:
+            total, used, free = shutil.disk_usage(self.capture_dir)
+        except OSError:
+            # If USB storage is pulled without an explicit switch/unmount, /data
+            # can remain as a stale mount and statvfs may fail. Keep the API/OLED
+            # alive and report the mounted device as unavailable instead of
+            # letting state generation crash.
+            return self._unavailable_snapshot(mount)
+
         return StorageSnapshot(
             capture_dir=str(self.capture_dir),
             total_bytes=total,
             used_bytes=used,
             free_bytes=free,
             recording_minutes_available=int(free / DV_BYTES_PER_MINUTE),
+            device=mount.source if mount else None,
+            device_kind=self._device_kind(mount),
+            mount_point=mount.mount_point if mount else None,
+            filesystem_type=mount.filesystem_type if mount else None,
         )
+
+    def _unavailable_snapshot(self, mount: MountInfo | None) -> StorageSnapshot:
+        return StorageSnapshot(
+            capture_dir=str(self.capture_dir),
+            total_bytes=0,
+            used_bytes=0,
+            free_bytes=0,
+            recording_minutes_available=0,
+            device=mount.source if mount else None,
+            device_kind=self._device_kind(mount),
+            mount_point=mount.mount_point if mount else None,
+            filesystem_type=mount.filesystem_type if mount else None,
+        )
+
+    def _mount_for_capture_dir(self) -> MountInfo | None:
+        try:
+            capture_dir = self.capture_dir.resolve()
+        except OSError:
+            capture_dir = self.capture_dir.absolute()
+
+        best: MountInfo | None = None
+        for mount in self._read_mounts():
+            mount_path = Path(mount.mount_point)
+            try:
+                capture_dir.relative_to(mount_path)
+            except ValueError:
+                continue
+            if best is None or len(mount.mount_point) > len(best.mount_point):
+                best = mount
+        return best
+
+    @staticmethod
+    def _read_mounts() -> list[MountInfo]:
+        mounts: list[MountInfo] = []
+        try:
+            lines = Path("/proc/mounts").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return mounts
+
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 3:
+                continue
+            mounts.append(
+                MountInfo(
+                    source=StorageManager._decode_mount_field(fields[0]),
+                    mount_point=StorageManager._decode_mount_field(fields[1]),
+                    filesystem_type=fields[2],
+                )
+            )
+        return mounts
+
+    @staticmethod
+    def _decode_mount_field(value: str) -> str:
+        return value.replace("\\040", " ").replace("\\011", "\t").replace("\\012", "\n").replace("\\134", "\\")
+
+    @staticmethod
+    def _mount_source_missing(mount: MountInfo | None) -> bool:
+        return mount is not None and mount.source.startswith("/dev/sd") and not Path(mount.source).exists()
+
+    @staticmethod
+    def _device_kind(mount: MountInfo | None) -> str:
+        if mount is None:
+            return "unknown"
+        source = mount.source
+        if source.startswith("/dev/mmcblk"):
+            return "sd"
+        if source.startswith("/dev/sd"):
+            return "usb"
+        if source.startswith("/dev/nvme"):
+            return "nvme"
+        if source in {"rootfs", "/dev/root"} or mount.mount_point == "/":
+            return "rootfs"
+        return "unknown"
 
     def has_recording_space(self, minimum_minutes: int = 1) -> bool:
         return self.snapshot().recording_minutes_available >= minimum_minutes

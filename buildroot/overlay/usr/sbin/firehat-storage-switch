@@ -1,25 +1,29 @@
 #!/bin/sh
-# Mount the recordings data partition at /data.
+# Runtime switch for the Firehat /data capture volume.
 #
-# Preferred layout:
-#   - SD card: boot/rootfs
-#   - USB-A drive/SSD: exFAT partition for captures
-#
-# Prefer a non-root-disk exFAT partition labelled EQUIP1. If none exists, use a
-# single unambiguous non-root exFAT partition. Otherwise fall back to partition 2
-# of the rootfs disk, which is the SD-card recordings partition created by
-# flash.sh.
+# Switches are mediated by firehatd. The daemon may invoke this from an idle
+# auto-detect loop, but never while recording, so /data can be unmounted safely.
+
+set -u
 
 DATA_MNT="${FIREHAT_DATA_MNT:-/data}"
 DATA_LABEL="${FIREHAT_DATA_LABEL:-EQUIP1}"
 MOUNT_OPTS="${FIREHAT_DATA_MOUNT_OPTS:-noatime,sync,dirsync}"
 MOUNT_TIMEOUT="${FIREHAT_DATA_MOUNT_TIMEOUT:-15}"
 USB_WAIT_SECS="${FIREHAT_USB_DATA_WAIT_SECS:-5}"
+LOGFILE="/var/log/storage-switch.log"
 BOOT_LOG="/var/log/boot-crumb.log"
+USB_STORAGE_ACTIVE="/run/firehat-usb-storage.active"
 
 log() {
-    mkdir -p /var/log 2>/dev/null || true
-    echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S15data: $*" >>"$BOOT_LOG" 2>/dev/null || true
+    mkdir -p /var/log /run 2>/dev/null || true
+    line="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) storage-switch: $*"
+    echo "$line" >>"$LOGFILE" 2>/dev/null || true
+    echo "$line" >>"$BOOT_LOG" 2>/dev/null || true
+    if mounted_at_data; then
+        echo "$line" >>"$DATA_MNT/storage-switch.log" 2>/dev/null || true
+    fi
+    echo "$*" >&2
 }
 
 mounted_at_data() {
@@ -53,6 +57,10 @@ dump_usb_state() {
         log "diag: $line"
     done
     log "USB diagnostics end: $reason"
+}
+
+mounted_data_part() {
+    awk -v m="$DATA_MNT" '$2 == m { print $1; exit }' /proc/mounts 2>/dev/null
 }
 
 partition_disk() {
@@ -229,8 +237,18 @@ wait_for_external_data_part() {
         sleep 1
         i=$((i + 1))
     done
-    dump_usb_state "no USB data partition candidate after ${USB_WAIT_SECS}s"
     return 1
+}
+
+part_source() {
+    part="$1"
+    disk="$(partition_disk "$part")"
+    root_disk="$(root_disk_from_rootfs 2>/dev/null || true)"
+    if [ -n "$root_disk" ] && [ "$disk" = "$root_disk" ]; then
+        echo "SD/rootfs-disk"
+    else
+        echo "USB/external"
+    fi
 }
 
 mount_data_part() {
@@ -238,15 +256,10 @@ mount_data_part() {
     source="$2"
 
     [ -n "$part" ] && [ -b "$part" ] || return 1
-    mkdir -p "$DATA_MNT"
-
-    if mounted_at_data; then
-        log "$DATA_MNT is already mounted; leaving existing mount in place"
-        return 0
-    fi
+    mkdir -p "$DATA_MNT" 2>/dev/null || true
 
     log "mounting $source data partition $part at $DATA_MNT"
-    MOUNT_ERR="/run/S15data.mount.err"
+    MOUNT_ERR="/run/firehat-storage-switch.mount.err"
     : >"$MOUNT_ERR" 2>/dev/null || true
     mount -t exfat -o "$MOUNT_OPTS" "$part" "$DATA_MNT" 2>"$MOUNT_ERR" &
     MOUNT_PID=$!
@@ -260,12 +273,15 @@ mount_data_part() {
     kill "$TIMER_PID" 2>/dev/null || true
 
     if mounted_at_data; then
+        mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
+        cp "$BOOT_LOG" "$DATA_MNT/boot-crumb.log" 2>/dev/null || true
         label="$(blkid_field LABEL "$part")"
         if [ -n "$label" ]; then
             log "using $source data partition $part label $label"
         else
             log "using $source data partition $part without label"
         fi
+        sync
         return 0
     fi
 
@@ -277,48 +293,102 @@ mount_data_part() {
         log "mount error for $part: no stderr from mount"
     fi
     dump_usb_state "mount failed for $part"
-    log "could not mount $source data partition $part; using rootfs-backed $DATA_MNT"
+    log "could not mount $source data partition $part"
     return 1
 }
 
-case "$1" in
-    start)
-        log "start"
-        mkdir -p "$DATA_MNT"
+restore_previous_or_sd() {
+    previous="$1"
+    if [ -n "$previous" ] && [ -b "$previous" ]; then
+        mount_data_part "$previous" "previous $(part_source "$previous")" && return 0
+    fi
+    sd_part="$(sd_data_part_from_rootfs_disk 2>/dev/null || true)"
+    if [ -n "$sd_part" ] && [ -b "$sd_part" ]; then
+        mount_data_part "$sd_part" "SD fallback" && return 0
+    fi
+    mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
+    return 1
+}
 
-        USB_PART="$(wait_for_external_data_part || true)"
-        if [ -n "$USB_PART" ]; then
-            mount_data_part "$USB_PART" "USB" || true
-        fi
+switch_to_part() {
+    target="$1"
+    source="$2"
 
-        if ! mounted_at_data; then
-            SD_PART="$(sd_data_part_from_rootfs_disk 2>/dev/null || true)"
-            if [ -n "$SD_PART" ] && [ -b "$SD_PART" ]; then
-                if [ -n "$USB_PART" ]; then
-                    log "USB data partition $USB_PART was not mounted; falling back to SD $SD_PART"
-                else
-                    log "no USB data partition found; falling back to SD $SD_PART"
+    [ -n "$target" ] && [ -b "$target" ] || { log "target data partition not found"; return 1; }
+
+    current="$(mounted_data_part || true)"
+    if [ "$current" = "$target" ]; then
+        log "$DATA_MNT already mounted from $source data partition $target"
+        mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
+        return 0
+    fi
+
+    if pidof dvgrab >/dev/null 2>&1; then
+        log "refusing to switch storage while dvgrab is running"
+        return 1
+    fi
+    if [ -s "$USB_STORAGE_ACTIVE" ]; then
+        log "refusing to switch storage while USB disk transfer mode is active"
+        return 1
+    fi
+
+    log "switching $DATA_MNT from ${current:-rootfs directory} to $source data partition $target"
+    sync
+    if mounted_at_data; then
+        if ! umount "$DATA_MNT"; then
+            if [ -n "$current" ] && [ ! -b "$current" ]; then
+                log "could not normally unmount stale $DATA_MNT source $current; trying lazy unmount"
+                if ! umount -l "$DATA_MNT"; then
+                    log "could not lazily unmount $DATA_MNT; leaving current storage active"
+                    return 1
                 fi
-                mount_data_part "$SD_PART" "SD fallback" || true
             else
-                if [ -n "$USB_PART" ]; then
-                    log "USB data partition $USB_PART was not mounted and SD fallback partition is missing; using rootfs-backed $DATA_MNT"
-                else
-                    log "no USB data partition found and SD fallback partition is missing; using rootfs-backed $DATA_MNT"
-                fi
+                log "could not unmount $DATA_MNT; leaving current storage active"
+                return 1
             fi
         fi
+    fi
 
-        mkdir -p "$DATA_MNT/captures"
-        # Sync any existing boot crumb log to the data partition.
-        cp "$BOOT_LOG" "$DATA_MNT/boot-crumb.log" 2>/dev/null || true
-        sync
+    if mount_data_part "$target" "$source"; then
+        log "storage switch complete: $DATA_MNT now uses $source data partition $target"
+        return 0
+    fi
+
+    log "storage switch failed; attempting to restore previous/fallback storage"
+    restore_previous_or_sd "$current" || true
+    return 1
+}
+
+status_mode() {
+    current="$(mounted_data_part || true)"
+    if [ -n "$current" ]; then
+        echo "part=$current"
+        echo "source=$(part_source "$current")"
+        echo "mount=$DATA_MNT"
+        exit 0
+    fi
+    echo "part="
+    echo "source=rootfs-directory"
+    echo "mount=$DATA_MNT"
+    exit 1
+}
+
+case "${1:-}" in
+    usb)
+        target="$(wait_for_external_data_part || true)"
+        [ -n "$target" ] || { log "no unambiguous USB exFAT data partition found"; dump_usb_state "no USB data partition candidate"; exit 1; }
+        switch_to_part "$target" "USB"
         ;;
-    stop)
-        umount "$DATA_MNT" 2>/dev/null || true
+    sd)
+        target="$(sd_data_part_from_rootfs_disk 2>/dev/null || true)"
+        [ -n "$target" ] || { log "no SD fallback data partition found"; exit 1; }
+        switch_to_part "$target" "SD fallback"
+        ;;
+    status)
+        status_mode
         ;;
     *)
-        echo "Usage: $0 {start|stop}"
-        exit 1
+        echo "Usage: $0 {usb|sd|status}"
+        exit 2
         ;;
 esac

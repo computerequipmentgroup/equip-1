@@ -8,7 +8,7 @@ from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
 from .leds import STATUS_GAME, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, make_boot_leds
-from .screens import BootScreen, DeckScreen, FlashScreen, GameScreen, LedTestScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
+from .screens import BootScreen, FlashScreen, GameScreen, LedTestScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
 
 
 class OledApp:
@@ -22,7 +22,7 @@ class OledApp:
         self.buttons = make_buttons(self.board)
         self.buzzer = make_buzzer(self.board)
         self.leds = make_boot_leds()
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen(), GameScreen(), LedTestScreen(), FlashScreen()]
+        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen(), LedTestScreen(), FlashScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
         self.boot_duration_seconds = float(os.environ.get("FIREHAT_BOOT_DURATION_SECONDS", "3.0"))
@@ -73,7 +73,7 @@ class OledApp:
                 self._set_state({
                     "mode": "offline",
                     "recording": {"active": False, "elapsed_seconds": 0},
-                    "storage": {"recording_minutes_available": 0},
+                    "storage": {"recording_minutes_available": 0, "device_kind": "unknown"},
                     "network": {},
                     "error": {"message": "Daemon offline", "detail": detail},
                 })

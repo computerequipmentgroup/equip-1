@@ -27,6 +27,10 @@ def _base_state(mode: str) -> dict[str, Any]:
             "used_bytes": 44 * 1024**3,
             "free_bytes": 84 * 1024**3,
             "recording_minutes_available": 252,
+            "device": "/dev/sda1",
+            "device_kind": "usb",
+            "mount_point": "/data",
+            "filesystem_type": "exfat",
         },
         "network": {
             "ip": "10.42.0.1",
@@ -79,7 +83,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
     offline = {
         "mode": "offline",
         "recording": {"active": False, "elapsed_seconds": 0},
-        "storage": {"recording_minutes_available": 0},
+        "storage": {"recording_minutes_available": 0, "device_kind": "unknown"},
         "network": {},
         "error": {"message": "Daemon offline", "detail": "Connection refused"},
     }
@@ -213,6 +217,18 @@ class DesignerSession:
             self.set_scenario("ready")
         elif name == "usb-storage-start":
             self.set_scenario("usb_transfer")
+        elif name == "storage-switch-usb":
+            if self.custom_state is None:
+                self.custom_state = self.state
+                self.scenario_name = "custom"
+            storage = self.custom_state.setdefault("storage", {})
+            storage.update({"device": "/dev/sda1", "device_kind": "usb", "mount_point": "/data", "filesystem_type": "exfat"})
+        elif name == "storage-switch-sd":
+            if self.custom_state is None:
+                self.custom_state = self.state
+                self.scenario_name = "custom"
+            storage = self.custom_state.setdefault("storage", {})
+            storage.update({"device": "/dev/mmcblk0p2", "device_kind": "sd", "mount_point": "/data", "filesystem_type": "exfat"})
         elif name.startswith("deck-"):
             if self.custom_state is None:
                 self.custom_state = self.state
