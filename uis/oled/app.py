@@ -8,7 +8,7 @@ from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
 from .leds import STATUS_GAME, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, make_boot_leds
-from .screens import BootScreen, DeckScreen, GameScreen, LedTestScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
+from .screens import BootScreen, DeckScreen, FlashScreen, GameScreen, LedTestScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
 
 
 class OledApp:
@@ -22,7 +22,7 @@ class OledApp:
         self.buttons = make_buttons(self.board)
         self.buzzer = make_buzzer(self.board)
         self.leds = make_boot_leds()
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen(), GameScreen(), LedTestScreen()]
+        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), DeckScreen(), StorageScreen(), GameScreen(), LedTestScreen(), FlashScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
         self.boot_duration_seconds = float(os.environ.get("FIREHAT_BOOT_DURATION_SECONDS", "3.0"))
@@ -91,17 +91,29 @@ class OledApp:
                 "error": {"message": "Command failed", "detail": result.error or name},
             })
 
+    def _change_screen(self, delta: int) -> None:
+        self.current_screen_idx = (self.current_screen_idx + delta) % len(self.screens)
+        on_enter = getattr(self.current_screen, "on_enter", None)
+        if on_enter is not None:
+            on_enter(self)
+
     def navigate_up(self) -> None:
         if self.current_screen.on_up(self):
             return
         if self.current_screen.can_navigate(self.state or {}):
-            self.current_screen_idx = (self.current_screen_idx - 1) % len(self.screens)
+            self._change_screen(-1)
 
     def navigate_down(self) -> None:
         if self.current_screen.on_down(self):
             return
         if self.current_screen.can_navigate(self.state or {}):
-            self.current_screen_idx = (self.current_screen_idx + 1) % len(self.screens)
+            self._change_screen(1)
+
+    def next_screen(self) -> None:
+        """Advance to the next screen regardless of the up/down button handlers;
+        used by screens (like the flipper game) that consume up/down themselves."""
+        if self.current_screen.can_navigate(self.state or {}):
+            self._change_screen(1)
 
     def poll_buttons(self) -> None:
         events = self.buttons.poll()

@@ -112,6 +112,9 @@ class DesignerAppAdapter:
     def command(self, name: str) -> None:
         self.session.command(name)
 
+    def next_screen(self) -> None:
+        self.session.change_screen(1)
+
 
 class DesignerSession:
     def __init__(self) -> None:
@@ -177,15 +180,25 @@ class DesignerSession:
         if index < 0 or index >= len(self.screens):
             raise IndexError(index)
         self.screen_index = index
+        self._notify_enter()
+
+    def change_screen(self, delta: int) -> None:
+        self.screen_index = (self.screen_index + delta) % len(self.screens)
+        self._notify_enter()
+
+    def _notify_enter(self) -> None:
+        on_enter = getattr(self.current_screen, "on_enter", None)
+        if on_enter is not None:
+            on_enter(DesignerAppAdapter(self))
 
     def button(self, name: str) -> None:
         app = DesignerAppAdapter(self)
         if name == "up":
             if not self.current_screen.on_up(app) and self.current_screen.can_navigate(self.state):
-                self.screen_index = (self.screen_index - 1) % len(self.screens)
+                self.change_screen(-1)
         elif name == "down":
             if not self.current_screen.on_down(app) and self.current_screen.can_navigate(self.state):
-                self.screen_index = (self.screen_index + 1) % len(self.screens)
+                self.change_screen(1)
         elif name == "select":
             self.current_screen.on_select(app)
         else:

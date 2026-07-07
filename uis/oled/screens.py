@@ -549,13 +549,13 @@ class SystemScreen(Screen):
             draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + options[option_index], font=font, fill=255)
 
 
-class GameScreen(Screen):
+class FlappyGame(Screen):
     """A one-button Flappy Cat clone. It autostarts and auto-restarts after a
     crash; select flaps, up/down navigate away."""
 
     title = "HAVE FUN"
 
-    # Play field: the header row is reserved for the title and high score.
+    # Play field: the header row is reserved for the title and current score.
     TOP = 13
     BIRD_X = 30
     BIRD_R = 3
@@ -571,7 +571,6 @@ class GameScreen(Screen):
     def __init__(self) -> None:
         self.mode = "playing"  # playing | dead
         self.score = 0
-        self.highscore = self._load_highscore()
         self.bird_y = 38.0
         self.bird_vy = 0.0
         self.pipes: list[dict[str, float | bool]] = []
@@ -579,30 +578,6 @@ class GameScreen(Screen):
         self._accum = 0.0
         self._dead_at = 0.0
         self._start(64)
-
-    # --- persistence -----------------------------------------------------
-    def _highscore_path(self) -> Path | None:
-        override = os.environ.get("FIREHAT_FLAPPY_HIGHSCORE_FILE")
-        return Path(override) if override else None
-
-    def _load_highscore(self) -> int:
-        path = self._highscore_path()
-        if path is None:
-            return 0
-        try:
-            return int(path.read_text().strip() or "0")
-        except (OSError, ValueError):
-            return 0
-
-    def _save_highscore(self) -> None:
-        path = self._highscore_path()
-        if path is None:
-            return
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(str(self.highscore))
-        except OSError:
-            pass
 
     # --- input -----------------------------------------------------------
     def _flap(self) -> None:
@@ -617,6 +592,9 @@ class GameScreen(Screen):
         self._accum = 0.0
         self._last_t = None
         self._spawn_pipe(128.0)
+
+    def reset(self) -> None:
+        self._start(64)
 
     def on_select(self, app) -> None:
         if self.mode == "playing":
@@ -671,9 +649,6 @@ class GameScreen(Screen):
     def _game_over(self) -> None:
         self.mode = "dead"
         self._dead_at = time.monotonic()
-        if self.score > self.highscore:
-            self.highscore = self.score
-            self._save_highscore()
 
     def _advance(self, height: int) -> None:
         now = time.monotonic()
@@ -723,11 +698,252 @@ class GameScreen(Screen):
         self._draw_pipes(draw, height)
         self._draw_cat(draw, self.bird_y)
 
-        # Header: title left, high score right, on a cleared strip.
+        # Header: title left, current score right, on a cleared strip.
         draw.rectangle((0, 0, width - 1, self.TOP - 2), fill=0)
         draw.text((0, HEADER_Y), self.title, font=font, fill=255)
-        _right(draw, width, HEADER_Y, f"HI:{self.highscore}", font)
-        _center(draw, width, HEADER_Y, str(self.score), font)
+        _right(draw, width, HEADER_Y, str(self.score), font)
+
+
+class PadGame(Screen):
+    """A portrait Breakout/Pong-paddle. Like SPACE, the play field is designed
+    vertically and rotated 90 degrees onto the framebuffer, so the player holds
+    the device on its side. A paddle sits at the bottom of the tall axis; up/down
+    slide it, the ball auto-bounces and breaks the brick wall at the top, and
+    select leaves. It autostarts and auto-restarts after the ball is missed."""
+
+    title = "FUN!!!"
+
+    # Portrait play field (pre-rotation): GW wide (X), GH tall (Y).
+    GW = 64
+    GH = 128
+    FIELD_TOP = 14         # top strip reserved for title/score
+
+    # Brick wall near the top.
+    BRICK_TOP = 16
+    ROWS = 4
+    COLS = 7
+    BRICK_W = 7            # drawn/collision width; COL_SP leaves a 1px gap
+    BRICK_H = 4
+    COL_SP = 8
+    ROW_SP = 6
+    MARGIN_X = 4
+
+    # Paddle at the bottom of the tall axis.
+    PADDLE_Y = 120
+    PADDLE_HW = 7          # paddle half-width
+    PADDLE_H = 2
+    PADDLE_STEP = 6        # pixels the paddle slides per button press
+
+    # Ball. Speed is a constant magnitude; bounces only change direction.
+    BALL_R = 1
+    BALL_SPEED_BASE = 48.0
+    PADDLE_ENGLISH = 0.75  # how much a paddle hit's offset steers the ball
+
+    STEP = 1.0 / 60.0
+    RESTART_DELAY = 1.2    # seconds the miss is shown before auto-restart
+
+    def __init__(self) -> None:
+        self.mode = "playing"  # playing | dead
+        self.score = 0
+        self._dead_at = 0.0
+        self._last_t: float | None = None
+        self._accum = 0.0
+        self.reset()
+
+    # --- lifecycle -------------------------------------------------------
+    def reset(self) -> None:
+        self.mode = "playing"
+        self.score = 0
+        self.wave = 1
+        self.ball_speed = self.BALL_SPEED_BASE
+        self.paddle_x = self.GW / 2.0
+        self._spawn_wave()
+        self._launch_ball()
+        self._last_t = None
+        self._accum = 0.0
+
+    def _spawn_wave(self) -> None:
+        self.alive = {(r, c) for r in range(self.ROWS) for c in range(self.COLS)}
+
+    def _launch_ball(self) -> None:
+        # Start just above the paddle, heading up at a shallow random angle.
+        self.ball_x = self.paddle_x
+        self.ball_y = float(self.PADDLE_Y - self.BALL_R - 2)
+        vx = self.ball_speed * 0.3 * random.choice((-1.0, 1.0))
+        self.ball_vx = vx
+        self.ball_vy = -((self.ball_speed ** 2 - vx ** 2) ** 0.5)
+
+    # --- input -----------------------------------------------------------
+    def _move(self, dx: float) -> None:
+        if self.mode != "playing":
+            return
+        self.paddle_x = max(float(self.PADDLE_HW), min(self.GW - 1 - self.PADDLE_HW, self.paddle_x + dx))
+
+    def on_select(self, app) -> None:
+        # Up/down steer the paddle, so leaving happens on select.
+        app.next_screen()
+
+    def on_down(self, app) -> bool:  # physical up button -> move left
+        self._move(-self.PADDLE_STEP)
+        return True
+
+    def on_up(self, app) -> bool:  # physical down button -> move right
+        self._move(self.PADDLE_STEP)
+        return True
+
+    # --- simulation ------------------------------------------------------
+    def _game_over(self) -> None:
+        self.mode = "dead"
+        self._dead_at = time.monotonic()
+
+    def _brick_hit(self, px: float, py: float) -> "tuple[int, int] | None":
+        r = self.BALL_R
+        for (row, col) in self.alive:
+            bx = self.MARGIN_X + col * self.COL_SP
+            by = self.BRICK_TOP + row * self.ROW_SP
+            if bx - r <= px <= bx + self.BRICK_W - 1 + r and by - r <= py <= by + self.BRICK_H - 1 + r:
+                return (row, col)
+        return None
+
+    def _step(self, dt: float) -> None:
+        r = self.BALL_R
+        self.ball_x += self.ball_vx * dt
+        self.ball_y += self.ball_vy * dt
+
+        # Side walls and ceiling bounce; the ball keeps its speed.
+        if self.ball_x - r <= 0 and self.ball_vx < 0:
+            self.ball_x = r
+            self.ball_vx = -self.ball_vx
+        elif self.ball_x + r >= self.GW - 1 and self.ball_vx > 0:
+            self.ball_x = self.GW - 1 - r
+            self.ball_vx = -self.ball_vx
+        if self.ball_y - r <= self.FIELD_TOP and self.ball_vy < 0:
+            self.ball_y = self.FIELD_TOP + r
+            self.ball_vy = -self.ball_vy
+
+        # Brick collision: remove one brick per step and reflect vertically.
+        hit = self._brick_hit(self.ball_x, self.ball_y)
+        if hit is not None:
+            self.alive.discard(hit)
+            self.score += 1
+            self.ball_vy = -self.ball_vy
+            if not self.alive:
+                # Cleared the wall: faster ball, fresh wall, keep the score.
+                self.wave += 1
+                self.ball_speed = self.BALL_SPEED_BASE + (self.wave - 1) * 8.0
+                self._spawn_wave()
+                self._launch_ball()
+                return
+
+        # Paddle: deflect the ball, steering by where it struck the paddle.
+        if self.ball_vy > 0 and self.ball_y + r >= self.PADDLE_Y and self.ball_y <= self.PADDLE_Y + self.PADDLE_H:
+            if self.paddle_x - self.PADDLE_HW - r <= self.ball_x <= self.paddle_x + self.PADDLE_HW + r:
+                offset = max(-1.0, min(1.0, (self.ball_x - self.paddle_x) / self.PADDLE_HW))
+                vx = offset * self.ball_speed * self.PADDLE_ENGLISH
+                self.ball_vx = vx
+                self.ball_vy = -((self.ball_speed ** 2 - vx ** 2) ** 0.5)
+                self.ball_y = self.PADDLE_Y - r - 1
+
+        # Missed the paddle and fell off the bottom: game over.
+        if self.ball_y - r > self.GH:
+            self._game_over()
+
+    def _advance(self) -> None:
+        now = time.monotonic()
+        # Hold the miss on screen briefly, then auto-restart.
+        if self.mode == "dead":
+            if now - self._dead_at >= self.RESTART_DELAY:
+                self.reset()
+            else:
+                self._last_t = now
+                return
+        dt = 0.0 if self._last_t is None else now - self._last_t
+        self._last_t = now
+        if self.mode != "playing":
+            return
+        self._accum = min(0.25, self._accum + dt)
+        while self._accum >= self.STEP:
+            self._step(self.STEP)
+            self._accum -= self.STEP
+            if self.mode != "playing":
+                break
+
+    # --- rendering -------------------------------------------------------
+    def _draw_bricks(self, draw) -> None:
+        for (row, col) in self.alive:
+            bx = self.MARGIN_X + col * self.COL_SP
+            by = self.BRICK_TOP + row * self.ROW_SP
+            draw.rectangle((bx, by, bx + self.BRICK_W - 1, by + self.BRICK_H - 1), fill=255)
+
+    def _draw_paddle(self, draw) -> None:
+        cx = int(self.paddle_x)
+        draw.rectangle((cx - self.PADDLE_HW, self.PADDLE_Y, cx + self.PADDLE_HW, self.PADDLE_Y + self.PADDLE_H - 1), fill=255)
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        from PIL import Image, ImageDraw
+
+        from .display import OledDraw
+
+        font = _font(context, "font_medium")
+        self._advance()
+
+        # Drawn in portrait (GW x GH), then rotated 90 degrees onto the
+        # landscape framebuffer so the player turns the device on its side.
+        port = Image.new("1", (self.GW, self.GH))
+        pdraw = OledDraw(port, ImageDraw.Draw(port))
+
+        pdraw.text((0, 0), self.title, font=font, fill=255)
+        _right(pdraw, self.GW, 0, str(self.score), font)
+
+        self._draw_bricks(pdraw)
+        self._draw_paddle(pdraw)
+        r = self.BALL_R
+        bx, by = int(self.ball_x), int(self.ball_y)
+        pdraw.rectangle((bx - r, by - r, bx + r, by + r), fill=255)
+
+        draw.image.paste(port.transpose(Image.Transpose.ROTATE_90), (0, 0))
+
+
+class GameScreen(Screen):
+    """The 'HAVE FUN' slot. It hosts several mini-games and rotates to the next
+    one every time the user navigates onto the screen; each game auto-starts,
+    auto-restarts, and keeps its own high score."""
+
+    title = "HAVE FUN"
+
+    def __init__(self) -> None:
+        self.games: list[Screen] = [FlappyGame(), PadGame()]
+        self.index = 0
+        self._shown = False
+
+    @property
+    def _game(self) -> Screen:
+        return self.games[self.index]
+
+    def on_enter(self, app) -> None:
+        # Show the first game once, then rotate on each subsequent visit.
+        if self._shown:
+            self.index = (self.index + 1) % len(self.games)
+        self._shown = True
+        self._game.reset()
+
+    def on_select(self, app) -> None:
+        self._game.on_select(app)
+
+    def on_up(self, app) -> bool:
+        return self._game.on_up(app)
+
+    def on_down(self, app) -> bool:
+        return self._game.on_down(app)
+
+    def can_navigate(self, state: dict[str, Any]) -> bool:
+        return self._game.can_navigate(state)
+
+    def led_override(self, app) -> "Rgb | None":
+        return self._game.led_override(app)
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        self._game.render(draw, width, height, context)
 
 
 class LedTestScreen(Screen):
@@ -809,3 +1025,49 @@ class LedTestScreen(Screen):
         else:
             draw.text((0, 49), hex_code, font=font, fill=255)
             _right(draw, width, 49, "SEL=save", font)
+
+
+class FlashScreen(Screen):
+    """Drives all three LEDs at full brightness in one of the main colors from
+    the LED test. Unlike LED TEST, the color does not auto-cycle: Select steps
+    to the next color so the user can hold on whichever one they need."""
+
+    title = "FLASH"
+
+    # The main full-brightness colors: the primaries/secondaries plus the brand
+    # orange and white, all straight from the LED test palette's top intensity.
+    COLORS: list[tuple[str, "Rgb"]] = [
+        ("RED", Rgb(255, 0, 0)),
+        ("ORANGE", Rgb(255, 128, 0)),
+        ("YELLOW", Rgb(255, 255, 0)),
+        ("GREEN", Rgb(0, 255, 0)),
+        ("CYAN", Rgb(0, 255, 255)),
+        ("BLUE", Rgb(0, 0, 255)),
+        ("MAGENTA", Rgb(255, 0, 255)),
+        ("WHITE", Rgb(255, 255, 255)),
+    ]
+
+    def __init__(self) -> None:
+        self.index = 0
+
+    def _current(self) -> tuple[str, "Rgb"]:
+        return self.COLORS[self.index % len(self.COLORS)]
+
+    def on_select(self, app) -> None:
+        self.index = (self.index + 1) % len(self.COLORS)
+
+    def led_override(self, app) -> "Rgb | None":
+        # Emitted exactly (set_all bypasses status brightness), so full values
+        # here mean full brightness on every LED.
+        return self._current()[1]
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        name, color = self._current()
+        hex_code = f"#{color.r:02X}{color.g:02X}{color.b:02X}"
+        font = _font(context, "font_medium")
+
+        draw.text((0, HEADER_Y), self.title, font=font, fill=255)
+        _right(draw, width, HEADER_Y, f"{self.index + 1:02d}/{len(self.COLORS):02d}", font)
+        _center(draw, width, 26, name, font)
+        draw.text((0, 49), hex_code, font=font, fill=255)
+        _right(draw, width, 49, "SEL=next", font)
