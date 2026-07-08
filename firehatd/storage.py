@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from stat import S_ISREG
 
 
 @dataclass(frozen=True)
@@ -144,19 +145,33 @@ class StorageManager:
 
     def list_captures(self) -> list[dict]:
         captures: list[dict] = []
-        for path in sorted(self.capture_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-            if not path.is_file() or path.suffix.lower() not in CAPTURE_EXTENSIONS:
-                continue
-            stat = path.stat()
+        entries: list[tuple[Path, os.stat_result]] = []
+        try:
+            for path in self.capture_dir.iterdir():
+                try:
+                    file_stat = path.stat()
+                except OSError:
+                    continue
+                if not S_ISREG(file_stat.st_mode) or path.suffix.lower() not in CAPTURE_EXTENSIONS:
+                    continue
+                entries.append((path, file_stat))
+        except OSError:
+            return captures
+
+        for path, file_stat in sorted(entries, key=lambda item: item[1].st_mtime, reverse=True):
             thumbnail_path = self._thumbnail_path_for_capture(path)
             capture = {
                 "name": path.name,
                 "path": str(path),
-                "size_bytes": stat.st_size,
-                "modified_at": stat.st_mtime,
+                "size_bytes": file_stat.st_size,
+                "modified_at": file_stat.st_mtime,
                 "download_url": f"/api/captures/{path.name}/download",
             }
-            if thumbnail_path.exists():
+            try:
+                thumbnail_exists = thumbnail_path.exists()
+            except OSError:
+                thumbnail_exists = False
+            if thumbnail_exists:
                 capture["thumbnail_url"] = f"/api/captures/{path.name}/thumbnail"
             captures.append(capture)
         return captures

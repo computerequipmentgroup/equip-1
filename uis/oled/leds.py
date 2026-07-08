@@ -28,13 +28,21 @@ class Rgb:
         )
 
 
-# Status LED colors, used as the exact emitted RGB value (no extra scaling):
-# dim green when a camera is ready, dim red while recording, dim blue when no
-# camera is attached, dim magenta on the game screen.
-STATUS_READY = Rgb(0, 16, 0)
-STATUS_RECORDING = Rgb(16, 0, 0)
-STATUS_NO_CAMERA = Rgb(0, 0, 16)
-STATUS_GAME = Rgb(16, 0, 16)
+# Status LED channel level before applying the user brightness slider. Keep this
+# at the real LED maximum so 100% in the web UI means full output; comfort dimming
+# is controlled by the persisted brightness value instead.
+STATUS_LEVEL = 255
+
+# Status LED colors before runtime brightness scaling: green when a camera is
+# ready, red while recording, blue when no camera is attached.
+STATUS_READY = Rgb(0, STATUS_LEVEL, 0)
+STATUS_RECORDING = Rgb(STATUS_LEVEL, 0, 0)
+STATUS_NO_CAMERA = Rgb(0, 0, STATUS_LEVEL)
+
+# The user-configurable "standard" color arrives at full 0-255 brightness. The
+# OLED app applies only the runtime brightness multiplier so 100% preserves the
+# authored channel values.
+STANDARD_LED_SCALE = 1.0
 
 
 class NullLeds:
@@ -42,6 +50,9 @@ class NullLeds:
         pass
 
     def set_status(self, color: "Rgb | None") -> None:
+        pass
+
+    def set_status_colors(self, colors: "list[Rgb]") -> None:
         pass
 
     def set_all(self, color: "Rgb") -> None:
@@ -142,10 +153,17 @@ class Ws2812SpiLeds:
         fill = Rgb(0, 0, 0) if color is None else color
         self.write([fill] * self.count)
 
+    def set_status_colors(self, colors: "list[Rgb]") -> None:
+        """Drive each LED with its own status color. Short lists repeat the last
+        color; long lists are truncated so exactly ``self.count`` LEDs are set."""
+        if not colors:
+            self.write([Rgb(0, 0, 0)] * self.count)
+            return
+        self.write([colors[i] if i < len(colors) else colors[-1] for i in range(self.count)])
+
     def set_all(self, color: "Rgb") -> None:
         """Drive every LED with ``color`` exactly as given, bypassing the fixed
-        status brightness. Used by the LED test screen so its alpha/opacity maps
-        straight to the emitted value."""
+        status brightness. Used by screens that intentionally own all LEDs."""
         self.write([color] * self.count)
 
     def clear(self) -> None:

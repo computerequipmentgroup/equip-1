@@ -1,33 +1,35 @@
 from __future__ import annotations
 
-import os
 import time
+
+from firehatd.settings import FirehatSettings, LIGHTS_BRIGHTNESS_DEFAULT
 
 from .api_client import FirehatApiClient
 from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
-from .leds import STATUS_GAME, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, make_boot_leds
-from .screens import BootScreen, FlashScreen, GameScreen, LedTestScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
+from .leds import STANDARD_LED_SCALE, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
+from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
 
 
 class OledApp:
     def __init__(self) -> None:
         self.board = get_board_config()
-        api_base = os.environ.get("FIREHAT_API_BASE", "http://127.0.0.1:8000/api")
-        api_timeout = float(os.environ.get("FIREHAT_API_TIMEOUT", "5.0"))
+        settings = FirehatSettings()
+        api_base = settings.get("ui", "api_base", "http://127.0.0.1:8000/api", env="FIREHAT_API_BASE") or "http://127.0.0.1:8000/api"
+        api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="FIREHAT_API_TIMEOUT")
         self.api = FirehatApiClient(api_base, timeout=api_timeout)
-        self.state_fetch_interval = float(os.environ.get("FIREHAT_STATE_FETCH_INTERVAL", "1.0"))
+        self.state_fetch_interval = settings.get_float("ui", "state_fetch_interval", 1.0, env="FIREHAT_STATE_FETCH_INTERVAL")
         self.display = make_display(self.board)
         self.buttons = make_buttons(self.board)
         self.buzzer = make_buzzer(self.board)
         self.leds = make_boot_leds()
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen(), LedTestScreen(), FlashScreen()]
+        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
-        self.boot_duration_seconds = float(os.environ.get("FIREHAT_BOOT_DURATION_SECONDS", "3.0"))
-        self.boot_hold_seconds = float(os.environ.get("FIREHAT_BOOT_HOLD_SECONDS", "1.1"))
-        self.frame_interval = float(os.environ.get("FIREHAT_OLED_FRAME_INTERVAL", str(1 / 60)))
+        self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="FIREHAT_BOOT_DURATION_SECONDS")
+        self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="FIREHAT_BOOT_HOLD_SECONDS")
+        self.frame_interval = settings.get_float("ui", "oled_frame_interval", 1 / 60, env="FIREHAT_OLED_FRAME_INTERVAL")
         self.current_screen_idx = 0
         self.state: dict | None = None
         self._last_state_fetch = 0.0
@@ -53,8 +55,6 @@ class OledApp:
 
     def _set_state(self, state: dict) -> None:
         self.state = state
-        if state.get("mode") == "recording":
-            self.current_screen_idx = 0
 
     def fetch_state_if_due(self, interval: float | None = None) -> None:
         interval = self.state_fetch_interval if interval is None else interval
@@ -127,16 +127,56 @@ class OledApp:
             self.buzzer.beep()
             self.current_screen.on_select(self)
 
+    def _lights_enabled(self) -> bool:
+        lights = (self.state or {}).get("lights") or {}
+        return bool(lights.get("enabled", True))
+
+    def _lights_brightness(self) -> float:
+        lights = (self.state or {}).get("lights") or {}
+        try:
+            return max(0.0, min(1.0, float(lights.get("brightness", LIGHTS_BRIGHTNESS_DEFAULT))))
+        except (TypeError, ValueError):
+            return LIGHTS_BRIGHTNESS_DEFAULT
+
+    def _dim_led(self, color: Rgb) -> Rgb:
+        return color.scaled(self._lights_brightness())
+
+    def _standard_led_colors(self):
+        """The user-configurable per-LED standard colors, each scaled by the
+        runtime brightness slider. Falls back to no-camera blue for any LED the
+        daemon has not reported (e.g. while offline)."""
+        lights = (self.state or {}).get("lights") or {}
+        colors = lights.get("default_colors")
+        scale = STANDARD_LED_SCALE * self._lights_brightness()
+        result = []
+        if isinstance(colors, (list, tuple)):
+            for color in colors:
+                if isinstance(color, (list, tuple)) and len(color) >= 3:
+                    try:
+                        result.append(Rgb(int(color[0]), int(color[1]), int(color[2])).scaled(scale))
+                        continue
+                    except (TypeError, ValueError):
+                        pass
+                result.append(self._dim_led(STATUS_NO_CAMERA))
+        if not result:
+            result = [self._dim_led(STATUS_NO_CAMERA)]
+        return result
+
     def _status_led_color(self):
+        """The uniform status color for the current state, or None to fall back
+        to the per-LED standard colors. Recording is the most important state;
+        screen-specific led_override() output takes precedence over this in
+        render()."""
         mode = (self.state or {}).get("mode")
         if mode == "recording":
-            return STATUS_RECORDING
-        if isinstance(self.current_screen, GameScreen):
-            return STATUS_GAME
-        if mode == "no_camera":
-            return STATUS_NO_CAMERA
-        if mode == "idle":
-            return STATUS_READY
+            return self._dim_led(STATUS_RECORDING)
+        # On the record screen, show ready-green whenever a camera is attached;
+        # otherwise fall back to the standard colors. Every other screen shows
+        # the standard colors, so the LEDs are never fully off.
+        if isinstance(self.current_screen, RecordingScreen):
+            camera = (self.state or {}).get("camera") or {}
+            if camera.get("connected"):
+                return self._dim_led(STATUS_READY)
         return None
 
     def render(self) -> None:
@@ -147,11 +187,18 @@ class OledApp:
             if not self._boot_leds_cleared:
                 self.leds.clear()
                 self._boot_leds_cleared = True
-            override = self.current_screen.led_override(self)
-            if override is not None:
-                self.leds.set_all(override)
+            if not self._lights_enabled():
+                self.leds.set_status(None)
             else:
-                self.leds.set_status(self._status_led_color())
+                override = self.current_screen.led_override(self)
+                if override is not None:
+                    self.leds.set_all(override)
+                else:
+                    status = self._status_led_color()
+                    if status is not None:
+                        self.leds.set_status(status)
+                    else:
+                        self.leds.set_status_colors(self._standard_led_colors())
         screen = self.boot_screen if self.is_booting else self.current_screen
         fallback_state = {"mode": "boot"} if self.is_booting else {"mode": "offline"}
         self.display.render(

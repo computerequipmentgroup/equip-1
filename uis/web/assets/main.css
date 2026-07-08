@@ -414,6 +414,9 @@ button:disabled {
 .card-top {
   margin-bottom: 0.85rem;
 }
+.card-top:last-child {
+  margin-bottom: 0;
+}
 .card-title,
 .label {
   color: var(--muted);
@@ -658,6 +661,11 @@ button:disabled {
   justify-content: space-between;
   margin-top: 0.55rem;
 }
+.storage-summary {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.8rem;
+}
 .system-bars {
   display: grid;
   gap: 0.9rem;
@@ -875,6 +883,195 @@ button:disabled {
 .empty {
   color: var(--muted);
   padding: 1rem 0 0;
+}
+.lights-row {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+  min-width: 0;
+}
+.light-swatch {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 2px;
+  cursor: pointer;
+  display: block;
+  height: 1.6rem;
+  overflow: visible;
+  position: relative;
+  transition: box-shadow 0.16s ease;
+  width: 1.6rem;
+}
+.light-swatch input[type='color'] {
+  cursor: pointer;
+  height: 200%;
+  left: -50%;
+  opacity: 0;
+  position: absolute;
+  top: -50%;
+  width: 200%;
+}
+.light-lock,
+.light-lock:hover,
+.light-lock:active {
+  align-items: center;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  margin-left: 0.05rem;
+  min-height: 0;
+  padding: 0.2rem;
+  transform: none;
+}
+.light-lock.locked,
+.light-lock.locked:hover {
+  color: var(--text);
+}
+.light-lock.disabled,
+.light-lock.disabled:hover {
+  color: var(--muted);
+  opacity: 0.38;
+}
+.light-toggle,
+.light-toggle:hover,
+.light-toggle:active {
+  align-items: center;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  margin-left: -0.05rem;
+  min-height: 0;
+  padding: 0.28rem;
+  transform: none;
+}
+.light-toggle.off,
+.light-toggle.off:hover {
+  background: transparent;
+  color: var(--text);
+}
+.light-lock .lock-icon,
+.light-toggle .power-icon {
+  height: 1.05rem;
+  width: 1.05rem;
+}
+.light-brightness {
+  align-items: center;
+  color: var(--muted);
+  display: grid;
+  flex: 1 1 12rem;
+  gap: 0.65rem;
+  grid-template-columns: auto minmax(4rem, 1fr) auto;
+  margin-left: 0.35rem;
+  min-width: 0;
+}
+.light-brightness input[type='range'] {
+  accent-color: var(--text);
+  cursor: pointer;
+  width: 100%;
+}
+.light-brightness input[type='range']:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.light-brightness strong {
+  color: var(--text);
+  font-size: 0.82rem;
+  min-width: 3ch;
+  text-align: right;
+}
+.hdmi-preview-page {
+  align-items: center;
+  background: #000;
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 0;
+  place-items: center;
+}
+.hdmi-preview-stage {
+  aspect-ratio: 4 / 3;
+  background: #050505;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  max-height: 100vh;
+  max-height: 100dvh;
+  max-width: 100vw;
+  overflow: hidden;
+  position: relative;
+  width: min(100vw, calc(100vh * 4 / 3));
+  width: min(100vw, calc(100dvh * 4 / 3));
+}
+.hdmi-preview-stage img {
+  display: block;
+  height: 100%;
+  inset: 0;
+  object-fit: contain;
+  opacity: 0;
+  position: absolute;
+  transition: opacity 0.2s ease;
+  width: 100%;
+  z-index: 1;
+}
+.hdmi-preview-stage img.loaded {
+  opacity: 1;
+}
+.hdmi-preview-placeholder {
+  align-items: center;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px), #030303;
+  background-size: 32px 32px;
+  color: var(--dim);
+  display: grid;
+  font-family: 'w', monospace;
+  gap: 0.85rem;
+  inset: 0;
+  justify-items: center;
+  letter-spacing: 0.08em;
+  padding: 2rem;
+  position: absolute;
+  text-align: center;
+  text-transform: uppercase;
+}
+.hdmi-preview-placeholder strong {
+  color: var(--text);
+  font-size: clamp(1.7rem, 6vw, 4.5rem);
+  letter-spacing: 0.12em;
+}
+.hdmi-preview-placeholder span {
+  font-size: clamp(0.85rem, 2.2vw, 1.35rem);
+}
+.hdmi-preview-placeholder small {
+  bottom: 1.5rem;
+  color: var(--muted);
+  font-size: clamp(0.65rem, 1.4vw, 0.9rem);
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+.hdmi-preview-stage.loaded .hdmi-preview-placeholder {
+  opacity: 0;
+}
+@media (min-aspect-ratio: 4 / 3) {
+  .hdmi-preview-stage {
+    height: 100vh;
+    height: 100dvh;
+    width: auto;
+  }
 }
 @media (max-width: 360px) {
   .actions.three {

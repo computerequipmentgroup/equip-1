@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -86,11 +88,13 @@ async def live_preview() -> StreamingResponse:
 
 
 @app.get("/api/stream.mkv")
-async def live_mkv_stream() -> StreamingResponse:
+async def live_mkv_stream(takeover: bool = False) -> StreamingResponse:
     # Raw DV remuxed into Matroska for VLC and other network players. Open
     # http://<device-ip>:8000/api/stream.mkv in VLC's "Open Network Stream".
+    # The HDMI framebuffer watcher passes takeover=1 so plugging in a monitor
+    # preempts a browser MJPEG preview that may already be holding the stream.
     try:
-        stream = await daemon.mkv_stream()
+        stream = await daemon.mkv_stream(takeover=takeover)
     except CommandError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return StreamingResponse(stream, media_type=daemon.mkv_media_type())
@@ -193,18 +197,46 @@ async def storage_switch_sd() -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+async def _handle_ws_command(message: object) -> None:
+    if not isinstance(message, dict):
+        return
+    if message.get("type") == "set-light-color":
+        payload = message.get("colors")
+        if payload is None:
+            payload = message.get("color")
+        with contextlib.suppress(CommandError):
+            await daemon.set_light_color(payload)
+    elif message.get("type") == "set-lights-enabled":
+        with contextlib.suppress(CommandError):
+            await daemon.set_lights_enabled(bool(message.get("enabled")))
+    elif message.get("type") == "set-lights-brightness":
+        with contextlib.suppress(CommandError):
+            await daemon.set_lights_brightness(message.get("brightness"))
+
+
 @app.websocket("/api/events")
 async def events(websocket: WebSocket) -> None:
     await websocket.accept()
-    await websocket.send_json({"type": "state", "state": await daemon.snapshot()})
-    await websocket.send_json({"type": "captures", "captures": await daemon.list_captures()})
-    try:
-        async with daemon.events.subscribe() as queue:
+    async with daemon.events.subscribe() as queue:
+        await websocket.send_json({"type": "state", "state": await daemon.snapshot()})
+        await websocket.send_json({"type": "captures", "captures": await daemon.list_captures()})
+
+        async def pump_outgoing() -> None:
             while True:
                 event = await queue.get()
                 await websocket.send_json(event)
-    except WebSocketDisconnect:
-        return
+
+        outgoing = asyncio.create_task(pump_outgoing())
+        try:
+            while True:
+                message = await websocket.receive_json()
+                await _handle_ws_command(message)
+        except WebSocketDisconnect:
+            return
+        finally:
+            outgoing.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await outgoing
 
 
 def _mount_static_web() -> None:

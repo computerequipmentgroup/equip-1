@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import time
@@ -12,15 +13,85 @@ from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
 from .dvsource import DvSource
 from .events import EventBus
-from .models import CameraState, DaemonState, DeckState, ErrorState, RecordingState, StorageState
+from .models import CameraState, DaemonState, DeckState, ErrorState, LightsState, RecordingState, StorageState
 from .network import get_network_state
 from .preview import MjpegPreview
 from .recorder import RecordingTracker
 from .storage import StorageManager
+from .settings import FirehatSettings, LEGACY_LIGHTS_CONFIG_DEFAULT, LIGHTS_BRIGHTNESS_DEFAULT
 
 
 class CommandError(RuntimeError):
     pass
+
+
+def _coerce_rgb(color: Any) -> list[int] | None:
+    """Normalize a client-supplied color into a clamped [r, g, b] list, or
+    None when it cannot be interpreted."""
+    if isinstance(color, dict):
+        values = [color.get("r"), color.get("g"), color.get("b")]
+    elif isinstance(color, (list, tuple)):
+        values = list(color[:3])
+    else:
+        return None
+    if len(values) != 3:
+        return None
+    rgb: list[int] = []
+    for value in values:
+        try:
+            channel = int(value)
+        except (TypeError, ValueError):
+            return None
+        rgb.append(max(0, min(255, channel)))
+    return rgb
+
+
+LIGHTS_COUNT_DEFAULT = 3
+
+
+def _coerce_colors(value: Any, count: int) -> list[list[int]] | None:
+    """Normalize a client payload into `count` [r, g, b] triples. Accepts a
+    single color (applied to every LED) or a list of per-LED colors."""
+    if isinstance(value, (list, tuple)) and value and isinstance(value[0], (list, tuple, dict)):
+        colors: list[list[int]] = []
+        for item in value:
+            rgb = _coerce_rgb(item)
+            if rgb is None:
+                return None
+            colors.append(rgb)
+        # Pad short lists with the last color and truncate long ones so the
+        # stored length always matches the LED count.
+        return [list(colors[i] if i < len(colors) else colors[-1]) for i in range(count)]
+
+    single = _coerce_rgb(value)
+    if single is None:
+        return None
+    return [list(single) for _ in range(count)]
+
+
+def _lights_count_from_env() -> int:
+    try:
+        return max(1, int(os.environ.get("FIREHAT_LIGHTS_COUNT", str(LIGHTS_COUNT_DEFAULT))))
+    except ValueError:
+        return LIGHTS_COUNT_DEFAULT
+
+
+def _coerce_brightness(value: Any) -> float | None:
+    try:
+        brightness = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, brightness))
+
+
+def _light_colors_from_env(count: int) -> list[list[int]]:
+    base = [0, 0, 255]
+    raw = os.environ.get("FIREHAT_LIGHTS_DEFAULT_COLOR")
+    if raw:
+        parsed = _coerce_rgb([part.strip() for part in raw.split(",")])
+        if parsed is not None:
+            base = parsed
+    return [list(base) for _ in range(count)]
 
 
 class FirehatDaemon:
@@ -31,7 +102,9 @@ class FirehatDaemon:
         dvgrab_bin: str = "dvgrab",
         dvcont_bin: str = "dvcont",
         ffmpeg_bin: str = "ffmpeg",
+        settings: FirehatSettings | None = None,
     ):
+        self.settings = settings or FirehatSettings()
         self.capture_dir = Path(capture_dir).expanduser()
         self.storage = StorageManager(self.capture_dir)
         self.camera = FireWireCameraDetector()
@@ -39,27 +112,45 @@ class FirehatDaemon:
         self.dv = DvSource(dvgrab_bin=dvgrab_bin)
         self.recorder = RecordingTracker(self.capture_dir, source=self.dv)
         self.ffmpeg_bin = ffmpeg_bin
-        self.preview = MjpegPreview(self.dv, ffmpeg_bin=ffmpeg_bin)
+        self.preview = MjpegPreview(self.dv, ffmpeg_bin=ffmpeg_bin, settings=self.settings)
         self.events = EventBus()
         self.host_url_port = host_url_port
         self._lock = asyncio.Lock()
         self._monitor_task: asyncio.Task | None = None
         self._usb_storage_task: asyncio.Task | None = None
         self._storage_switch_lock = asyncio.Lock()
-        self.auto_storage_switch = os.environ.get("FIREHAT_AUTO_STORAGE_SWITCH", "1") not in {"0", "false", "False", "no"}
-        self._auto_storage_cooldown_seconds = float(os.environ.get("FIREHAT_AUTO_STORAGE_COOLDOWN_SECONDS", "5"))
+        self.auto_storage_switch = self.settings.get_bool(
+            "recording", "auto_storage_switch", True, env="FIREHAT_AUTO_STORAGE_SWITCH"
+        )
+        self._auto_storage_cooldown_seconds = self.settings.get_float(
+            "recording", "auto_storage_cooldown_seconds", 5.0, env="FIREHAT_AUTO_STORAGE_COOLDOWN_SECONDS"
+        )
         self._last_auto_storage_attempt_at: dict[str, float] = {"usb": 0.0, "sd": 0.0}
         self._last_state: dict[str, Any] | None = None
+        self._last_captures_storage_key: tuple[Any, ...] | None = None
+        self._legacy_lights_config_path = Path(
+            os.environ.get("FIREHAT_LIGHTS_CONFIG", LEGACY_LIGHTS_CONFIG_DEFAULT)
+        ).expanduser()
+        self._lights_count = _lights_count_from_env()
+        self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
         self.error: ErrorState | None = None
 
     @classmethod
     def from_env(cls) -> "FirehatDaemon":
-        capture_dir = os.environ.get("FIREHAT_CAPTURE_DIR", "~/captures")
-        port = int(os.environ.get("FIREHAT_PORT", "8000"))
+        settings = FirehatSettings()
+        capture_dir = settings.get("recording", "capture_dir", "~/captures", env="FIREHAT_CAPTURE_DIR") or "~/captures"
+        port = settings.get_int("network", "port", 8000, env="FIREHAT_PORT")
         dvgrab_bin = os.environ.get("FIREHAT_DVGRAB_BIN", "dvgrab")
         dvcont_bin = os.environ.get("FIREHAT_DVCONT_BIN", "dvcont")
         ffmpeg_bin = os.environ.get("FIREHAT_FFMPEG_BIN", "ffmpeg")
-        return cls(capture_dir=capture_dir, host_url_port=port, dvgrab_bin=dvgrab_bin, dvcont_bin=dvcont_bin, ffmpeg_bin=ffmpeg_bin)
+        return cls(
+            capture_dir=capture_dir,
+            host_url_port=port,
+            dvgrab_bin=dvgrab_bin,
+            dvcont_bin=dvcont_bin,
+            ffmpeg_bin=ffmpeg_bin,
+            settings=settings,
+        )
 
     async def start_monitor(self) -> None:
         if self._monitor_task is None:
@@ -241,7 +332,8 @@ class FirehatDaemon:
                 self.error = None
         except Exception as exc:
             self.error = ErrorState(message="USB disk failed", detail=str(exc))
-        await self.publish_state()
+        state = await self.publish_state()
+        await self.publish_captures_for_state(state)
 
     async def stop_usb_storage(self) -> dict[str, Any]:
         result = await asyncio.to_thread(
@@ -257,7 +349,71 @@ class FirehatDaemon:
             self.error = ErrorState(message="USB disk stop failed", detail=detail)
             raise CommandError(detail)
         self.error = None
-        return await self.publish_state()
+        state = await self.publish_state()
+        await self.publish_captures_for_state(state)
+        return state
+
+    def _load_light_settings(self) -> tuple[list[list[int]], bool, float]:
+        fallback = _light_colors_from_env(self._lights_count)
+        loaded = self.settings.load_lights(
+            count=self._lights_count,
+            fallback_colors=fallback,
+            coerce_colors=_coerce_colors,
+        )
+        if loaded is not None:
+            return loaded
+        return self._load_legacy_light_settings(fallback)
+
+    def _load_legacy_light_settings(self, fallback: list[list[int]]) -> tuple[list[list[int]], bool, float]:
+        try:
+            data = json.loads(self._legacy_lights_config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return fallback, True, LIGHTS_BRIGHTNESS_DEFAULT
+        payload = data.get("default_colors") if isinstance(data, dict) else data
+        colors = _coerce_colors(payload, self._lights_count)
+        enabled = bool(data.get("enabled", True)) if isinstance(data, dict) else True
+        brightness = _coerce_brightness(data.get("brightness")) if isinstance(data, dict) else None
+        return (colors if colors is not None else fallback), enabled, (brightness if brightness is not None else LIGHTS_BRIGHTNESS_DEFAULT)
+
+    def _save_light_settings(self) -> None:
+        try:
+            self.settings.save_lights(
+                colors=self.lights_default_colors,
+                enabled=self.lights_enabled,
+                brightness=self.lights_brightness,
+            )
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    async def set_light_color(self, payload: Any) -> dict[str, Any]:
+        colors = _coerce_colors(payload, self._lights_count)
+        if colors is None:
+            raise CommandError("Invalid light color")
+        async with self._lock:
+            self.lights_default_colors = colors
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_light_settings)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_lights_enabled(self, enabled: bool) -> dict[str, Any]:
+        async with self._lock:
+            self.lights_enabled = bool(enabled)
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_light_settings)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_lights_brightness(self, brightness: Any) -> dict[str, Any]:
+        value = _coerce_brightness(brightness)
+        if value is None:
+            raise CommandError("Invalid light brightness")
+        async with self._lock:
+            self.lights_brightness = value
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_light_settings)
+        await self.events.publish({"type": "state", "state": state})
+        return state
 
     async def switch_storage_usb(self) -> dict[str, Any]:
         return await self._switch_storage("usb")
@@ -265,9 +421,9 @@ class FirehatDaemon:
     async def switch_storage_sd(self) -> dict[str, Any]:
         return await self._switch_storage("sd")
 
-    async def _switch_storage(self, target: str) -> dict[str, Any]:
+    async def _switch_storage(self, target: str, publish_pre_state: bool = True) -> dict[str, Any]:
         async with self._storage_switch_lock:
-            await self._prepare_storage_switch()
+            await self._prepare_storage_switch(publish_pre_state=publish_pre_state)
             result = await asyncio.to_thread(
                 subprocess.run,
                 ["/usr/sbin/firehat-storage-switch", target],
@@ -283,10 +439,10 @@ class FirehatDaemon:
                 raise CommandError(detail)
             self.error = None
             state = await self.publish_state()
-            await self.publish_captures()
+            await self.publish_captures_for_state(state)
             return state
 
-    async def _prepare_storage_switch(self) -> None:
+    async def _prepare_storage_switch(self, publish_pre_state: bool = True) -> None:
         async with self._lock:
             self._poll_recorder_unlocked()
             if self.recorder.state.active:
@@ -299,7 +455,8 @@ class FirehatDaemon:
             await self.preview.stop()
             await self.dv.stop()
             state = self._snapshot_unlocked().to_dict()
-        await self.events.publish({"type": "state", "state": state})
+        if publish_pre_state:
+            await self.events.publish({"type": "state", "state": state})
         await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
 
     async def list_captures(self) -> list[dict]:
@@ -310,6 +467,34 @@ class FirehatDaemon:
         await self.events.publish({"type": "captures", "captures": captures})
         return captures
 
+    async def publish_captures_for_state(self, state: dict[str, Any]) -> list[dict]:
+        self._last_captures_storage_key = self._captures_storage_key(state)
+        if state.get("mode") == "usb_transfer":
+            captures: list[dict] = []
+        else:
+            captures = await asyncio.to_thread(self.storage.list_captures)
+        await self.events.publish({"type": "captures", "captures": captures})
+        return captures
+
+    async def publish_captures_if_storage_changed(self, state: dict[str, Any]) -> list[dict] | None:
+        key = self._captures_storage_key(state)
+        if key == self._last_captures_storage_key:
+            return None
+        return await self.publish_captures_for_state(state)
+
+    @staticmethod
+    def _captures_storage_key(state: dict[str, Any]) -> tuple[Any, ...]:
+        storage = state.get("storage") or {}
+        return (
+            state.get("mode") == "usb_transfer",
+            storage.get("capture_dir"),
+            storage.get("device"),
+            storage.get("device_kind"),
+            storage.get("mount_point"),
+            storage.get("filesystem_type"),
+            storage.get("total_bytes"),
+        )
+
     async def capture_path(self, name: str) -> Path | None:
         return await asyncio.to_thread(self.storage.capture_path, name)
 
@@ -319,10 +504,10 @@ class FirehatDaemon:
     async def preview_stream(self):
         return await self._acquire_stream("mjpeg")
 
-    async def mkv_stream(self):
-        return await self._acquire_stream("mkv")
+    async def mkv_stream(self, takeover: bool = False):
+        return await self._acquire_stream("mkv", takeover=takeover)
 
-    async def _acquire_stream(self, kind: str):
+    async def _acquire_stream(self, kind: str, takeover: bool = False):
         # MJPEG (browser preview) and Matroska (VLC/network players) share the
         # single FireWire claim and the preview busy-lock, so only one consumer
         # is ever active at a time.
@@ -336,9 +521,10 @@ class FirehatDaemon:
             if self.preview.active:
                 active_seconds = self.preview.active_seconds
                 stale_after = float(os.environ.get("FIREHAT_PREVIEW_STALE_SECONDS", "12"))
-                if active_seconds < stale_after:
+                if active_seconds < stale_after and not takeover:
                     raise CommandError(f"Stream already active ({active_seconds:.1f}s)")
-                self._debug_log(f"stream active for {active_seconds:.1f}s; stopping stale stream")
+                reason = "takeover" if takeover else "stale"
+                self._debug_log(f"stream active for {active_seconds:.1f}s; stopping {reason} stream")
                 try:
                     await asyncio.wait_for(self.preview.stop(), timeout=4.0)
                     self._debug_log("stale stream stopped before new stream")
@@ -407,7 +593,9 @@ class FirehatDaemon:
                 if state != self._last_state:
                     self._last_state = state
                     await self.events.publish({"type": "state", "state": state})
-                await self._auto_switch_storage_if_needed(state)
+                switched = await self._auto_switch_storage_if_needed(state)
+                if not switched:
+                    await self.publish_captures_if_storage_changed(state)
             except Exception as exc:  # keep daemon alive even if probing fails
                 async with self._lock:
                     self.error = ErrorState(message="Monitor failed", detail=str(exc))
@@ -422,11 +610,11 @@ class FirehatDaemon:
             if rc is not None:
                 self.error = ErrorState(message="Recording stopped", detail=f"dvgrab exited with status {rc} (pid {pid})")
 
-    async def _auto_switch_storage_if_needed(self, state: dict[str, Any]) -> None:
+    async def _auto_switch_storage_if_needed(self, state: dict[str, Any]) -> bool:
         if not self.auto_storage_switch or self._storage_switch_lock.locked():
-            return
+            return False
         if self._usb_storage_starting() or state.get("mode") in {"recording", "usb_transfer"}:
-            return
+            return False
 
         storage = state.get("storage") or {}
         kind = str(storage.get("device_kind") or "unknown")
@@ -436,24 +624,26 @@ class FirehatDaemon:
         # This is deliberately skipped while recording; hot-swapping the capture
         # target underneath dvgrab is unsafe.
         if kind == "usb" and not usb_present:
-            await self._auto_switch_storage("sd", "USB storage disappeared; switching back to SD")
-            return
+            return await self._auto_switch_storage("sd", "USB storage disappeared; switching back to SD")
 
         # A newly inserted USB stick should become the capture volume when the
         # system is idle. The helper still enforces the unambiguous-exFAT rules.
         if usb_present and kind not in {"usb", "transfer"}:
-            await self._auto_switch_storage("usb", "USB storage detected; switching to USB")
+            return await self._auto_switch_storage("usb", "USB storage detected; switching to USB")
+        return False
 
-    async def _auto_switch_storage(self, target: str, reason: str) -> None:
+    async def _auto_switch_storage(self, target: str, reason: str) -> bool:
         now = time.monotonic()
         if now - self._last_auto_storage_attempt_at.get(target, 0.0) < self._auto_storage_cooldown_seconds:
-            return
+            return False
         self._last_auto_storage_attempt_at[target] = now
         self._debug_log(f"auto storage: {reason}")
         try:
-            await self._switch_storage(target)
+            await self._switch_storage(target, publish_pre_state=False)
+            return True
         except Exception as exc:
             self._debug_log(f"auto storage switch to {target} failed: {exc}")
+            return False
 
     @staticmethod
     def _usb_block_present() -> bool:
@@ -536,6 +726,11 @@ class FirehatDaemon:
                 timecode=None,
                 last_command=self.deck.last_command,
                 error=self.deck.last_error,
+            ),
+            lights=LightsState(
+                default_colors=[list(color) for color in self.lights_default_colors],
+                enabled=self.lights_enabled,
+                brightness=self.lights_brightness,
             ),
             error=self.error,
         )

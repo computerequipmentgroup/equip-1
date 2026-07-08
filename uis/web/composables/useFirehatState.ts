@@ -83,7 +83,11 @@ const mockState = (): FirehatState => ({
     total_bytes: 119 * 1024 * 1024 * 1024,
     used_bytes: 34 * 1024 * 1024 * 1024,
     free_bytes: 85 * 1024 * 1024 * 1024,
-    recording_minutes_available: 393
+    recording_minutes_available: 393,
+    device: '/dev/sda2',
+    device_kind: 'usb',
+    mount_point: '/data',
+    filesystem_type: 'exfat'
   },
   network: {
     mode: 'ap',
@@ -97,6 +101,15 @@ const mockState = (): FirehatState => ({
     timecode: '00:00:00:00',
     last_command: null,
     error: null
+  },
+  lights: {
+    default_colors: [
+      [0, 0, 255],
+      [0, 0, 255],
+      [0, 0, 255]
+    ],
+    enabled: true,
+    brightness: 0.25
   },
   error: null
 })
@@ -181,6 +194,7 @@ export const useFirehatState = () => {
   const ws = useState<WebSocket | null>('firehat-ws', () => null)
   const captures = useState<CaptureEntry[]>('firehat-captures', () => [])
   const mockInterval = useState<ReturnType<typeof setInterval> | null>('firehat-mock-interval', () => null)
+  const resyncInterval = useState<ReturnType<typeof setInterval> | null>('firehat-resync-interval', () => null)
 
   const apiBase = config.public.apiBase as string
   const wsBase = config.public.wsBase as string
@@ -205,6 +219,26 @@ export const useFirehatState = () => {
     }
   }
 
+  const resync = async () => {
+    if (mock.value) return
+    try {
+      const [nextState, nextCaptures] = await Promise.all([
+        $fetch<FirehatState>(`${apiBase}/state`),
+        $fetch<CaptureEntry[]>(`${apiBase}/captures`)
+      ])
+      state.value = nextState
+      captures.value = nextCaptures
+      connected.value = true
+    } catch {
+      /* websocket/reconnect path owns visible connection errors */
+    }
+  }
+
+  const startResync = () => {
+    if (!import.meta.client || mock.value || resyncInterval.value) return
+    resyncInterval.value = setInterval(resync, 1500)
+  }
+
   const command = async (name: string) => {
     if (mock.value) {
       applyMockCommand(state, captures, name)
@@ -213,6 +247,46 @@ export const useFirehatState = () => {
       return
     }
     state.value = await $fetch<FirehatState>(`${apiBase}/commands/${name}`, { method: 'POST' })
+  }
+
+  // Push the per-LED standard colors to the daemon over the live websocket so
+  // the OLED/LED strip updates as the user drags a picker. In mock mode there
+  // is no socket, so just reflect the change into local state.
+  const setLightColors = (colors: number[][]) => {
+    const clean = colors.map((rgb) =>
+      rgb.slice(0, 3).map((value) => Math.max(0, Math.min(255, Math.round(value))))
+    )
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, lights: { ...(state.value.lights || {}), default_colors: clean } }
+      return
+    }
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      ws.value.send(JSON.stringify({ type: 'set-light-color', colors: clean }))
+    }
+  }
+
+  const setLightsEnabled = (enabled: boolean) => {
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, lights: { ...(state.value.lights || {}), enabled } }
+      return
+    }
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      ws.value.send(JSON.stringify({ type: 'set-lights-enabled', enabled }))
+    }
+  }
+
+  const setLightsBrightness = (brightness: number) => {
+    const clean = Math.max(0, Math.min(1, Number.isFinite(brightness) ? brightness : 0.25))
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, lights: { ...(state.value.lights || {}), brightness: clean } }
+      return
+    }
+    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+      ws.value.send(JSON.stringify({ type: 'set-lights-brightness', brightness: clean }))
+    }
   }
 
   // The device has no clock; hand it the browser's time so captures are stamped
@@ -237,11 +311,18 @@ export const useFirehatState = () => {
       return
     }
 
-    if (ws.value) return
+    if (ws.value) {
+      startResync()
+      return
+    }
+    startResync()
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = wsBase.startsWith('ws') ? wsBase : `${protocol}//${window.location.host}${wsBase}`
     ws.value = new WebSocket(url)
-    ws.value.onopen = () => { connected.value = true }
+    ws.value.onopen = () => {
+      connected.value = true
+      resync()
+    }
     ws.value.onmessage = (event) => {
       const payload = JSON.parse(event.data)
       if (payload.type === 'state') state.value = payload.state
@@ -255,7 +336,7 @@ export const useFirehatState = () => {
     }
   }
 
-  return { state, connected, error, refresh, command, connectEvents, syncTime, mock }
+  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, connectEvents, syncTime, mock }
 }
 
 export const useFirehatSystem = () => {

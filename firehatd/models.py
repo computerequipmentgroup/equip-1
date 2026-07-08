@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
+from .settings import LIGHTS_BRIGHTNESS_DEFAULT
+
 RecorderMode = Literal[
     "booting",
     "no_camera",
@@ -79,6 +81,21 @@ class ErrorState:
 
 
 @dataclass
+class LightsState:
+    # Per-LED "standard" colors, one [r, g, b] per physical LED, authored at
+    # full 0-255 brightness. Clients (OLED) dim each to the same level as the
+    # fixed status colors before emitting. Defaults to full blue on every LED,
+    # which dims to the no-camera blue.
+    default_colors: list[list[int]] = field(
+        default_factory=lambda: [[0, 0, 255], [0, 0, 255], [0, 0, 255]]
+    )
+    enabled: bool = True
+    # Runtime brightness multiplier for normal/status LED output. Defaults to
+    # a dim 25% level, while saved user settings can still override it.
+    brightness: float = LIGHTS_BRIGHTNESS_DEFAULT
+
+
+@dataclass
 class DaemonState:
     mode: RecorderMode
     camera: CameraState
@@ -86,6 +103,7 @@ class DaemonState:
     storage: StorageState
     network: NetworkState
     deck: DeckState
+    lights: LightsState = field(default_factory=LightsState)
     error: ErrorState | None = None
     updated_at: str = field(default_factory=utc_now_iso)
 

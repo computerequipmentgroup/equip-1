@@ -96,7 +96,7 @@ class DvSource:
         self._rec_thread: threading.Thread | None = None
         self._rec_handle = None
         self._rec_path: Path | None = None
-        self._rec_maxsize = int(os.environ.get("FIREHAT_DV_RECORD_QUEUE", "512"))
+        self._rec_maxsize = int(os.environ.get("FIREHAT_DV_RECORD_QUEUE", "2048"))
         self._rec_dropped = 0
         self.recording_error: str | None = None
 
@@ -240,13 +240,12 @@ class DvSource:
                     loop.call_soon_threadsafe(self._log, "DV source emitted first bytes", True)
                     first = False
                 rec = self._rec_queue
-                if rec is not None:
-                    try:
-                        rec.put_nowait(chunk)
-                    except queue.Full:
-                        # Disk badly stalled: drop rather than grow memory without
-                        # bound. dvgrab's own buffers absorb short hiccups first.
-                        self._rec_dropped += 1
+                if rec is not None and self.recording_error is None:
+                    # Recording is the priority path: never intentionally drop DV
+                    # bytes. If storage stalls, let the larger recording queue and
+                    # dvgrab's buffers absorb it instead of creating silent gaps in
+                    # the capture file.
+                    rec.put(chunk)
                 if self._subscribers:
                     loop.call_soon_threadsafe(self._fanout, chunk)
         finally:
