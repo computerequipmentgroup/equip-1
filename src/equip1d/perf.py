@@ -4,7 +4,7 @@ import os
 import time
 from typing import Any
 
-from .logging_config import perf_enabled
+from .logging import perf_enabled
 
 
 def enabled() -> bool:

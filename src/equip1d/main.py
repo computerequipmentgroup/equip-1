@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import uvicorn
 
-from .logging_config import debug_enabled, log, should_log
+from .logging import debug_enabled, log, should_log
 from .settings import Equip1Settings
 
 

@@ -14,7 +14,7 @@ from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
 from .dvsource import DvSource
 from .events import EventBus
-from .logging_config import debug_enabled, log
+from .logging import debug_enabled, log
 from .models import CameraState, DaemonState, DeckState, ErrorState, LightsState, RecordingState, StorageState
 from .network import get_network_state
 from .preview import MjpegPreview

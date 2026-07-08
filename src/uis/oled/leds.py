@@ -6,7 +6,7 @@ import os
 import time
 from dataclasses import dataclass
 
-from equip1d.logging_config import log
+from equip1d.logging import log
 
 
 SPI_IOC_WR_MODE = 0x40016B01

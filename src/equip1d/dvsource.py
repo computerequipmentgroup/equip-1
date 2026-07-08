@@ -8,7 +8,7 @@ import signal
 import threading
 import time
 
-from .logging_config import debug_enabled, log, should_log
+from .logging import debug_enabled, log, should_log
 
 
 class DvSubscription:

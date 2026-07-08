@@ -10,6 +10,7 @@ Included files used by `src/uis/oled/display.py`:
 
 - `Bm437_DOS-V_re_JPN12.otb` — bitmap version of the selected DOS-V face
 - `Bm437_Paradise132_7x16.otb` — bitmap version of the selected Paradise face, rendered at 2× for `font_big`
+- `Web437_Sharp_PC3K_Alt-2x.ttf` — Web437 Sharp PC3K Alt-2x, used for the boot/splash font. Source page: https://int10h.org/oldschool-pc-fonts/fontlist/font?sharp_pc3k_alt-2x
 
 Also included from the same pack for reference/experiments:
 

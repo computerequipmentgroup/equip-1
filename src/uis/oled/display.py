@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from equip1d.logging_config import log, perf_enabled
+from equip1d.logging import log, perf_enabled
 
 from .config import BoardConfig
 
@@ -84,7 +84,7 @@ class OledFontSet:
         self.font_small = self._font(ImageFont, "fonts/Bm437_DOS-V_re_JPN12.otb", 12)
         self.font_medium = self.font_small
         self.font_big = ScaledBitmapFont(self._font(ImageFont, "fonts/Bm437_Paradise132_7x16.otb", 16), scale=2)
-        self.font_boot = self._font(ImageFont, "fonts/w.ttf", 9)
+        self.font_boot = self._font(ImageFont, "fonts/Web437_Sharp_PC3K_Alt-2x.ttf", 9)
 
     def _font(self, image_font, relative_path: str, size: int):
         package_path = Path(__file__).resolve()

@@ -7,7 +7,7 @@ import time
 from collections.abc import AsyncIterator
 
 from .dvsource import DvSource
-from .logging_config import debug_enabled, log, should_log
+from .logging import debug_enabled, log, should_log
 from .settings import Equip1Settings
 
 

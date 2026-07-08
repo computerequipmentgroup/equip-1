@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from equip1d.logging_config import log, perf_enabled
+from equip1d.logging import log, perf_enabled
 from equip1d.settings import Equip1Settings, LIGHTS_BRIGHTNESS_DEFAULT
 
 from .api_client import Equip1ApiClient
