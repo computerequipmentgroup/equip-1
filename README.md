@@ -50,7 +50,7 @@ If you like this project and want to know more about the development and future 
 - `systemd/` — optional Debian/Radxa service templates for development outside the Buildroot image.
 - `scripts/` — helper scripts used by the optional systemd install path.
 
-## Development setup
+## Development
 
 Install Python dependencies:
 
@@ -66,7 +66,7 @@ Run the daemon locally:
 python -m equip1d.main
 ```
 
-Design OLED screens in a browser without OLED hardware:
+Design OLED screens in a browser without hardware:
 
 ```bash
 python -m uis.oled.designer
@@ -84,7 +84,7 @@ npm run generate
 
 The daemon serves `uis/web/.output/public` when it exists.
 
-## Buildroot device image
+## Image
 
 Equip-1 is Buildroot-first. The Buildroot overlay stages runtime files into `/opt/equip1` and BusyBox init starts the recorder daemon, OLED UI, Wi-Fi access point, storage handling, and HDMI preview.
 
@@ -104,9 +104,7 @@ Default device access:
 
 Override device settings in `buildroot/overlay/etc/equip1/equip-1.ini` before building.
 
-## Debian/Radxa systemd development install
-
-This path is for development on an already-running Debian/Radxa OS. The Buildroot image remains the appliance path.
+These instructions are for development on an already-running Debian/Radxa OS.
 
 ```bash
 sudo mkdir -p /opt/equip1/scripts
