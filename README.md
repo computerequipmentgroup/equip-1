@@ -42,14 +42,6 @@ Run the daemon locally:
 python -m equip1d.main
 ```
 
-Run the OLED client in mock mode:
-
-```bash
-EQUIP1_OLED_MOCK=1 python -m uis.oled
-```
-
-Mock OLED keys: `u` = up, `d` = down, `s` = select.
-
 Design OLED screens in a browser without OLED hardware:
 
 ```bash
@@ -68,14 +60,6 @@ npm run generate
 
 The daemon serves `uis/web/.output/public` when it exists.
 
-Deck control uses `dvcont` from `libavc1394-tools` when available:
-
-```bash
-sudo apt install -y libavc1394-tools
-```
-
-Override the binary path with `EQUIP1_DVCONT_BIN`.
-
 ## Buildroot device image
 
 Equip-1 is Buildroot-first. The Buildroot overlay stages runtime files into `/opt/equip1` and BusyBox init starts the recorder daemon, OLED UI, Wi-Fi access point, storage handling, and HDMI preview.
@@ -92,12 +76,9 @@ Default device access:
 - SSID: `Equip-1`
 - Password: `firesecret`
 - Device URL: `http://10.42.0.1:8000`
-- Wi-Fi interface: `wlan0`
 - Settings file: `/etc/equip1/equip-1.ini`
 
-Override device settings in `buildroot/overlay/etc/equip1/equip-1.ini` before building, or edit `/etc/equip1/equip-1.ini` on the device. Runtime environment variables use the `EQUIP1_` prefix.
-
-The HDMI framebuffer preview watcher lives at `/opt/equip1/scripts/equip1-hdmi-preview-fb.sh`. It watches `/sys/class/drm/*HDMI*/status`; when a monitor is plugged in it starts ffmpeg and renders the live DV stream to `/dev/fb0`, and unplugging the monitor stops ffmpeg again. It writes diagnostics to `/data/hdmi-preview.log` on the `EQUIP1` recordings partition.
+Override device settings in `buildroot/overlay/etc/equip1/equip-1.ini` before building.
 
 ## Debian/Radxa systemd development install
 
@@ -114,17 +95,6 @@ sudo install -m 0644 systemd/equip1-hdmi-preview.service /etc/systemd/system/equ
 sudo systemctl daemon-reload
 sudo systemctl enable --now equip1-ap.service equip1d.service equip1-oled.service equip1-hdmi-preview.service
 ```
-
-## Ways to contribute
-
-Good first areas for contributors:
-
-- Test DV capture and deck control across more camcorder models.
-- Improve archive workflows: file naming, metadata sidecars, checksums, ingest notes, and batch export.
-- Harden storage and USB-C disk mode behavior across SD cards and USB drives.
-- Refine OLED/web UX for non-technical operators.
-- Improve Buildroot reproducibility, diagnostics, and emulator coverage.
-- Write docs for capture practices, hardware assembly, troubleshooting, and classroom/archive deployments.
 
 ## API
 
@@ -145,7 +115,3 @@ Good first areas for contributors:
 - `POST /api/commands/shutdown`
 - `POST /api/commands/reboot`
 - `WS /api/events`
-
-## Naming
-
-The product is **Equip-1**. Code/package names use `equip1`/`equip1d`, environment variables use `EQUIP1_`, and the recordings partition label is `EQUIP1`.
