@@ -5,12 +5,12 @@ import os
 from pathlib import Path
 from typing import Any, Callable
 
-SETTINGS_FILE_DEFAULT = "/etc/firehat/equip-1.ini"
-LEGACY_LIGHTS_CONFIG_DEFAULT = "/etc/firehat/lights.json"
+SETTINGS_FILE_DEFAULT = "/etc/equip1/equip-1.ini"
+LEGACY_LIGHTS_CONFIG_DEFAULT = "/etc/equip1/lights.json"
 LIGHTS_BRIGHTNESS_DEFAULT = 0.25
 
 
-class FirehatSettings:
+class Equip1Settings:
     """Small INI-backed settings store for user-facing device preferences.
 
     The file is intentionally shared across settings areas so future user
@@ -18,7 +18,7 @@ class FirehatSettings:
     """
 
     def __init__(self, path: str | os.PathLike[str] | None = None):
-        self.path = Path(path or os.environ.get("FIREHAT_SETTINGS_FILE", SETTINGS_FILE_DEFAULT)).expanduser()
+        self.path = Path(path or os.environ.get("EQUIP1_SETTINGS_FILE", SETTINGS_FILE_DEFAULT)).expanduser()
 
     def get(self, section: str, option: str, default: str | None = None, *, env: str | None = None) -> str | None:
         if env and env in os.environ:

@@ -1,19 +1,19 @@
 #!/bin/sh
-# Runtime switch for the Firehat /data capture volume.
+# Runtime switch for the Equip-1 /data capture volume.
 #
-# Switches are mediated by firehatd. The daemon may invoke this from an idle
+# Switches are mediated by equip1d. The daemon may invoke this from an idle
 # auto-detect loop, but never while recording, so /data can be unmounted safely.
 
 set -u
 
-DATA_MNT="${FIREHAT_DATA_MNT:-/data}"
-DATA_LABEL="${FIREHAT_DATA_LABEL:-EQUIP1}"
-MOUNT_OPTS="${FIREHAT_DATA_MOUNT_OPTS:-noatime}"
-MOUNT_TIMEOUT="${FIREHAT_DATA_MOUNT_TIMEOUT:-15}"
-USB_WAIT_SECS="${FIREHAT_USB_DATA_WAIT_SECS:-5}"
+DATA_MNT="${EQUIP1_DATA_MNT:-/data}"
+DATA_LABEL="${EQUIP1_DATA_LABEL:-EQUIP1}"
+MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
+MOUNT_TIMEOUT="${EQUIP1_DATA_MOUNT_TIMEOUT:-15}"
+USB_WAIT_SECS="${EQUIP1_USB_DATA_WAIT_SECS:-5}"
 LOGFILE="/var/log/storage-switch.log"
 BOOT_LOG="/var/log/boot-crumb.log"
-USB_STORAGE_ACTIVE="/run/firehat-usb-storage.active"
+USB_STORAGE_ACTIVE="/run/equip1-usb-storage.active"
 
 log() {
     mkdir -p /var/log /run 2>/dev/null || true
@@ -259,7 +259,7 @@ mount_data_part() {
     mkdir -p "$DATA_MNT" 2>/dev/null || true
 
     log "mounting $source data partition $part at $DATA_MNT"
-    MOUNT_ERR="/run/firehat-storage-switch.mount.err"
+    MOUNT_ERR="/run/equip1-storage-switch.mount.err"
     : >"$MOUNT_ERR" 2>/dev/null || true
     mount -t exfat -o "$MOUNT_OPTS" "$part" "$DATA_MNT" 2>"$MOUNT_ERR" &
     MOUNT_PID=$!

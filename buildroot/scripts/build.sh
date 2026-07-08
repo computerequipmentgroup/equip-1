@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VM_NAME="firehat-builder"
-SSH_KEY="$HOME/.ssh/firehat-builder"
+VM_NAME="equip1-builder"
+SSH_KEY="$HOME/.ssh/equip1-builder"
 SSH_OPTS="-o StrictHostKeyChecking=no -i $SSH_KEY"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -11,7 +11,7 @@ OUTPUT_DIR="$BUILDROOT_DIR/output"
 OVERLAY_DIR="$BUILDROOT_DIR/overlay"
 LOG="$BUILDROOT_DIR/build.log"
 
-DEFCONFIG="${1:-firehat_defconfig}"
+DEFCONFIG="${1:-equip1_defconfig}"
 DEFCONFIG_BASENAME="$(basename "$DEFCONFIG")"
 MAX_HEAL_ATTEMPTS="${MAX_HEAL_ATTEMPTS:-3}"
 BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
@@ -106,7 +106,7 @@ echo ""
 echo "========== Build started: $(date) =========="
 
 # Build the web UI into a static bundle on the host before staging it.
-# firehatd serves the captured files and dashboard from uis/web/.output/public,
+# equip1d serves the captured files and dashboard from uis/web/.output/public,
 # so a fresh `nuxt generate` must run before the overlay is assembled — the
 # Buildroot build itself only copies the generated output, it does not build it.
 WEB_DIR="$ROOT_DIR/uis/web"
@@ -131,21 +131,21 @@ fi
 
 # Copy application source into overlay.
 # The desktop repo remains the source of truth; this stages a runnable copy at
-# /opt/firehat for the Buildroot image.
-echo "==> Copying Firehat application into overlay..."
-mkdir -p "$OVERLAY_DIR/opt/firehat"
+# /opt/equip1 for the Buildroot image.
+echo "==> Copying Equip-1 application into overlay..."
+mkdir -p "$OVERLAY_DIR/opt/equip1"
 rm -rf \
-    "$OVERLAY_DIR/opt/firehat/firehatd" \
-    "$OVERLAY_DIR/opt/firehat/uis" \
-    "$OVERLAY_DIR/opt/firehat/fonts" \
-    "$OVERLAY_DIR/opt/firehat/requirements.txt"
-rsync -a --delete "$ROOT_DIR/firehatd" "$OVERLAY_DIR/opt/firehat/"
+    "$OVERLAY_DIR/opt/equip1/equip1d" \
+    "$OVERLAY_DIR/opt/equip1/uis" \
+    "$OVERLAY_DIR/opt/equip1/fonts" \
+    "$OVERLAY_DIR/opt/equip1/requirements.txt"
+rsync -a --delete "$ROOT_DIR/equip1d" "$OVERLAY_DIR/opt/equip1/"
 rsync -a --delete \
     --exclude 'web/node_modules' \
     --exclude 'web/.nuxt' \
-    "$ROOT_DIR/uis" "$OVERLAY_DIR/opt/firehat/"
-rsync -a --delete "$ROOT_DIR/fonts" "$OVERLAY_DIR/opt/firehat/"
-cp "$ROOT_DIR/requirements.txt" "$OVERLAY_DIR/opt/firehat/requirements.txt"
+    "$ROOT_DIR/uis" "$OVERLAY_DIR/opt/equip1/"
+rsync -a --delete "$ROOT_DIR/fonts" "$OVERLAY_DIR/opt/equip1/"
+cp "$ROOT_DIR/requirements.txt" "$OVERLAY_DIR/opt/equip1/requirements.txt"
 
 # Start VM if not running
 echo "==> Starting VM..."
@@ -216,7 +216,7 @@ run_build_attempt() {
         bash -s <<'BUILDSSH'
 set -euo pipefail
 
-DEFCONFIG_BASENAME="${DEFCONFIG_BASENAME:-firehat_defconfig}"
+DEFCONFIG_BASENAME="${DEFCONFIG_BASENAME:-equip1_defconfig}"
 BUILD_JOBS="${BUILD_JOBS:-4}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
 FORCE_PYTHON_CLEAN="${FORCE_PYTHON_CLEAN:-0}"
@@ -239,17 +239,17 @@ done
 echo "==> DTS overlays compiled."
 
 # Install Python dependencies into overlay
-if [ -f ~/overlay/opt/firehat/requirements.txt ]; then
-    REQUIREMENTS_HASH="$(hash_file ~/overlay/opt/firehat/requirements.txt)"
-    REQUIREMENTS_STAMP=~/overlay/opt/firehat/.requirements.sha256
+if [ -f ~/overlay/opt/equip1/requirements.txt ]; then
+    REQUIREMENTS_HASH="$(hash_file ~/overlay/opt/equip1/requirements.txt)"
+    REQUIREMENTS_STAMP=~/overlay/opt/equip1/.requirements.sha256
     if [ "$FORCE_PYTHON_DEPS" = "1" ] \
-        || [ ! -d ~/overlay/opt/firehat/lib ] \
+        || [ ! -d ~/overlay/opt/equip1/lib ] \
         || [ ! -f "$REQUIREMENTS_STAMP" ] \
         || [ "$(cat "$REQUIREMENTS_STAMP" 2>/dev/null)" != "$REQUIREMENTS_HASH" ]; then
-        python3 -m venv /tmp/firehat-venv
-        /tmp/firehat-venv/bin/pip install --upgrade \
-            --target ~/overlay/opt/firehat/lib \
-            -r ~/overlay/opt/firehat/requirements.txt
+        python3 -m venv /tmp/equip1-venv
+        /tmp/equip1-venv/bin/pip install --upgrade \
+            --target ~/overlay/opt/equip1/lib \
+            -r ~/overlay/opt/equip1/requirements.txt
         echo "$REQUIREMENTS_HASH" > "$REQUIREMENTS_STAMP"
         echo "==> Python deps installed."
     else

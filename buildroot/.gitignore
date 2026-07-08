@@ -5,9 +5,9 @@ output/
 overlay/boot/overlay-user/*.dtbo
 
 # Copied application files/dependencies (generated during build from repo root)
-overlay/opt/firehat/firehatd/
-overlay/opt/firehat/uis/
-overlay/opt/firehat/fonts/
-overlay/opt/firehat/requirements.txt
-overlay/opt/firehat/lib/
-overlay/opt/firehat/.requirements.sha256
+overlay/opt/equip1/equip1d/
+overlay/opt/equip1/uis/
+overlay/opt/equip1/fonts/
+overlay/opt/equip1/requirements.txt
+overlay/opt/equip1/lib/
+overlay/opt/equip1/.requirements.sha256

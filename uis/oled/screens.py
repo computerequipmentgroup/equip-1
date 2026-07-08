@@ -128,7 +128,7 @@ class BootScreen(Screen):
         hold = max(0.0, float(context.get("boot_hold_seconds", 1.1)))
 
         font = _font(context, "font_boot")
-        lines = ("equip-1", "firehat")
+        lines = ("equip-1", "equip1")
         line_gap = 2
         line_layout = []
         total_text_height = line_gap * (len(lines) - 1)
@@ -382,7 +382,7 @@ class NetworkScreen(Screen):
             draw.text((0, CONTENT_Y + LINE_HEIGHT), f"Pass: {password or 'unknown'}"[:21], font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), (network.get("url") or "Starting AP")[:21], font=font, fill=255)
         else:
-            host = network.get("hostname") or "firehat"
+            host = network.get("hostname") or "equip1"
             draw.text((0, CONTENT_Y), network.get("url") or f"http://{host}.local", font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT), network.get("ip") or "No connection", font=font, fill=255)
 

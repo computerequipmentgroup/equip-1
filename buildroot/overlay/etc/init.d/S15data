@@ -10,22 +10,22 @@
 # of the rootfs disk, which is the SD-card recordings partition created by
 # flash.sh.
 
-if [ -r /etc/firehat/settings-env.sh ]; then
-    . /etc/firehat/settings-env.sh
-    firehat_ini_default FIREHAT_DATA_MNT recording data_mount /data
-    firehat_ini_default FIREHAT_DATA_LABEL recording storage_label EQUIP1
-    firehat_ini_default FIREHAT_DATA_MOUNT_OPTS recording data_mount_options noatime
-    firehat_ini_default FIREHAT_DATA_MOUNT_TIMEOUT recording data_mount_timeout 15
-    firehat_ini_default FIREHAT_USB_DATA_WAIT_SECS recording usb_data_wait_seconds 0
-    firehat_ini_default FIREHAT_DATA_BOOT_DIAGNOSTICS recording data_boot_diagnostics 0
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_DATA_MNT recording data_mount /data
+    equip1_ini_default EQUIP1_DATA_LABEL recording storage_label EQUIP1
+    equip1_ini_default EQUIP1_DATA_MOUNT_OPTS recording data_mount_options noatime
+    equip1_ini_default EQUIP1_DATA_MOUNT_TIMEOUT recording data_mount_timeout 15
+    equip1_ini_default EQUIP1_USB_DATA_WAIT_SECS recording usb_data_wait_seconds 0
+    equip1_ini_default EQUIP1_DATA_BOOT_DIAGNOSTICS recording data_boot_diagnostics 0
 fi
 
-DATA_MNT="${FIREHAT_DATA_MNT:-/data}"
-DATA_LABEL="${FIREHAT_DATA_LABEL:-EQUIP1}"
-MOUNT_OPTS="${FIREHAT_DATA_MOUNT_OPTS:-noatime}"
-MOUNT_TIMEOUT="${FIREHAT_DATA_MOUNT_TIMEOUT:-15}"
-USB_WAIT_SECS="${FIREHAT_USB_DATA_WAIT_SECS:-0}"
-BOOT_DIAGNOSTICS="${FIREHAT_DATA_BOOT_DIAGNOSTICS:-0}"
+DATA_MNT="${EQUIP1_DATA_MNT:-/data}"
+DATA_LABEL="${EQUIP1_DATA_LABEL:-EQUIP1}"
+MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
+MOUNT_TIMEOUT="${EQUIP1_DATA_MOUNT_TIMEOUT:-15}"
+USB_WAIT_SECS="${EQUIP1_USB_DATA_WAIT_SECS:-0}"
+BOOT_DIAGNOSTICS="${EQUIP1_DATA_BOOT_DIAGNOSTICS:-0}"
 BOOT_LOG="/var/log/boot-crumb.log"
 
 log() {

@@ -76,7 +76,7 @@ class OledFontSet:
         package_path = Path(__file__).resolve()
         candidates = [Path(relative_path)]
         candidates.extend(parent / relative_path for parent in package_path.parents)
-        font_dir = os.environ.get("FIREHAT_FONT_DIR")
+        font_dir = os.environ.get("EQUIP1_FONT_DIR")
         if font_dir:
             candidates.append(Path(font_dir) / Path(relative_path).name)
         for path in candidates:
@@ -147,12 +147,12 @@ class ConsoleDisplay:
 
 
 def make_display(board: BoardConfig):
-    if os.environ.get("FIREHAT_OLED_MOCK") == "1":
+    if os.environ.get("EQUIP1_OLED_MOCK") == "1":
         return ConsoleDisplay()
 
-    settle_delay = float(os.environ.get("FIREHAT_OLED_SETTLE_DELAY", "0"))
-    attempts = int(os.environ.get("FIREHAT_OLED_INIT_ATTEMPTS", "120"))
-    delay = float(os.environ.get("FIREHAT_OLED_INIT_DELAY", "1"))
+    settle_delay = float(os.environ.get("EQUIP1_OLED_SETTLE_DELAY", "0"))
+    attempts = int(os.environ.get("EQUIP1_OLED_INIT_ATTEMPTS", "120"))
+    delay = float(os.environ.get("EQUIP1_OLED_INIT_DELAY", "1"))
     if settle_delay > 0:
         print(f"Waiting {settle_delay:g}s before OLED init", flush=True)
         time.sleep(settle_delay)

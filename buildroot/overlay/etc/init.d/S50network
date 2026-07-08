@@ -1,43 +1,43 @@
 #!/bin/sh
 # Production network startup for Equip-1.
 # Default mode is a self-contained Wi-Fi access point for phone/laptop control.
-# Set FIREHAT_WIFI_MODE=client to use /etc/wpa_supplicant.conf instead.
+# Set EQUIP1_WIFI_MODE=client to use /etc/wpa_supplicant.conf instead.
 
 LOGFILE=/var/log/network.log
-HOSTAPD_PID=/var/run/hostapd-firehat.pid
-DNSMASQ_PID=/var/run/dnsmasq-firehat.pid
-HOSTAPD_CONF=/var/run/hostapd-firehat.conf
+HOSTAPD_PID=/var/run/hostapd-equip1.pid
+DNSMASQ_PID=/var/run/dnsmasq-equip1.pid
+HOSTAPD_CONF=/var/run/hostapd-equip1.conf
 HOSTAPD_LOG=/var/log/hostapd.log
 DNSMASQ_LOG=/var/log/dnsmasq.log
 
-if [ -r /etc/firehat/settings-env.sh ]; then
-    . /etc/firehat/settings-env.sh
-    firehat_ini_default FIREHAT_WIFI_MODE network wifi_mode ap
-    firehat_ini_default FIREHAT_AP_IFACE network ap_iface wlan0
-    firehat_ini_default FIREHAT_AP_SSID network ap_ssid Equip-1
-    firehat_ini_default FIREHAT_AP_PASSWORD network ap_password firesecret
-    firehat_ini_default FIREHAT_AP_IP network ap_ip 10.42.0.1
-    firehat_ini_default FIREHAT_AP_CIDR network ap_cidr 24
-    firehat_ini_default FIREHAT_AP_CHANNEL network ap_channel 6
-    firehat_ini_default FIREHAT_AP_DHCP_START network ap_dhcp_start 10.42.0.10
-    firehat_ini_default FIREHAT_AP_DHCP_END network ap_dhcp_end 10.42.0.100
-    firehat_ini_default FIREHAT_AP_DHCP_LEASE network ap_dhcp_lease 12h
-    firehat_ini_default FIREHAT_AP_COUNTRY network ap_country ""
-    firehat_ini_default FIREHAT_NETWORK_BACKGROUND network startup_background 1
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_WIFI_MODE network wifi_mode ap
+    equip1_ini_default EQUIP1_AP_IFACE network ap_iface wlan0
+    equip1_ini_default EQUIP1_AP_SSID network ap_ssid Equip-1
+    equip1_ini_default EQUIP1_AP_PASSWORD network ap_password firesecret
+    equip1_ini_default EQUIP1_AP_IP network ap_ip 10.42.0.1
+    equip1_ini_default EQUIP1_AP_CIDR network ap_cidr 24
+    equip1_ini_default EQUIP1_AP_CHANNEL network ap_channel 6
+    equip1_ini_default EQUIP1_AP_DHCP_START network ap_dhcp_start 10.42.0.10
+    equip1_ini_default EQUIP1_AP_DHCP_END network ap_dhcp_end 10.42.0.100
+    equip1_ini_default EQUIP1_AP_DHCP_LEASE network ap_dhcp_lease 12h
+    equip1_ini_default EQUIP1_AP_COUNTRY network ap_country ""
+    equip1_ini_default EQUIP1_NETWORK_BACKGROUND network startup_background 1
 fi
 
-WIFI_MODE="${FIREHAT_WIFI_MODE:-ap}"
-AP_IFACE="${FIREHAT_AP_IFACE:-wlan0}"
-AP_SSID="${FIREHAT_AP_SSID:-Equip-1}"
-AP_PASSWORD="${FIREHAT_AP_PASSWORD:-firesecret}"
-AP_IP="${FIREHAT_AP_IP:-10.42.0.1}"
-AP_CIDR="${FIREHAT_AP_CIDR:-24}"
-AP_CHANNEL="${FIREHAT_AP_CHANNEL:-6}"
-AP_DHCP_START="${FIREHAT_AP_DHCP_START:-10.42.0.10}"
-AP_DHCP_END="${FIREHAT_AP_DHCP_END:-10.42.0.100}"
-AP_DHCP_LEASE="${FIREHAT_AP_DHCP_LEASE:-12h}"
-AP_COUNTRY="${FIREHAT_AP_COUNTRY:-}"
-NETWORK_BACKGROUND="${FIREHAT_NETWORK_BACKGROUND:-1}"
+WIFI_MODE="${EQUIP1_WIFI_MODE:-ap}"
+AP_IFACE="${EQUIP1_AP_IFACE:-wlan0}"
+AP_SSID="${EQUIP1_AP_SSID:-Equip-1}"
+AP_PASSWORD="${EQUIP1_AP_PASSWORD:-firesecret}"
+AP_IP="${EQUIP1_AP_IP:-10.42.0.1}"
+AP_CIDR="${EQUIP1_AP_CIDR:-24}"
+AP_CHANNEL="${EQUIP1_AP_CHANNEL:-6}"
+AP_DHCP_START="${EQUIP1_AP_DHCP_START:-10.42.0.10}"
+AP_DHCP_END="${EQUIP1_AP_DHCP_END:-10.42.0.100}"
+AP_DHCP_LEASE="${EQUIP1_AP_DHCP_LEASE:-12h}"
+AP_COUNTRY="${EQUIP1_AP_COUNTRY:-}"
+NETWORK_BACKGROUND="${EQUIP1_NETWORK_BACKGROUND:-1}"
 
 log() {
     mkdir -p /var/log 2>/dev/null || true
@@ -169,7 +169,7 @@ start_ap() {
         --dhcp-option="114,http://$AP_IP/" \
         --address="/equip-1/$AP_IP" \
         --address="/equip-1.local/$AP_IP" \
-        --address="/firehat.local/$AP_IP" \
+        --address="/equip1.local/$AP_IP" \
         --address="/#/$AP_IP" \
         --pid-file="$DNSMASQ_PID" \
         --log-facility="$DNSMASQ_LOG" >>"$LOGFILE" 2>&1 || {
@@ -255,10 +255,10 @@ case "$1" in
                 fi
                 ;;
             off|disabled|none)
-                log "WiFi disabled by FIREHAT_WIFI_MODE=$WIFI_MODE"
+                log "WiFi disabled by EQUIP1_WIFI_MODE=$WIFI_MODE"
                 ;;
             *)
-                log "Unknown FIREHAT_WIFI_MODE=$WIFI_MODE; expected ap/client/off"
+                log "Unknown EQUIP1_WIFI_MODE=$WIFI_MODE; expected ap/client/off"
                 exit 1
                 ;;
         esac

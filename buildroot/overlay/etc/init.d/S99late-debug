@@ -40,7 +40,7 @@ try_extra_dhcp() {
 }
 
 capture_api_state() {
-    section "firehat API probe"
+    section "equip1 API probe"
     python3 - <<'PY' >>"$LOG" 2>&1 || true
 import json
 import time
@@ -143,9 +143,9 @@ run_capture() {
 
     append_file /var/log/messages
     append_file /var/log/network.log
-    append_file /var/log/firehatd.log
+    append_file /var/log/equip1d.log
     capture_api_state
-    append_file /var/log/firehat-oled.log
+    append_file /var/log/equip1-oled.log
     append_file /var/log/boot-debug.log
 
     capture_cmd dmesg
@@ -161,7 +161,7 @@ case "$1" in
         # Always copy boot crumb log to /data so it's visible on the exFAT partition.
         cp /var/log/boot-crumb.log /data/boot-crumb.log 2>/dev/null || true
         sync
-        [ "${FIREHAT_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.firehat-debug ] || exit 0
+        [ "${EQUIP1_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.equip1-debug ] || exit 0
         (
             sleep 60
             run_capture

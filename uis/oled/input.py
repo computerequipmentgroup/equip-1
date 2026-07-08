@@ -98,12 +98,12 @@ class KeyboardButtons:
 
 
 def make_buttons(board: BoardConfig):
-    if os.environ.get("FIREHAT_OLED_MOCK") == "1":
+    if os.environ.get("EQUIP1_OLED_MOCK") == "1":
         return KeyboardButtons()
     return HardwareButtons(board)
 
 
 def make_buzzer(board: BoardConfig):
-    if os.environ.get("FIREHAT_OLED_MOCK") == "1":
+    if os.environ.get("EQUIP1_OLED_MOCK") == "1":
         return NullBuzzer()
     return Buzzer(board)

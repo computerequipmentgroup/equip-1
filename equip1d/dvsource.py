@@ -74,10 +74,10 @@ class DvSource:
         # dvgrab's internal frame ring; the shared source drains it on a dedicated
         # OS thread, but generous buffering still absorbs any drain hiccup so the
         # FireWire capture never underruns.
-        self._buffers = os.environ.get("FIREHAT_DV_BUFFERS", "50")
+        self._buffers = os.environ.get("EQUIP1_DV_BUFFERS", "50")
         # Target kernel pipe size between dvgrab and our reader (bytes). Non-root
         # is capped at /proc/sys/fs/pipe-max-size, so we degrade gracefully.
-        self._pipe_size = int(os.environ.get("FIREHAT_DV_PIPE_BYTES", str(1024 * 1024)))
+        self._pipe_size = int(os.environ.get("EQUIP1_DV_PIPE_BYTES", str(1024 * 1024)))
         self._proc: asyncio.subprocess.Process | None = None
         # The pipe is drained by a blocking thread (not the event loop) so preview
         # transcoding / websocket / HTTP load can never delay reads and starve the
@@ -88,7 +88,7 @@ class DvSource:
         self._lifecycle_lock = asyncio.Lock()
         self._stopping = False
         self._subscribers: list[DvSubscription] = []
-        self._preview_maxsize = int(os.environ.get("FIREHAT_DV_PREVIEW_QUEUE", "32"))
+        self._preview_maxsize = int(os.environ.get("EQUIP1_DV_PREVIEW_QUEUE", "32"))
 
         # Recording sink. The reference is swapped atomically so the read loop
         # only ever sees a fully-initialised writer.
@@ -96,7 +96,7 @@ class DvSource:
         self._rec_thread: threading.Thread | None = None
         self._rec_handle = None
         self._rec_path: Path | None = None
-        self._rec_maxsize = int(os.environ.get("FIREHAT_DV_RECORD_QUEUE", "2048"))
+        self._rec_maxsize = int(os.environ.get("EQUIP1_DV_RECORD_QUEUE", "2048"))
         self._rec_dropped = 0
         self.recording_error: str | None = None
 
@@ -343,13 +343,13 @@ class DvSource:
     # ---- logging -------------------------------------------------------
 
     def _log(self, message: str, always: bool = False) -> None:
-        if always or os.environ.get("FIREHAT_PREVIEW_DEBUG") == "1" or Path("/data/.firehat-debug").exists():
+        if always or os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1" or Path("/data/.equip1-debug").exists():
             try:
                 with open("/data/dvsource-debug.log", "a", encoding="utf-8") as handle:
                     handle.write(f"{time.time():.3f} {message}\n")
             except OSError:
                 pass
-        if os.environ.get("FIREHAT_PREVIEW_DEBUG") == "1":
+        if os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1":
             print(f"dvsource: {message}", flush=True)
 
     async def _drain_stderr(self, stream: asyncio.StreamReader) -> None:

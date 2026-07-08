@@ -98,7 +98,7 @@ merge_dt_overlays() {
     local overlay_dir="${TARGET_DIR}/boot/overlay-user"
     # Overlays to bake in (filenames in overlay-user, without path).
     #   rk3528-i2c0-m1 : OLED bus (40-pin header pins 3/5)
-    #   pcie-enable    : pcie_en regulator (GPIO1_A4) powering the Firehat's VIA
+    #   pcie-enable    : pcie_en regulator (GPIO1_A4) powering the Equip-1's VIA
     #                    VT6315N FireWire controller — without it PCIe never links.
     #   rk3528-pwm0-m0    : PWM0 on GPIO4_C3 for hardware-PWM buzzer drive.
     #   rk3528-spi0-spidev: SPI0 on header pin 19 (MOSI) for RGB LED chain.

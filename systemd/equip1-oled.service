@@ -1,0 +1,18 @@
+[Unit]
+Description=Equip-1 OLED/button frontend
+After=equip1d.service
+Wants=equip1d.service
+
+[Service]
+Type=simple
+User=equip1
+Group=equip1
+WorkingDirectory=/opt/equip1
+Environment=EQUIP_1_BOARD_TYPE=rock2f
+Environment=EQUIP1_API_BASE=http://127.0.0.1:8000/api
+ExecStart=/opt/equip1/.venv/bin/python -m uis.oled
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

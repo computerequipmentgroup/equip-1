@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { state, connected, refresh, connectEvents, syncTime } = useFirehatState()
+const { state, connected, refresh, connectEvents, syncTime } = useEquip1State()
 
 const mode = computed(() => state.value?.mode || 'offline')
 const headerChipLabel = computed(() => {
@@ -35,7 +35,7 @@ onMounted(async () => {
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <a href="/" class="brand-mark" aria-label="Firehat dashboard" @click.prevent="reloadPage">
+      <a href="/" class="brand-mark" aria-label="Equip-1 dashboard" @click.prevent="reloadPage">
         <span>equip-1</span>
       </a>
       <div class="header-chip" :class="headerChipClass">

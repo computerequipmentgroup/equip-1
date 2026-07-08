@@ -1,0 +1,76 @@
+#!/bin/sh
+# Equip-1 OLED/buttons frontend for BusyBox init.
+
+PIDFILE=/var/run/equip1-oled.pid
+LOGFILE=/var/log/equip1-oled.log
+APPDIR=/opt/equip1
+
+export PYTHONPATH="$APPDIR/lib:$APPDIR"
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_API_BASE ui api_base http://127.0.0.1:8000/api
+    equip1_ini_default EQUIP1_API_TIMEOUT ui api_timeout 5.0
+    equip1_ini_default EQUIP1_STATE_FETCH_INTERVAL ui state_fetch_interval 1.0
+    equip1_ini_default EQUIP1_BOOT_DURATION_SECONDS ui boot_duration_seconds 3.0
+    equip1_ini_default EQUIP1_BOOT_HOLD_SECONDS ui boot_hold_seconds 1.1
+    equip1_ini_default EQUIP1_OLED_FRAME_INTERVAL ui oled_frame_interval 0.033333
+fi
+
+export EQUIP_1_BOARD_TYPE="${EQUIP_1_BOARD_TYPE:-rock2f}"
+export EQUIP1_API_BASE="${EQUIP1_API_BASE:-http://127.0.0.1:8000/api}"
+# /api/state can take a few seconds when DV deck probing is active.
+export EQUIP1_API_TIMEOUT="${EQUIP1_API_TIMEOUT:-5.0}"
+export EQUIP1_STATE_FETCH_INTERVAL="${EQUIP1_STATE_FETCH_INTERVAL:-1.0}"
+export EQUIP1_FONT_DIR="${EQUIP1_FONT_DIR:-$APPDIR/fonts}"
+export EQUIP1_BOOT_DURATION_SECONDS="${EQUIP1_BOOT_DURATION_SECONDS:-3.0}"
+export EQUIP1_BOOT_HOLD_SECONDS="${EQUIP1_BOOT_HOLD_SECONDS:-1.1}"
+export EQUIP1_OLED_FRAME_INTERVAL="${EQUIP1_OLED_FRAME_INTERVAL:-0.033333}"
+export EQUIP1_OLED_SETTLE_DELAY="${EQUIP1_OLED_SETTLE_DELAY:-0}"
+export EQUIP1_OLED_INIT_ATTEMPTS="${EQUIP1_OLED_INIT_ATTEMPTS:-120}"
+export EQUIP1_OLED_INIT_DELAY="${EQUIP1_OLED_INIT_DELAY:-1}"
+# Three WS2812/SK6812-style RGB LEDs on Rock 2F header pin 19 (SPI0_MOSI).
+export EQUIP1_RGB_LED_ENABLED="${EQUIP1_RGB_LED_ENABLED:-1}"
+export EQUIP1_RGB_LED_SPI_DEVICE="${EQUIP1_RGB_LED_SPI_DEVICE:-/dev/spidev0.0}"
+export EQUIP1_RGB_LED_COUNT="${EQUIP1_RGB_LED_COUNT:-3}"
+export EQUIP1_RGB_LED_COLOR="${EQUIP1_RGB_LED_COLOR:-255,135,35}"
+export EQUIP1_RGB_LED_BRIGHTNESS="${EQUIP1_RGB_LED_BRIGHTNESS:-0.25}"
+# SK6812-EC20 is GRB order, 800 kHz NRZ. We drive it through SPI0_MOSI with
+# conservative 3.2 MHz / 4-bit symbols: 0=1000, 1=1110.
+export EQUIP1_RGB_LED_ORDER="${EQUIP1_RGB_LED_ORDER:-GRB}"
+export EQUIP1_RGB_LED_SPI_HZ="${EQUIP1_RGB_LED_SPI_HZ:-3200000}"
+export EQUIP1_RGB_LED_SYMBOL_BITS="${EQUIP1_RGB_LED_SYMBOL_BITS:-4}"
+export EQUIP1_RGB_LED_ZERO_SYMBOL="${EQUIP1_RGB_LED_ZERO_SYMBOL:-0b1000}"
+export EQUIP1_RGB_LED_ONE_SYMBOL="${EQUIP1_RGB_LED_ONE_SYMBOL:-0b1110}"
+export EQUIP1_RGB_LED_TRAIL_FACTOR="${EQUIP1_RGB_LED_TRAIL_FACTOR:-0.20}"
+export EQUIP1_RGB_LED_STEP_SECONDS="${EQUIP1_RGB_LED_STEP_SECONDS:-0.28}"
+
+case "$1" in
+    start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S61equip1-oled start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        echo "Starting equip1 OLED UI..."
+        mkdir -p /var/run /var/log
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "equip1 OLED UI already running"
+            exit 0
+        fi
+        cd "$APPDIR" || exit 1
+        /usr/bin/python3 -m uis.oled >>"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        echo "Stopping equip1 OLED UI..."
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

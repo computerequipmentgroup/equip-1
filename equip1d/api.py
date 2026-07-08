@@ -10,11 +10,11 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from .service import CommandError, FirehatDaemon
+from .service import CommandError, Equip1Daemon
 from .sysinfo import get_system_stats
 
 
-daemon = FirehatDaemon.from_env()
+daemon = Equip1Daemon.from_env()
 
 
 @asynccontextmanager
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         await daemon.shutdown()
 
 
-app = FastAPI(title="Firehat Daemon", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Equip-1 Daemon", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/api/state")
@@ -240,7 +240,7 @@ async def events(websocket: WebSocket) -> None:
 
 
 def _mount_static_web() -> None:
-    web_dir = Path(os.environ.get("FIREHAT_WEB_DIR", "uis/web/.output/public"))
+    web_dir = Path(os.environ.get("EQUIP1_WEB_DIR", "uis/web/.output/public"))
     if web_dir.exists():
         app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
 

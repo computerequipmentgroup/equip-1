@@ -1,4 +1,4 @@
-type FirehatState = Record<string, any>
+type Equip1State = Record<string, any>
 type CaptureEntry = Record<string, any>
 type SystemStats = Record<string, any>
 
@@ -8,7 +8,7 @@ const nowIso = () => new Date().toISOString()
 
 const isMockEnabled = () => {
   const config = useRuntimeConfig()
-  const setting = String(config.public.firehatMock ?? '').toLowerCase()
+  const setting = String(config.public.equip1Mock ?? '').toLowerCase()
   return setting === '1' || setting === 'true' || (import.meta.dev && setting !== '0' && setting !== 'false')
 }
 
@@ -64,7 +64,7 @@ const mockSystemStats = (): SystemStats => ({
   }
 })
 
-const mockState = (): FirehatState => ({
+const mockState = (): Equip1State => ({
   mode: 'idle',
   camera: {
     connected: true,
@@ -91,7 +91,7 @@ const mockState = (): FirehatState => ({
   },
   network: {
     mode: 'ap',
-    ssid: 'Firehat',
+    ssid: 'Equip-1',
     ip: '10.42.0.1',
     dashboard_url: 'http://10.42.0.1:8000'
   },
@@ -114,7 +114,7 @@ const mockState = (): FirehatState => ({
   error: null
 })
 
-const tickMockState = (state: FirehatState | null) => {
+const tickMockState = (state: Equip1State | null) => {
   if (!state?.recording?.active || !state.recording.started_at) return state
   const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(state.recording.started_at)) / 1000))
   const baseUsed = Number(state.storage.base_used_bytes || state.storage.used_bytes || 0)
@@ -125,7 +125,7 @@ const tickMockState = (state: FirehatState | null) => {
   return state
 }
 
-const finishMockRecording = (state: FirehatState, captures: Ref<CaptureEntry[]>) => {
+const finishMockRecording = (state: Equip1State, captures: Ref<CaptureEntry[]>) => {
   const elapsed = Math.max(1, Number(state.recording.elapsed_seconds || 1))
   const filename = state.recording.filename || formatCaptureName()
   captures.value = [
@@ -150,7 +150,7 @@ const finishMockRecording = (state: FirehatState, captures: Ref<CaptureEntry[]>)
   delete state.storage.base_used_bytes
 }
 
-const applyMockCommand = (state: Ref<FirehatState | null>, captures: Ref<CaptureEntry[]>, name: string) => {
+const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureEntry[]>, name: string) => {
   if (!state.value) state.value = mockState()
   const current = tickMockState(state.value) || mockState()
   if (!captures.value.length) captures.value = mockCaptureRows()
@@ -186,15 +186,15 @@ const applyMockCommand = (state: Ref<FirehatState | null>, captures: Ref<Capture
   state.value = { ...current }
 }
 
-export const useFirehatState = () => {
+export const useEquip1State = () => {
   const config = useRuntimeConfig()
-  const state = useState<FirehatState | null>('firehat-state', () => null)
-  const connected = useState<boolean>('firehat-connected', () => false)
-  const error = useState<string | null>('firehat-error', () => null)
-  const ws = useState<WebSocket | null>('firehat-ws', () => null)
-  const captures = useState<CaptureEntry[]>('firehat-captures', () => [])
-  const mockInterval = useState<ReturnType<typeof setInterval> | null>('firehat-mock-interval', () => null)
-  const resyncInterval = useState<ReturnType<typeof setInterval> | null>('firehat-resync-interval', () => null)
+  const state = useState<Equip1State | null>('equip1-state', () => null)
+  const connected = useState<boolean>('equip1-connected', () => false)
+  const error = useState<string | null>('equip1-error', () => null)
+  const ws = useState<WebSocket | null>('equip1-ws', () => null)
+  const captures = useState<CaptureEntry[]>('equip1-captures', () => [])
+  const mockInterval = useState<ReturnType<typeof setInterval> | null>('equip1-mock-interval', () => null)
+  const resyncInterval = useState<ReturnType<typeof setInterval> | null>('equip1-resync-interval', () => null)
 
   const apiBase = config.public.apiBase as string
   const wsBase = config.public.wsBase as string
@@ -210,7 +210,7 @@ export const useFirehatState = () => {
     }
 
     try {
-      state.value = await $fetch<FirehatState>(`${apiBase}/state`)
+      state.value = await $fetch<Equip1State>(`${apiBase}/state`)
       connected.value = true
       error.value = null
     } catch (err: any) {
@@ -223,7 +223,7 @@ export const useFirehatState = () => {
     if (mock.value) return
     try {
       const [nextState, nextCaptures] = await Promise.all([
-        $fetch<FirehatState>(`${apiBase}/state`),
+        $fetch<Equip1State>(`${apiBase}/state`),
         $fetch<CaptureEntry[]>(`${apiBase}/captures`)
       ])
       state.value = nextState
@@ -246,7 +246,7 @@ export const useFirehatState = () => {
       error.value = null
       return
     }
-    state.value = await $fetch<FirehatState>(`${apiBase}/commands/${name}`, { method: 'POST' })
+    state.value = await $fetch<Equip1State>(`${apiBase}/commands/${name}`, { method: 'POST' })
   }
 
   // Push the per-LED standard colors to the daemon over the live websocket so
@@ -339,10 +339,10 @@ export const useFirehatState = () => {
   return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, connectEvents, syncTime, mock }
 }
 
-export const useFirehatSystem = () => {
+export const useEquip1System = () => {
   const config = useRuntimeConfig()
-  const system = useState<SystemStats | null>('firehat-system', () => null)
-  const error = useState<string | null>('firehat-system-error', () => null)
+  const system = useState<SystemStats | null>('equip1-system', () => null)
+  const error = useState<string | null>('equip1-system-error', () => null)
   const mock = computed(() => isMockEnabled())
 
   const load = async () => {
@@ -363,10 +363,10 @@ export const useFirehatSystem = () => {
   return { system, error, load, mock }
 }
 
-export const useFirehatCaptures = () => {
+export const useEquip1Captures = () => {
   const config = useRuntimeConfig()
-  const captures = useState<CaptureEntry[]>('firehat-captures', () => [])
-  const error = useState<string | null>('firehat-captures-error', () => null)
+  const captures = useState<CaptureEntry[]>('equip1-captures', () => [])
+  const error = useState<string | null>('equip1-captures-error', () => null)
   const mock = computed(() => isMockEnabled())
 
   const load = async () => {

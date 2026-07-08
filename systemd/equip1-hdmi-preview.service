@@ -1,0 +1,13 @@
+[Unit]
+Description=Equip-1 HDMI ffmpeg framebuffer preview
+After=equip1d.service
+Wants=equip1d.service
+
+[Service]
+Type=simple
+ExecStart=/opt/equip1/scripts/equip1-hdmi-preview-fb.sh
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

@@ -22,7 +22,7 @@ def _base_state(mode: str) -> dict[str, Any]:
         "camera": {"connected": True, "name": "DV Cam", "device": "/dev/fw1"},
         "recording": {"active": False, "filename": None, "started_at": None, "elapsed_seconds": 0, "pid": None},
         "storage": {
-            "capture_dir": "/var/lib/firehat/captures",
+            "capture_dir": "/var/lib/equip1/captures",
             "total_bytes": 128 * 1024**3,
             "used_bytes": 44 * 1024**3,
             "free_bytes": 84 * 1024**3,
@@ -34,10 +34,10 @@ def _base_state(mode: str) -> dict[str, Any]:
         },
         "network": {
             "ip": "10.42.0.1",
-            "hostname": "firehat",
+            "hostname": "equip1",
             "url": "http://10.42.0.1:8000",
             "mode": "access_point",
-            "ssid": "Firehat",
+            "ssid": "Equip-1",
             "password": "firesecret",
             "ap_ip": "10.42.0.1",
             "iface": "wlan0",
@@ -73,7 +73,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
         }
     )
     no_network = _base_state("idle")
-    no_network["network"] = {"ip": None, "hostname": "firehat", "url": None, "mode": "offline", "ssid": "Firehat", "password": "firesecret", "ap_ip": None, "iface": "wlan0"}
+    no_network["network"] = {"ip": None, "hostname": "equip1", "url": None, "mode": "offline", "ssid": "Equip-1", "password": "firesecret", "ap_ip": None, "iface": "wlan0"}
     no_camera = _base_state("no_camera")
     no_camera["camera"] = {"connected": False, "name": None, "device": None}
     storage_full = _base_state("storage_full")
@@ -251,7 +251,7 @@ class DesignerSession:
 
 
 session = DesignerSession()
-app = FastAPI(title="Firehat Designer", version="0.1.0")
+app = FastAPI(title="Equip-1 Designer", version="0.1.0")
 
 
 HTML = """
@@ -260,7 +260,7 @@ HTML = """
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Firehat ◯ DESIGNER</title>
+  <title>Equip-1 ◯ DESIGNER</title>
   <style>
     :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { min-height: 100vh; margin: 0; background: #000; color: #213040; display: grid; place-items: center; }
@@ -474,8 +474,8 @@ def preview_png() -> Response:
 def main() -> None:
     import uvicorn
 
-    host = os.environ.get("FIREHAT_OLED_DESIGNER_HOST", "127.0.0.1")
-    port = int(os.environ.get("FIREHAT_OLED_DESIGNER_PORT", "8765"))
+    host = os.environ.get("EQUIP1_OLED_DESIGNER_HOST", "127.0.0.1")
+    port = int(os.environ.get("EQUIP1_OLED_DESIGNER_PORT", "8765"))
     uvicorn.run("uis.oled.designer:app", host=host, port=port, reload=False)
 
 

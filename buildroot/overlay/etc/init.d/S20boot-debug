@@ -40,7 +40,7 @@ case "$1" in
         mkdir -p /var/log 2>/dev/null || true
         echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> /var/log/boot-crumb.log 2>/dev/null || true
 
-        [ "${FIREHAT_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.firehat-debug ] || exit 0
+        [ "${EQUIP1_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.equip1-debug ] || exit 0
         [ -e "$STAMP" ] && exit 0
         touch "$STAMP" 2>/dev/null || true
         mkdir -p /data /var/log 2>/dev/null || true

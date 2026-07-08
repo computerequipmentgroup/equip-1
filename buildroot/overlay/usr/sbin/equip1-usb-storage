@@ -5,13 +5,13 @@
 
 set -u
 
-GADGET_NAME="${FIREHAT_USB_GADGET_NAME:-firehat}"
+GADGET_NAME="${EQUIP1_USB_GADGET_NAME:-equip1}"
 GADGET_DIR="/sys/kernel/config/usb_gadget/$GADGET_NAME"
-ACTIVE_FILE="/run/firehat-usb-storage.active"
+ACTIVE_FILE="/run/equip1-usb-storage.active"
 LOGFILE="/var/log/usb-storage.log"
-DATA_MNT="${FIREHAT_DATA_MNT:-/data}"
-MOUNT_OPTS="${FIREHAT_DATA_MOUNT_OPTS:-noatime}"
-RO="${FIREHAT_USB_STORAGE_READONLY:-0}"
+DATA_MNT="${EQUIP1_DATA_MNT:-/data}"
+MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
+RO="${EQUIP1_USB_STORAGE_READONLY:-0}"
 
 log() {
     mkdir -p /var/log /run 2>/dev/null || true
@@ -106,7 +106,7 @@ check_data_part() {
     if [ "$label" != "EQUIP1" ]; then
         if [ "$type" = "exfat" ]; then
             log "Warning: exporting exFAT data partition $part without EQUIP1 label (label '${label:-none}')"
-        elif [ "${FIREHAT_USB_STORAGE_ALLOW_UNLABELED:-0}" != "1" ]; then
+        elif [ "${EQUIP1_USB_STORAGE_ALLOW_UNLABELED:-0}" != "1" ]; then
             log "Refusing to export $part: expected exfat or label EQUIP1, got type '${type:-unknown}' label '${label:-none}'"
             return 1
         fi
@@ -257,7 +257,7 @@ stop_mode() {
     remove_gadget
 
     if [ -n "$part" ] && [ -b "$part" ]; then
-        if command -v fsck.exfat >/dev/null 2>&1 && [ "${FIREHAT_USB_STORAGE_SKIP_FSCK:-0}" != "1" ]; then
+        if command -v fsck.exfat >/dev/null 2>&1 && [ "${EQUIP1_USB_STORAGE_SKIP_FSCK:-0}" != "1" ]; then
             log "Checking exFAT filesystem on $part"
             fsck.exfat -a "$part" >>"$LOGFILE" 2>&1 || true
         fi

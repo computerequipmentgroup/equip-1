@@ -1,6 +1,6 @@
 # USB recording storage
 
-Firehat records to `/data/captures`. On ROCK 2F, `/data` can be backed by a USB-A attached drive while the SD card remains the boot/rootfs media.
+Equip-1 records to `/data/captures`. On ROCK 2F, `/data` can be backed by a USB-A attached drive while the SD card remains the boot/rootfs media.
 
 Boot behavior:
 
@@ -8,7 +8,7 @@ Boot behavior:
 2. If it finds an exFAT partition labelled `EQUIP1` on a non-root disk, it mounts that partition at `/data`.
 3. If no `EQUIP1` USB partition exists but exactly one non-root exFAT partition exists, it mounts that partition.
 4. If there is no unambiguous USB exFAT partition, it falls back to partition 2 of the SD/rootfs disk.
-5. It creates `/data/captures` before `firehatd` starts.
+5. It creates `/data/captures` before `equip1d` starts.
 
 This means the app does not need to change: recordings still go to `/data/captures`.
 
@@ -59,7 +59,7 @@ S15data: no USB data partition found; falling back to SD /dev/mmcblk0p2
 
 ## Runtime switching
 
-`firehatd` watches for USB block devices while idle:
+`equip1d` watches for USB block devices while idle:
 
 - inserting an unambiguous USB exFAT drive automatically switches `/data` to USB;
 - removing the active USB drive automatically switches `/data` back to the SD fallback partition;
@@ -74,11 +74,11 @@ curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-sd
 
 Pressing select on the OLED `STORAGE` screen also asks for a USB switch. The helper refuses to switch while recording or while USB-C transfer mode is active. On failure it attempts to restore the previous `/data` mount or the SD fallback partition.
 
-Set `FIREHAT_AUTO_STORAGE_SWITCH=0` to disable automatic switching.
+Set `EQUIP1_AUTO_STORAGE_SWITCH=0` to disable automatic switching.
 
 ## USB-C transfer mode
 
-`firehat-usb-storage` exports the block device currently mounted at `/data`. If `/data` is mounted from the USB SSD, USB-C transfer mode exports that USB partition. If `/data` is mounted from SD fallback, it exports the SD recordings partition.
+`equip1-usb-storage` exports the block device currently mounted at `/data`. If `/data` is mounted from the USB SSD, USB-C transfer mode exports that USB partition. If `/data` is mounted from SD fallback, it exports the SD recordings partition.
 
 Do not enable transfer mode while recording; the script refuses if `dvgrab` is running.
 
@@ -89,4 +89,4 @@ Do not enable transfer mode while recording; the script refuses if `dvgrab` is r
 - Do not unplug the drive while recording.
 - Hard power-off can still corrupt exFAT; stop recordings cleanly before removing power. `/data` is mounted asynchronously (`noatime`) because synchronous exFAT writes caused DV stream stalls on USB flash media.
 - If multiple non-root `EQUIP1` partitions are attached, the first one reported by `blkid` is used and a warning is logged.
-- If no `EQUIP1` partition is attached and multiple non-root exFAT partitions are present, Firehat refuses to guess and falls back to SD.
+- If no `EQUIP1` partition is attached and multiple non-root exFAT partitions are present, Equip-1 refuses to guess and falls back to SD.

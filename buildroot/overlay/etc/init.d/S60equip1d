@@ -1,0 +1,74 @@
+#!/bin/sh
+# Equip-1 FastAPI recorder daemon for BusyBox init.
+
+PIDFILE=/var/run/equip1d.pid
+LOGFILE=/var/log/equip1d.log
+APPDIR=/opt/equip1
+
+export PYTHONPATH="$APPDIR/lib:$APPDIR"
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_CAPTURE_DIR recording capture_dir /data/captures
+    equip1_ini_default EQUIP1_AUTO_STORAGE_SWITCH recording auto_storage_switch 1
+    equip1_ini_default EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS recording auto_storage_cooldown_seconds 5
+    equip1_ini_default EQUIP1_HOST network host 0.0.0.0
+    equip1_ini_default EQUIP1_PORT network port 8000
+    equip1_ini_default EQUIP1_WIFI_MODE network wifi_mode ap
+    equip1_ini_default EQUIP1_AP_ENABLED network ap_enabled 1
+    equip1_ini_default EQUIP1_AP_IFACE network ap_iface wlan0
+    equip1_ini_default EQUIP1_AP_SSID network ap_ssid Equip-1
+    equip1_ini_default EQUIP1_AP_PASSWORD network ap_password firesecret
+    equip1_ini_default EQUIP1_AP_IP network ap_ip 10.42.0.1
+    equip1_ini_default EQUIP1_CAPTIVE_PORT network captive_port 80
+    equip1_ini_default EQUIP1_PREVIEW_FPS preview fps 25
+    equip1_ini_default EQUIP1_PREVIEW_SIZE preview size 720:540
+    equip1_ini_default EQUIP1_PREVIEW_QUALITY preview quality 4
+    equip1_ini_default EQUIP1_PREVIEW_RECORDING_FPS preview recording_fps 2
+    equip1_ini_default EQUIP1_PREVIEW_RECORDING_SIZE preview recording_size 480:360
+    equip1_ini_default EQUIP1_PREVIEW_RECORDING_QUALITY preview recording_quality 5
+fi
+
+export EQUIP1_CAPTURE_DIR="${EQUIP1_CAPTURE_DIR:-/data/captures}"
+export EQUIP1_HOST="${EQUIP1_HOST:-0.0.0.0}"
+export EQUIP1_PORT="${EQUIP1_PORT:-8000}"
+export EQUIP1_WEB_DIR="${EQUIP1_WEB_DIR:-$APPDIR/uis/web/.output/public}"
+export EQUIP1_WIFI_MODE="${EQUIP1_WIFI_MODE:-ap}"
+export EQUIP1_AP_ENABLED="${EQUIP1_AP_ENABLED:-1}"
+export EQUIP1_AP_IFACE="${EQUIP1_AP_IFACE:-wlan0}"
+export EQUIP1_AP_SSID="${EQUIP1_AP_SSID:-Equip-1}"
+export EQUIP1_AP_PASSWORD="${EQUIP1_AP_PASSWORD:-firesecret}"
+export EQUIP1_AP_IP="${EQUIP1_AP_IP:-10.42.0.1}"
+export EQUIP1_CAPTIVE_PORT="${EQUIP1_CAPTIVE_PORT:-80}"
+export EQUIP1_AUTO_STORAGE_SWITCH="${EQUIP1_AUTO_STORAGE_SWITCH:-1}"
+export EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS="${EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS:-5}"
+
+case "$1" in
+    start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S60equip1d start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        echo "Starting equip1d..."
+        mkdir -p /var/run /var/log "$EQUIP1_CAPTURE_DIR"
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "equip1d already running"
+            exit 0
+        fi
+        cd "$APPDIR" || exit 1
+        /usr/bin/python3 -m equip1d.main >>"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        echo "Stopping equip1d..."
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

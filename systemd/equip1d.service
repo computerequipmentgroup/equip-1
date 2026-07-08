@@ -1,0 +1,25 @@
+[Unit]
+Description=Equip-1 recorder daemon
+After=network.target equip1-ap.service
+Wants=equip1-ap.service
+
+[Service]
+Type=simple
+User=equip1
+Group=equip1
+WorkingDirectory=/opt/equip1
+Environment=EQUIP1_CAPTURE_DIR=/home/equip1/captures
+Environment=EQUIP1_HOST=0.0.0.0
+Environment=EQUIP1_PORT=8000
+Environment=EQUIP1_WEB_DIR=/opt/equip1/uis/web/.output/public
+Environment=EQUIP1_AP_ENABLED=1
+Environment=EQUIP1_AP_IFACE=wlan0
+Environment=EQUIP1_AP_SSID=Equip-1
+Environment=EQUIP1_AP_PASSWORD=firesecret
+EnvironmentFile=-/etc/equip1/ap.env
+ExecStart=/opt/equip1/.venv/bin/python -m equip1d.main
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

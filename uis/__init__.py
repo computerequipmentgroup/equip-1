@@ -1,1 +1,1 @@
-"""Firehat user interfaces."""
+"""Equip-1 user interfaces."""

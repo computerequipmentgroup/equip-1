@@ -10,9 +10,9 @@ const {
   setLightsBrightness,
   connectEvents,
   mock
-} = useFirehatState()
-const { captures, error: capturesError, load, downloadUrl } = useFirehatCaptures()
-const { system, error: systemError, load: loadSystem } = useFirehatSystem()
+} = useEquip1State()
+const { captures, error: capturesError, load, downloadUrl } = useEquip1Captures()
+const { system, error: systemError, load: loadSystem } = useEquip1System()
 const config = useRuntimeConfig()
 
 // Only surface captures whose thumbnail has finished rendering, so a new

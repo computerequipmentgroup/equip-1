@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VM_NAME="firehat-builder"
+VM_NAME="equip1-builder"
 VM_IMAGE="ghcr.io/cirruslabs/ubuntu:latest"
 DISK_SIZE=50  # GB — Buildroot needs ~30GB for sources + build artifacts
 
 # Build key used by build.sh/clean.sh/vm-ssh.sh. First contact uses the image's
 # default password (admin) via expect; after that everything is key-based.
-SSH_KEY="$HOME/.ssh/firehat-builder"
+SSH_KEY="$HOME/.ssh/equip1-builder"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $SSH_KEY"
 VM_PASSWORD="${VM_PASSWORD:-admin}"
 
 if [ ! -f "$SSH_KEY" ]; then
     echo "==> Generating build SSH key at $SSH_KEY..."
-    ssh-keygen -t ed25519 -N "" -f "$SSH_KEY" -C "firehat-builder" >/dev/null
+    ssh-keygen -t ed25519 -N "" -f "$SSH_KEY" -C "equip1-builder" >/dev/null
 fi
 
 # Check if VM already exists

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 
-from firehatd.settings import FirehatSettings, LIGHTS_BRIGHTNESS_DEFAULT
+from equip1d.settings import Equip1Settings, LIGHTS_BRIGHTNESS_DEFAULT
 
-from .api_client import FirehatApiClient
+from .api_client import Equip1ApiClient
 from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
@@ -15,11 +15,11 @@ from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, Sto
 class OledApp:
     def __init__(self) -> None:
         self.board = get_board_config()
-        settings = FirehatSettings()
-        api_base = settings.get("ui", "api_base", "http://127.0.0.1:8000/api", env="FIREHAT_API_BASE") or "http://127.0.0.1:8000/api"
-        api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="FIREHAT_API_TIMEOUT")
-        self.api = FirehatApiClient(api_base, timeout=api_timeout)
-        self.state_fetch_interval = settings.get_float("ui", "state_fetch_interval", 1.0, env="FIREHAT_STATE_FETCH_INTERVAL")
+        settings = Equip1Settings()
+        api_base = settings.get("ui", "api_base", "http://127.0.0.1:8000/api", env="EQUIP1_API_BASE") or "http://127.0.0.1:8000/api"
+        api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="EQUIP1_API_TIMEOUT")
+        self.api = Equip1ApiClient(api_base, timeout=api_timeout)
+        self.state_fetch_interval = settings.get_float("ui", "state_fetch_interval", 1.0, env="EQUIP1_STATE_FETCH_INTERVAL")
         self.display = make_display(self.board)
         self.buttons = make_buttons(self.board)
         self.buzzer = make_buzzer(self.board)
@@ -27,9 +27,9 @@ class OledApp:
         self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
-        self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="FIREHAT_BOOT_DURATION_SECONDS")
-        self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="FIREHAT_BOOT_HOLD_SECONDS")
-        self.frame_interval = settings.get_float("ui", "oled_frame_interval", 1 / 60, env="FIREHAT_OLED_FRAME_INTERVAL")
+        self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="EQUIP1_BOOT_DURATION_SECONDS")
+        self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="EQUIP1_BOOT_HOLD_SECONDS")
+        self.frame_interval = settings.get_float("ui", "oled_frame_interval", 1 / 60, env="EQUIP1_OLED_FRAME_INTERVAL")
         self.current_screen_idx = 0
         self.state: dict | None = None
         self._last_state_fetch = 0.0

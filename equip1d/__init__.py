@@ -1,4 +1,4 @@
-"""Firehat recorder daemon."""
+"""Equip-1 recorder daemon."""
 
 __all__ = ["__version__"]
 

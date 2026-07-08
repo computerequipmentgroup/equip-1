@@ -1,6 +1,6 @@
-# Firehat Emulation Plan
+# Equip-1 Emulation Plan
 
-Since the Firehat hardware isn't available during development, here's how to emulate each subsystem for testing.
+Since the Equip-1 hardware isn't available during development, here's how to emulate each subsystem for testing.
 
 ## OLED Display (SH1106 over I2C)
 
@@ -18,7 +18,7 @@ Use `gpio-sim` (kernel 5.17+) to create virtual GPIO lines:
 
 ```bash
 # Create a virtual GPIO chip with 32 lines
-modprobe gpio-sim gpio_sim.num_banks=1 gpio_sim.label=firehat-emu
+modprobe gpio-sim gpio_sim.num_banks=1 gpio_sim.label=equip1-emu
 ```
 
 Alternatively, set `EQUIP_1_EMULATE=1` in environment and patch os.py to use mock GPIO:

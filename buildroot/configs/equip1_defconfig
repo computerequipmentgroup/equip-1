@@ -38,7 +38,7 @@ BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.21.elf
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_SIZE="1G"
-# The recordings-partition mount scripts (S15data, firehat-usb-storage) locate
+# The recordings-partition mount scripts (S15data, equip1-usb-storage) locate
 # the boot disk via `blkid | grep 'LABEL="rootfs"'`. BusyBox blkid only reports
 # the filesystem LABEL (not the GPT PARTLABEL), so the ext2 image must carry an
 # explicit "rootfs" filesystem label or /data never mounts and recordings

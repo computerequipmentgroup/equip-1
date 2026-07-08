@@ -1,0 +1,66 @@
+#!/bin/sh
+# Equip-1 HDMI framebuffer preview for BusyBox init.
+
+PIDFILE=/var/run/equip1-hdmi-preview.pid
+LOGFILE=/var/log/equip1-hdmi-preview.log
+APPDIR=/opt/equip1
+
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_HDMI_PREVIEW_ENABLED hdmi enabled 1
+    equip1_ini_default EQUIP1_HDMI_STREAM_URL hdmi stream_url 'http://127.0.0.1:8000/api/stream.mkv?takeover=1'
+    equip1_ini_default EQUIP1_HDMI_FBDEV hdmi fbdev /dev/fb0
+    equip1_ini_default EQUIP1_HDMI_POLL_SECONDS hdmi poll_seconds 1
+    equip1_ini_default EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM hdmi assume_connected_without_drm 0
+    equip1_ini_default EQUIP1_HDMI_PIX_FMT hdmi pix_fmt ""
+    equip1_ini_default EQUIP1_HDMI_FFMPEG_LOGLEVEL hdmi ffmpeg_loglevel info
+    equip1_ini_default EQUIP1_HDMI_FFMPEG_PROGRESS hdmi ffmpeg_progress 0
+    equip1_ini_default EQUIP1_HDMI_FFMPEG_STATS_PERIOD hdmi ffmpeg_stats_period 5
+    equip1_ini_default EQUIP1_HDMI_CLEAR_ON_CONNECT hdmi clear_on_connect 1
+fi
+
+export EQUIP1_HDMI_PREVIEW_ENABLED="${EQUIP1_HDMI_PREVIEW_ENABLED:-1}"
+export EQUIP1_HDMI_STREAM_URL="${EQUIP1_HDMI_STREAM_URL:-http://127.0.0.1:8000/api/stream.mkv?takeover=1}"
+export EQUIP1_HDMI_FBDEV="${EQUIP1_HDMI_FBDEV:-/dev/fb0}"
+export EQUIP1_HDMI_POLL_SECONDS="${EQUIP1_HDMI_POLL_SECONDS:-1}"
+export EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM="${EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM:-0}"
+[ -n "${EQUIP1_HDMI_PIX_FMT:-}" ] && export EQUIP1_HDMI_PIX_FMT
+export EQUIP1_HDMI_FFMPEG_LOGLEVEL="${EQUIP1_HDMI_FFMPEG_LOGLEVEL:-info}"
+export EQUIP1_HDMI_FFMPEG_PROGRESS="${EQUIP1_HDMI_FFMPEG_PROGRESS:-0}"
+export EQUIP1_HDMI_FFMPEG_STATS_PERIOD="${EQUIP1_HDMI_FFMPEG_STATS_PERIOD:-5}"
+export EQUIP1_HDMI_CLEAR_ON_CONNECT="${EQUIP1_HDMI_CLEAR_ON_CONNECT:-1}"
+export EQUIP1_HDMI_DATA_LOG="${EQUIP1_HDMI_DATA_LOG:-/data/hdmi-preview.log}"
+
+case "$1" in
+    start)
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S62equip1-hdmi-preview start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        if [ "$EQUIP1_HDMI_PREVIEW_ENABLED" = "0" ] || [ "$EQUIP1_HDMI_PREVIEW_ENABLED" = "false" ]; then
+            echo "Equip-1 HDMI preview disabled"
+            exit 0
+        fi
+        echo "Starting Equip-1 HDMI framebuffer preview watcher..."
+        mkdir -p /var/run /var/log
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "Equip-1 HDMI framebuffer preview watcher already running"
+            exit 0
+        fi
+        "$APPDIR/scripts/equip1-hdmi-preview-fb.sh" >>"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        echo "Stopping Equip-1 HDMI framebuffer preview watcher..."
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

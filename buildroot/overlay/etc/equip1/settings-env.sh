@@ -1,12 +1,12 @@
-# Helpers for reading /etc/firehat/equip-1.ini from BusyBox init scripts.
+# Helpers for reading /etc/equip1/equip-1.ini from BusyBox init scripts.
 # Environment variables keep precedence; INI values only fill unset vars.
 
-FIREHAT_SETTINGS_FILE="${FIREHAT_SETTINGS_FILE:-/etc/firehat/equip-1.ini}"
+EQUIP1_SETTINGS_FILE="${EQUIP1_SETTINGS_FILE:-/etc/equip1/equip-1.ini}"
 
-firehat_ini_get() {
+equip1_ini_get() {
     section="$1"
     key="$2"
-    [ -r "$FIREHAT_SETTINGS_FILE" ] || return 1
+    [ -r "$EQUIP1_SETTINGS_FILE" ] || return 1
     awk -F= -v want_section="$section" -v want_key="$key" '
         function trim(s) { gsub(/^[ \t\r\n]+|[ \t\r\n]+$/, "", s); return s }
         /^[ \t]*[#;]/ { next }
@@ -25,10 +25,10 @@ firehat_ini_get() {
                 exit
             }
         }
-    ' "$FIREHAT_SETTINGS_FILE"
+    ' "$EQUIP1_SETTINGS_FILE"
 }
 
-firehat_ini_default() {
+equip1_ini_default() {
     var="$1"
     section="$2"
     key="$3"
@@ -39,7 +39,7 @@ firehat_ini_default() {
         return 0
     fi
 
-    value="$(firehat_ini_get "$section" "$key" 2>/dev/null || true)"
+    value="$(equip1_ini_get "$section" "$key" 2>/dev/null || true)"
     [ -n "$value" ] || value="$fallback"
     escaped="$(printf '%s\n' "$value" | sed "s/'/'\\\\''/g")"
     eval "$var='$escaped'"

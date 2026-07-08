@@ -18,7 +18,7 @@ from .network import get_network_state
 from .preview import MjpegPreview
 from .recorder import RecordingTracker
 from .storage import StorageManager
-from .settings import FirehatSettings, LEGACY_LIGHTS_CONFIG_DEFAULT, LIGHTS_BRIGHTNESS_DEFAULT
+from .settings import Equip1Settings, LEGACY_LIGHTS_CONFIG_DEFAULT, LIGHTS_BRIGHTNESS_DEFAULT
 
 
 class CommandError(RuntimeError):
@@ -71,7 +71,7 @@ def _coerce_colors(value: Any, count: int) -> list[list[int]] | None:
 
 def _lights_count_from_env() -> int:
     try:
-        return max(1, int(os.environ.get("FIREHAT_LIGHTS_COUNT", str(LIGHTS_COUNT_DEFAULT))))
+        return max(1, int(os.environ.get("EQUIP1_LIGHTS_COUNT", str(LIGHTS_COUNT_DEFAULT))))
     except ValueError:
         return LIGHTS_COUNT_DEFAULT
 
@@ -86,7 +86,7 @@ def _coerce_brightness(value: Any) -> float | None:
 
 def _light_colors_from_env(count: int) -> list[list[int]]:
     base = [0, 0, 255]
-    raw = os.environ.get("FIREHAT_LIGHTS_DEFAULT_COLOR")
+    raw = os.environ.get("EQUIP1_LIGHTS_DEFAULT_COLOR")
     if raw:
         parsed = _coerce_rgb([part.strip() for part in raw.split(",")])
         if parsed is not None:
@@ -94,7 +94,7 @@ def _light_colors_from_env(count: int) -> list[list[int]]:
     return [list(base) for _ in range(count)]
 
 
-class FirehatDaemon:
+class Equip1Daemon:
     def __init__(
         self,
         capture_dir: str | os.PathLike[str],
@@ -102,9 +102,9 @@ class FirehatDaemon:
         dvgrab_bin: str = "dvgrab",
         dvcont_bin: str = "dvcont",
         ffmpeg_bin: str = "ffmpeg",
-        settings: FirehatSettings | None = None,
+        settings: Equip1Settings | None = None,
     ):
-        self.settings = settings or FirehatSettings()
+        self.settings = settings or Equip1Settings()
         self.capture_dir = Path(capture_dir).expanduser()
         self.storage = StorageManager(self.capture_dir)
         self.camera = FireWireCameraDetector()
@@ -120,29 +120,29 @@ class FirehatDaemon:
         self._usb_storage_task: asyncio.Task | None = None
         self._storage_switch_lock = asyncio.Lock()
         self.auto_storage_switch = self.settings.get_bool(
-            "recording", "auto_storage_switch", True, env="FIREHAT_AUTO_STORAGE_SWITCH"
+            "recording", "auto_storage_switch", True, env="EQUIP1_AUTO_STORAGE_SWITCH"
         )
         self._auto_storage_cooldown_seconds = self.settings.get_float(
-            "recording", "auto_storage_cooldown_seconds", 5.0, env="FIREHAT_AUTO_STORAGE_COOLDOWN_SECONDS"
+            "recording", "auto_storage_cooldown_seconds", 5.0, env="EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS"
         )
         self._last_auto_storage_attempt_at: dict[str, float] = {"usb": 0.0, "sd": 0.0}
         self._last_state: dict[str, Any] | None = None
         self._last_captures_storage_key: tuple[Any, ...] | None = None
         self._legacy_lights_config_path = Path(
-            os.environ.get("FIREHAT_LIGHTS_CONFIG", LEGACY_LIGHTS_CONFIG_DEFAULT)
+            os.environ.get("EQUIP1_LIGHTS_CONFIG", LEGACY_LIGHTS_CONFIG_DEFAULT)
         ).expanduser()
         self._lights_count = _lights_count_from_env()
         self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
         self.error: ErrorState | None = None
 
     @classmethod
-    def from_env(cls) -> "FirehatDaemon":
-        settings = FirehatSettings()
-        capture_dir = settings.get("recording", "capture_dir", "~/captures", env="FIREHAT_CAPTURE_DIR") or "~/captures"
-        port = settings.get_int("network", "port", 8000, env="FIREHAT_PORT")
-        dvgrab_bin = os.environ.get("FIREHAT_DVGRAB_BIN", "dvgrab")
-        dvcont_bin = os.environ.get("FIREHAT_DVCONT_BIN", "dvcont")
-        ffmpeg_bin = os.environ.get("FIREHAT_FFMPEG_BIN", "ffmpeg")
+    def from_env(cls) -> "Equip1Daemon":
+        settings = Equip1Settings()
+        capture_dir = settings.get("recording", "capture_dir", "~/captures", env="EQUIP1_CAPTURE_DIR") or "~/captures"
+        port = settings.get_int("network", "port", 8000, env="EQUIP1_PORT")
+        dvgrab_bin = os.environ.get("EQUIP1_DVGRAB_BIN", "dvgrab")
+        dvcont_bin = os.environ.get("EQUIP1_DVCONT_BIN", "dvcont")
+        ffmpeg_bin = os.environ.get("EQUIP1_FFMPEG_BIN", "ffmpeg")
         return cls(
             capture_dir=capture_dir,
             host_url_port=port,
@@ -319,7 +319,7 @@ class FirehatDaemon:
             await self._prepare_power_transition()
             result = await asyncio.to_thread(
                 subprocess.run,
-                ["/usr/sbin/firehat-usb-storage", "start"],
+                ["/usr/sbin/equip1-usb-storage", "start"],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -338,7 +338,7 @@ class FirehatDaemon:
     async def stop_usb_storage(self) -> dict[str, Any]:
         result = await asyncio.to_thread(
             subprocess.run,
-            ["/usr/sbin/firehat-usb-storage", "stop"],
+            ["/usr/sbin/equip1-usb-storage", "stop"],
             check=False,
             capture_output=True,
             text=True,
@@ -426,7 +426,7 @@ class FirehatDaemon:
             await self._prepare_storage_switch(publish_pre_state=publish_pre_state)
             result = await asyncio.to_thread(
                 subprocess.run,
-                ["/usr/sbin/firehat-storage-switch", target],
+                ["/usr/sbin/equip1-storage-switch", target],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -520,7 +520,7 @@ class FirehatDaemon:
         try:
             if self.preview.active:
                 active_seconds = self.preview.active_seconds
-                stale_after = float(os.environ.get("FIREHAT_PREVIEW_STALE_SECONDS", "12"))
+                stale_after = float(os.environ.get("EQUIP1_PREVIEW_STALE_SECONDS", "12"))
                 if active_seconds < stale_after and not takeover:
                     raise CommandError(f"Stream already active ({active_seconds:.1f}s)")
                 reason = "takeover" if takeover else "stale"
@@ -548,11 +548,11 @@ class FirehatDaemon:
         return self.preview.mkv_media_type
 
     def _debug_log(self, message: str, verbose: bool = False) -> None:
-        if verbose and os.environ.get("FIREHAT_DEBUG_LOGS") != "1" and not Path("/data/.firehat-debug").exists():
+        if verbose and os.environ.get("EQUIP1_DEBUG_LOGS") != "1" and not Path("/data/.equip1-debug").exists():
             return
         try:
             stamp = datetime.now(timezone.utc).isoformat()
-            with open("/data/firehatd-debug.log", "a", encoding="utf-8") as handle:
+            with open("/data/equip1d-debug.log", "a", encoding="utf-8") as handle:
                 handle.write(f"{stamp} {message}\n")
         except OSError:
             pass
@@ -650,7 +650,7 @@ class FirehatDaemon:
         return any(Path("/sys/block").glob("sd*"))
 
     def _usb_transfer_active(self) -> bool:
-        return Path("/run/firehat-usb-storage.active").exists()
+        return Path("/run/equip1-usb-storage.active").exists()
 
     def _usb_storage_starting(self) -> bool:
         # True from the moment start_usb_storage schedules its task until that

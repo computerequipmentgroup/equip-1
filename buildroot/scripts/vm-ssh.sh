@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VM_NAME="firehat-builder"
-SSH_KEY="$HOME/.ssh/firehat-builder"
+VM_NAME="equip1-builder"
+SSH_KEY="$HOME/.ssh/equip1-builder"
 SSH_OPTS="-o StrictHostKeyChecking=no -i $SSH_KEY"
 
 # Check if VM is running

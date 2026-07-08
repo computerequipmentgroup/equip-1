@@ -1,5 +1,5 @@
 #!/bin/sh
-# Firehat HDMI framebuffer preview.
+# Equip-1 HDMI framebuffer preview.
 #
 # Polls the kernel DRM HDMI connector state and, while a screen is connected,
 # renders the daemon's low-cost live MKV/DV stream directly to /dev/fb0 with
@@ -8,17 +8,17 @@
 
 set -u
 
-FFMPEG_BIN="${FIREHAT_FFMPEG_BIN:-/usr/bin/ffmpeg}"
-STREAM_URL="${FIREHAT_HDMI_STREAM_URL:-http://127.0.0.1:8000/api/stream.mkv?takeover=1}"
-FBDEV="${FIREHAT_HDMI_FBDEV:-/dev/fb0}"
-POLL_SECONDS="${FIREHAT_HDMI_POLL_SECONDS:-1}"
-ASSUME_CONNECTED_WITHOUT_DRM="${FIREHAT_HDMI_ASSUME_CONNECTED_WITHOUT_DRM:-0}"
-STATUS_FILES="${FIREHAT_HDMI_STATUS_FILES:-/sys/class/drm/*HDMI*/status}"
-DATA_LOG="${FIREHAT_HDMI_DATA_LOG:-/data/hdmi-preview.log}"
-FFMPEG_LOGLEVEL="${FIREHAT_HDMI_FFMPEG_LOGLEVEL:-info}"
-FFMPEG_PROGRESS="${FIREHAT_HDMI_FFMPEG_PROGRESS:-0}"
-FFMPEG_STATS_PERIOD="${FIREHAT_HDMI_FFMPEG_STATS_PERIOD:-5}"
-CLEAR_ON_CONNECT="${FIREHAT_HDMI_CLEAR_ON_CONNECT:-1}"
+FFMPEG_BIN="${EQUIP1_FFMPEG_BIN:-/usr/bin/ffmpeg}"
+STREAM_URL="${EQUIP1_HDMI_STREAM_URL:-http://127.0.0.1:8000/api/stream.mkv?takeover=1}"
+FBDEV="${EQUIP1_HDMI_FBDEV:-/dev/fb0}"
+POLL_SECONDS="${EQUIP1_HDMI_POLL_SECONDS:-1}"
+ASSUME_CONNECTED_WITHOUT_DRM="${EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM:-0}"
+STATUS_FILES="${EQUIP1_HDMI_STATUS_FILES:-/sys/class/drm/*HDMI*/status}"
+DATA_LOG="${EQUIP1_HDMI_DATA_LOG:-/data/hdmi-preview.log}"
+FFMPEG_LOGLEVEL="${EQUIP1_HDMI_FFMPEG_LOGLEVEL:-info}"
+FFMPEG_PROGRESS="${EQUIP1_HDMI_FFMPEG_PROGRESS:-0}"
+FFMPEG_STATS_PERIOD="${EQUIP1_HDMI_FFMPEG_STATS_PERIOD:-5}"
+CLEAR_ON_CONNECT="${EQUIP1_HDMI_CLEAR_ON_CONNECT:-1}"
 
 ffmpeg_pid=""
 last_status_summary=""
@@ -165,7 +165,7 @@ clear_framebuffer() {
     set -- $(fb_geometry)
     width="$1"
     height="$2"
-    pix_fmt="${FIREHAT_HDMI_PIX_FMT:-$(fb_pix_fmt)}"
+    pix_fmt="${EQUIP1_HDMI_PIX_FMT:-$(fb_pix_fmt)}"
     log "clearing framebuffer ${width}x${height} ${pix_fmt} before preview using ffmpeg fbdev"
     "$FFMPEG_BIN" \
         -hide_banner \
@@ -193,8 +193,8 @@ start_ffmpeg() {
     set -- $(fb_geometry)
     width="$1"
     height="$2"
-    pix_fmt="${FIREHAT_HDMI_PIX_FMT:-$(fb_pix_fmt)}"
-    filter="${FIREHAT_HDMI_FILTER:-scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=${pix_fmt}}"
+    pix_fmt="${EQUIP1_HDMI_PIX_FMT:-$(fb_pix_fmt)}"
+    filter="${EQUIP1_HDMI_FILTER:-scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=${pix_fmt}}"
 
     stride="$(cat "$(fb_sys_dir)/stride" 2>/dev/null || echo '')"
     log "HDMI connected; starting framebuffer preview ${width}x${height} ${pix_fmt} from $STREAM_URL"

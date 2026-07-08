@@ -68,7 +68,7 @@ class NullLeds:
 class Ws2812SpiLeds:
     """SPI encoder for SK6812/WS2812-style addressable LEDs.
 
-    The Firehat PCB uses SK6812-EC20 LEDs on the Rock 2F 40-pin header pin 19
+    The Equip-1 PCB uses SK6812-EC20 LEDs on the Rock 2F 40-pin header pin 19
     (SPI0_MOSI). SK6812-EC20 is GRB order and wants 800 kHz one-wire NRZ.
 
     Default encoding is conservative for SK6812:
@@ -272,27 +272,27 @@ def _env_int_auto(name: str, default: int) -> int:
 
 
 def make_boot_leds():
-    if not _env_enabled("FIREHAT_RGB_LED_ENABLED", default=True):
+    if not _env_enabled("EQUIP1_RGB_LED_ENABLED", default=True):
         return NullLeds()
-    backend = os.environ.get("FIREHAT_RGB_LED_BACKEND", "spi").lower()
+    backend = os.environ.get("EQUIP1_RGB_LED_BACKEND", "spi").lower()
     if backend != "spi":
         print(f"RGB LED backend {backend!r} is not supported; disabling LEDs", flush=True)
         return NullLeds()
 
-    device = os.environ.get("FIREHAT_RGB_LED_SPI_DEVICE", "/dev/spidev0.0")
+    device = os.environ.get("EQUIP1_RGB_LED_SPI_DEVICE", "/dev/spidev0.0")
     try:
         return Ws2812SpiLeds(
             device=device,
-            count=int(os.environ.get("FIREHAT_RGB_LED_COUNT", "3")),
-            speed_hz=int(os.environ.get("FIREHAT_RGB_LED_SPI_HZ", "3200000")),
-            color_order=os.environ.get("FIREHAT_RGB_LED_ORDER", "GRB"),
-            color=_env_rgb("FIREHAT_RGB_LED_COLOR", Rgb(255, 135, 35)),
-            brightness=float(os.environ.get("FIREHAT_RGB_LED_BRIGHTNESS", "0.25")),
-            trail_factor=float(os.environ.get("FIREHAT_RGB_LED_TRAIL_FACTOR", "0.20")),
-            step_seconds=float(os.environ.get("FIREHAT_RGB_LED_STEP_SECONDS", "0.28")),
-            symbol_bits=int(os.environ.get("FIREHAT_RGB_LED_SYMBOL_BITS", "4")),
-            zero_symbol=_env_int_auto("FIREHAT_RGB_LED_ZERO_SYMBOL", 0b1000),
-            one_symbol=_env_int_auto("FIREHAT_RGB_LED_ONE_SYMBOL", 0b1110),
+            count=int(os.environ.get("EQUIP1_RGB_LED_COUNT", "3")),
+            speed_hz=int(os.environ.get("EQUIP1_RGB_LED_SPI_HZ", "3200000")),
+            color_order=os.environ.get("EQUIP1_RGB_LED_ORDER", "GRB"),
+            color=_env_rgb("EQUIP1_RGB_LED_COLOR", Rgb(255, 135, 35)),
+            brightness=float(os.environ.get("EQUIP1_RGB_LED_BRIGHTNESS", "0.25")),
+            trail_factor=float(os.environ.get("EQUIP1_RGB_LED_TRAIL_FACTOR", "0.20")),
+            step_seconds=float(os.environ.get("EQUIP1_RGB_LED_STEP_SECONDS", "0.28")),
+            symbol_bits=int(os.environ.get("EQUIP1_RGB_LED_SYMBOL_BITS", "4")),
+            zero_symbol=_env_int_auto("EQUIP1_RGB_LED_ZERO_SYMBOL", 0b1000),
+            one_symbol=_env_int_auto("EQUIP1_RGB_LED_ONE_SYMBOL", 0b1110),
         )
     except Exception as exc:
         print(f"RGB LEDs disabled: {exc}", flush=True)

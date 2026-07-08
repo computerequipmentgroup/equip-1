@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VM_NAME="firehat-builder"
-SSH_KEY="$HOME/.ssh/firehat-builder"
+VM_NAME="equip1-builder"
+SSH_KEY="$HOME/.ssh/equip1-builder"
 SSH_OPTS="-o StrictHostKeyChecking=no -i $SSH_KEY"
 
 VM_IP=$(tart ip "$VM_NAME" 2>/dev/null || true)

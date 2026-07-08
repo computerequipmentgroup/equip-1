@@ -106,4 +106,4 @@ class DvcontDeckController:
 
 
 def deck_controller_from_env() -> DvcontDeckController:
-    return DvcontDeckController(dvcont_bin=os.environ.get("FIREHAT_DVCONT_BIN", "dvcont"))
+    return DvcontDeckController(dvcont_bin=os.environ.get("EQUIP1_DVCONT_BIN", "dvcont"))

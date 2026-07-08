@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { state, connected, error, refresh, connectEvents, mock } = useFirehatState()
+const { state, connected, error, refresh, connectEvents, mock } = useEquip1State()
 const config = useRuntimeConfig()
 
 const mode = computed(() => state.value?.mode || 'offline')
@@ -30,7 +30,7 @@ const previewStatus = computed(() => {
 
 const placeholderStatus = computed(() => {
   if (error.value) return error.value
-  if (!connected.value) return 'Waiting for firehatd…'
+  if (!connected.value) return 'Waiting for equip1d…'
   if (previewError.value) return 'Preview unavailable; retrying…'
   if (mode.value === 'recording') return 'Buffering capture stream…'
   if (mode.value === 'idle') return 'Acquiring DV signal…'
