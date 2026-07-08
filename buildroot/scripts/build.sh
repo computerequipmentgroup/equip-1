@@ -340,7 +340,12 @@ else
     echo "ERROR: BR2_PACKAGE_FFMPEG_SWSCALE is not enabled after olddefconfig"
     exit 1
 fi
-
+if grep -q '^BR2_PACKAGE_FFMPEG_OUTDEVS=y$' .config; then
+    echo "==> Config verified: ffmpeg output devices enabled"
+else
+    echo "ERROR: BR2_PACKAGE_FFMPEG_OUTDEVS is not enabled after olddefconfig"
+    exit 1
+fi
 if [ "$FORCE_PYTHON_CLEAN" = "1" ]; then
     echo "==> Cleaning Python build so SSL/zlib extensions are rebuilt..."
     make python3-dirclean 2>/dev/null || true
@@ -355,6 +360,12 @@ if grep -q '^BR2_PACKAGE_FFMPEG_SWSCALE=y$' .config \
     && [ -f "$FFMPEG_TARGET_BIN" ] \
     && grep -a -q -- '--disable-swscale' "$FFMPEG_TARGET_BIN"; then
     echo "==> ffmpeg was built without swscale but config now enables it; forcing rebuild."
+    FORCE_FFMPEG_CLEAN=1
+fi
+if grep -q '^BR2_PACKAGE_FFMPEG_OUTDEVS=y$' .config \
+    && [ -f "$FFMPEG_TARGET_BIN" ] \
+    && grep -a -q -- '--disable-outdevs' "$FFMPEG_TARGET_BIN"; then
+    echo "==> ffmpeg was built without output devices but config now enables them; forcing rebuild."
     FORCE_FFMPEG_CLEAN=1
 fi
 if [ "$FORCE_FFMPEG_CLEAN" = "1" ]; then
