@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .display import OledFontSet, render_oled_image
-from .screens import BootScreen, DeckScreen, GameScreen, NetworkScreen, RecordingScreen, Screen, StorageScreen, SystemScreen, UsbTransferScreen
+from .screens import BootScreen, DeckScreen, GameScreen, NetworkScreen, RecordingScreen, Screen, StorageScreen, UsbTransferScreen
 
 WIDTH = 128
 HEIGHT = 64
@@ -122,7 +122,7 @@ class DesignerAppAdapter:
 
 class DesignerSession:
     def __init__(self) -> None:
-        self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), UsbTransferScreen(), NetworkScreen(), SystemScreen(), GameScreen()]
+        self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), UsbTransferScreen(), NetworkScreen(), GameScreen()]
         self.boot_screen = BootScreen()
         self.boot_duration_seconds = 3.0
         self.boot_hold_seconds = 1.1

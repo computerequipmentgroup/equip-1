@@ -508,69 +508,6 @@ class UsbTransferScreen(Screen):
             draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "EQUIP1 disk", font=font, fill=255)
 
 
-class SystemScreen(Screen):
-    title = "SYSTEM"
-
-    def __init__(self) -> None:
-        self.selected = 0
-        self.confirming = False
-
-    def _options(self, state: dict[str, Any]) -> list[str]:
-        if state.get("mode") == "usb_transfer":
-            return ["USB Stop", "Cancel"]
-        return ["USB Disk", "Shutdown", "Reboot", "Cancel"]
-
-    def on_select(self, app) -> None:
-        options = self._options(app.state or {})
-        self.selected = min(self.selected, len(options) - 1)
-        if not self.confirming:
-            self.confirming = True
-            return
-        choice = options[self.selected]
-        if choice == "USB Disk":
-            app.command("usb-storage-start")
-        elif choice == "USB Stop":
-            app.command("usb-storage-stop")
-        elif choice == "Shutdown":
-            app.command("shutdown")
-        elif choice == "Reboot":
-            app.command("reboot")
-        self.confirming = False
-        self.selected = 0
-
-    def on_up(self, app) -> bool:
-        if not self.confirming:
-            return False
-        options = self._options(app.state or {})
-        self.selected = (self.selected - 1) % len(options)
-        return True
-
-    def on_down(self, app) -> bool:
-        if not self.confirming:
-            return False
-        options = self._options(app.state or {})
-        self.selected = (self.selected + 1) % len(options)
-        return True
-
-    def render(self, draw, width: int, height: int, context: dict) -> None:
-        state = context.get("state") or {}
-        options = self._options(state)
-        self.selected = min(self.selected, len(options) - 1)
-        font = _font(context, "font_medium")
-        draw.text((0, HEADER_Y), "SYSTEM", font=font, fill=255)
-        if not self.confirming:
-            if state.get("mode") == "usb_transfer":
-                draw.text((0, CONTENT_Y), "USB disk active", font=font, fill=255)
-                draw.text((0, CONTENT_Y + LINE_HEIGHT), "Eject then stop", font=font, fill=255)
-            else:
-                draw.text((0, CONTENT_Y), "USB disk / power", font=font, fill=255)
-                draw.text((0, CONTENT_Y + LINE_HEIGHT), "Press to choose", font=font, fill=255)
-            return
-        start = max(0, min(self.selected - 1, max(0, len(options) - 3)))
-        for row, option_index in enumerate(range(start, min(start + 3, len(options)))):
-            prefix = "> " if option_index == self.selected else "  "
-            draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + options[option_index], font=font, fill=255)
-
 
 class FlappyGame(Screen):
     """A one-button Flappy Cat clone. It autostarts and auto-restarts after a

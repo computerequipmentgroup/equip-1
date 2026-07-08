@@ -10,7 +10,7 @@ from .config import get_board_config
 from .display import make_display
 from .input import make_buttons, make_buzzer
 from .leds import STANDARD_LED_SCALE, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
-from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, SystemScreen, UsbTransferScreen
+from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, UsbTransferScreen
 
 
 class OledApp:

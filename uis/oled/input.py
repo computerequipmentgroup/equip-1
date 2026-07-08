@@ -27,7 +27,7 @@ class Button:
     def pressed(self) -> bool:
         current = self.gpio.read()
         now = time.time()
-        if self.last_state and not current and (now - self.last_press) > 0.25:
+        if self.last_state and not current and (now - self.last_press) > 0.05:
             self.last_press = now
             self.last_state = current
             return True

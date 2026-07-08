@@ -301,25 +301,12 @@ class Equip1Daemon:
             if self.recorder.state.active:
                 await asyncio.to_thread(self.recorder.stop)
             await self.preview.stop()
-            # Release the FireWire device so USB disk mode / shutdown can unmount
-            # and power down cleanly.
+            # Release the FireWire device so USB disk mode can unmount cleanly.
             await self.dv.stop()
             self._poll_recorder_unlocked()
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
-
-    async def shutdown_host(self) -> dict[str, str]:
-        await self._prepare_power_transition()
-        command = ["shutdown", "-h", "now"] if os.geteuid() == 0 else ["sudo", "shutdown", "-h", "now"]
-        subprocess.Popen(command)
-        return {"status": "scheduled"}
-
-    async def reboot_host(self) -> dict[str, str]:
-        await self._prepare_power_transition()
-        command = ["reboot"] if os.geteuid() == 0 else ["sudo", "reboot"]
-        subprocess.Popen(command)
-        return {"status": "scheduled"}
 
     async def start_usb_storage(self) -> dict[str, Any]:
         if self._usb_transfer_active():

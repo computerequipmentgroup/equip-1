@@ -173,15 +173,6 @@ async def clear_error() -> dict:
     return await daemon.clear_error()
 
 
-@app.post("/api/commands/shutdown")
-async def shutdown_host() -> dict:
-    return await daemon.shutdown_host()
-
-
-@app.post("/api/commands/reboot")
-async def reboot_host() -> dict:
-    return await daemon.reboot_host()
-
 
 @app.post("/api/commands/usb-storage-start")
 async def usb_storage_start() -> dict:
