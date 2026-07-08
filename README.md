@@ -4,7 +4,42 @@ Equip-1 is an open-source, portable DV recorder for camcorders with FireWire/i.L
 
 The project is for camera enthusiasts, videographers, film schools, archivists, and hardware/software contributors who want a modern, repairable path for capturing DV tapes without keeping an old laptop alive.
 
+The [Firehat](https://github.com/computerequipmentgroup/firehat) is also available standalone. It works as a HAT for the ROCK 2F, Raspberry Pi 5 and other SBCs.
+
 Website: <https://www.equip-1.c-e.group/>
+
+## Hardware
+
+**Equip-1**
+
+- Radxa ROCK 2F (Rockchip RK3528A, quad-core ARM Cortex-A53, 2 GB RAM, 8 GB eMMC)
+- Firehat (see below)
+- MicroSD storage
+- USB-C power input, 5V
+- HDMI output
+- WiFi 6, Bluetooth 5.4
+- 2x USB 2.0 Type-A
+- 60 mm x 70 mm x 25 mm, ~100 g
+
+**Firehat**
+
+- VIA VT6315N FireWire controller
+- 6-pin FireWire port (DVin)
+- PCIe 2.0 x1 via FPC connector
+- 40-pin 2.54 mm GPIO header (Raspberry Pi-compatible)
+- OLED display
+- 3x SMD buttons, RGB LED, buzzer
+- 56 mm x 70 mm x 12 mm, ~25 g
+
+## Open Source
+
+Hardware is licensed under [CERN OHL-S](https://ohwr.org/cern_ohl_s_v2.txt). Software is licensed under GPL. Derivatives must be released under the same licenses.
+
+## Community
+
+Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
+
+If you like this project and want to know more about the development and future steps, or even build your own version, feel free to join this discord. We are a small community building objects with computers!
 
 ## Structure
 
@@ -14,17 +49,6 @@ Website: <https://www.equip-1.c-e.group/>
 - `buildroot/` — appliance image, kernel/boot fragments, rootfs overlay, init scripts, and flash/build tooling.
 - `systemd/` — optional Debian/Radxa service templates for development outside the Buildroot image.
 - `scripts/` — helper scripts used by the optional systemd install path.
-
-## Hardware/software snapshot
-
-The current target device uses:
-
-- Radxa ROCK 2F / RK3528A
-- Custom PCIe FireWire HAT
-- USB-C 5V power
-- microSD system/recording storage, with exFAT recording partition support
-- Wi-Fi 6 / Bluetooth 5.4 on the base board
-- OLED/buttons UI, HDMI preview, and FireWire tape deck control where supported
 
 ## Development setup
 
