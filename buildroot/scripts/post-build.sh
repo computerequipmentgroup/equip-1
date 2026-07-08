@@ -157,6 +157,33 @@ merge_dt_overlays() {
     fi
 }
 
+# Incremental Buildroot target trees keep files that disappeared from the
+# overlay. Remove pre-rename Firehat paths so old init scripts cannot start a
+# second daemon/OLED/HDMI stack in Equip-1 images.
+rm -rf \
+    "${TARGET_DIR}/etc/firehat" \
+    "${TARGET_DIR}/opt/firehat" \
+    "${TARGET_DIR}/var/run/firehatd.pid" \
+    "${TARGET_DIR}/var/run/firehat-oled.pid" \
+    "${TARGET_DIR}/var/run/firehat-hdmi-preview.pid" \
+    "${TARGET_DIR}/var/log/firehatd.log" \
+    "${TARGET_DIR}/var/log/firehat-oled.log" \
+    "${TARGET_DIR}/var/log/firehat-hdmi-preview.log" \
+    "${TARGET_DIR}/var/log/equip1d.log" \
+    "${TARGET_DIR}/var/log/network.log" \
+    "${TARGET_DIR}/var/log/storage-switch.log" \
+    "${TARGET_DIR}/var/log/usb-storage.log" \
+    "${TARGET_DIR}/var/log/boot-crumb.log" \
+    "${TARGET_DIR}/var/log/boot-debug.log" \
+    "${TARGET_DIR}/var/log/late-debug.log"
+rm -f \
+    "${TARGET_DIR}/etc/init.d/S60firehatd" \
+    "${TARGET_DIR}/etc/init.d/S61firehat-oled" \
+    "${TARGET_DIR}/etc/init.d/S62firehat-hdmi-preview" \
+    "${TARGET_DIR}/usr/sbin/firehat-storage-switch" \
+    "${TARGET_DIR}/usr/sbin/firehat-usb-storage"
+echo "==> Removed stale Firehat-era target files."
+
 # The generated S40network comes from BR2_SYSTEM_DHCP. It can persist in an
 # incremental target tree after the defconfig stops setting that option, and it
 # races our AIC8800/WPA-aware S50network script.

@@ -36,7 +36,7 @@ After booting with the USB drive attached:
 
 ```sh
 mount | grep ' /data '
-cat /data/boot-crumb.log | grep S15data
+cat /data/equip1-boot-crumb.log | grep S15data
 ```
 
 Expected log when a labelled USB drive is used:

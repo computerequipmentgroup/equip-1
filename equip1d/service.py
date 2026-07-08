@@ -586,7 +586,7 @@ class Equip1Daemon:
             return
         try:
             stamp = datetime.now(timezone.utc).isoformat()
-            with open("/data/equip1d-debug.log", "a", encoding="utf-8") as handle:
+            with open("/data/equip1-daemon-debug.log", "a", encoding="utf-8") as handle:
                 handle.write(f"{stamp} {message}\n")
         except OSError:
             pass

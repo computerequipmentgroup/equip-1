@@ -11,8 +11,8 @@ DATA_LABEL="${EQUIP1_DATA_LABEL:-EQUIP1}"
 MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
 MOUNT_TIMEOUT="${EQUIP1_DATA_MOUNT_TIMEOUT:-15}"
 USB_WAIT_SECS="${EQUIP1_USB_DATA_WAIT_SECS:-5}"
-LOGFILE="/var/log/storage-switch.log"
-BOOT_LOG="/var/log/boot-crumb.log"
+LOGFILE="/var/log/equip1-storage-switch.log"
+BOOT_LOG="/var/log/equip1-boot-crumb.log"
 USB_STORAGE_ACTIVE="/run/equip1-usb-storage.active"
 
 log() {
@@ -274,7 +274,7 @@ mount_data_part() {
 
     if mounted_at_data; then
         mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
-        cp "$BOOT_LOG" "$DATA_MNT/boot-crumb.log" 2>/dev/null || true
+        cp "$BOOT_LOG" "$DATA_MNT/equip1-boot-crumb.log" 2>/dev/null || true
         label="$(blkid_field LABEL "$part")"
         if [ -n "$label" ]; then
             log "using $source data partition $part label $label"

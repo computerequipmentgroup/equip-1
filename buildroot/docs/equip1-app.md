@@ -28,6 +28,6 @@ Useful device commands:
 ```sh
 /etc/init.d/S60equip1d restart
 /etc/init.d/S61equip1-oled restart
-tail -f /var/log/equip1d.log
+tail -f /var/log/equip1-daemon.log
 tail -f /var/log/equip1-oled.log
 ```

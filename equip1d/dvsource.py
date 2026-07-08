@@ -345,7 +345,7 @@ class DvSource:
     def _log(self, message: str, always: bool = False) -> None:
         if always or os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1" or Path("/data/.equip1-debug").exists():
             try:
-                with open("/data/dvsource-debug.log", "a", encoding="utf-8") as handle:
+                with open("/data/equip1-dvsource-debug.log", "a", encoding="utf-8") as handle:
                     handle.write(f"{time.time():.3f} {message}\n")
             except OSError:
                 pass

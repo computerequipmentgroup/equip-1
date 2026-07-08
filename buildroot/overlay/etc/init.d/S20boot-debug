@@ -1,10 +1,10 @@
 #!/bin/sh
 # No-UART boot/debug breadcrumbs.
-# Writes progress to /data/boot-debug.log, which should be readable from the
+# Writes progress to /data/equip1-boot-debug.log, which should be readable from the
 # exFAT EQUIP1 partition after powering off and moving the SD card to a laptop.
 
-LOG=/data/boot-debug.log
-ROOT_LOG=/var/log/boot-debug.log
+LOG=/data/equip1-boot-debug.log
+ROOT_LOG=/var/log/equip1-boot-debug.log
 STAMP=/tmp/boot-debug.started
 
 log_msg() {
@@ -38,7 +38,7 @@ case "$1" in
     start)
         # Always write a minimal breadcrumb so we can tell init reached S20.
         mkdir -p /var/log 2>/dev/null || true
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> /var/log/boot-crumb.log 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
 
         [ "${EQUIP1_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.equip1-debug ] || exit 0
         [ -e "$STAMP" ] && exit 0

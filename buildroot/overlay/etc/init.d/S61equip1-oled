@@ -3,6 +3,7 @@
 
 PIDFILE=/var/run/equip1-oled.pid
 LOGFILE=/var/log/equip1-oled.log
+DATA_LOGFILE=/data/equip1-oled.log
 APPDIR=/opt/equip1
 
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
@@ -15,6 +16,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_BOOT_HOLD_SECONDS ui boot_hold_seconds 1.1
     equip1_ini_default EQUIP1_OLED_FRAME_INTERVAL ui oled_frame_interval 0.033333
     equip1_ini_default EQUIP1_OLED_IDLE_FRAME_INTERVAL ui oled_idle_frame_interval 0.2
+    equip1_ini_default EQUIP1_PERF_LOGS performance perf_logs 0
 fi
 
 export EQUIP_1_BOARD_TYPE="${EQUIP_1_BOARD_TYPE:-rock2f}"
@@ -27,6 +29,7 @@ export EQUIP1_BOOT_DURATION_SECONDS="${EQUIP1_BOOT_DURATION_SECONDS:-3.0}"
 export EQUIP1_BOOT_HOLD_SECONDS="${EQUIP1_BOOT_HOLD_SECONDS:-1.1}"
 export EQUIP1_OLED_FRAME_INTERVAL="${EQUIP1_OLED_FRAME_INTERVAL:-0.033333}"
 export EQUIP1_OLED_IDLE_FRAME_INTERVAL="${EQUIP1_OLED_IDLE_FRAME_INTERVAL:-0.2}"
+export EQUIP1_PERF_LOGS="${EQUIP1_PERF_LOGS:-0}"
 export EQUIP1_OLED_SETTLE_DELAY="${EQUIP1_OLED_SETTLE_DELAY:-0}"
 export EQUIP1_OLED_INIT_ATTEMPTS="${EQUIP1_OLED_INIT_ATTEMPTS:-120}"
 export EQUIP1_OLED_INIT_DELAY="${EQUIP1_OLED_INIT_DELAY:-1}"
@@ -48,9 +51,10 @@ export EQUIP1_RGB_LED_STEP_SECONDS="${EQUIP1_RGB_LED_STEP_SECONDS:-0.28}"
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S61equip1-oled start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S61equip1-oled start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
         echo "Starting equip1 OLED UI..."
         mkdir -p /var/run /var/log
+        [ -d /data ] && LOGFILE="$DATA_LOGFILE"
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "equip1 OLED UI already running"
             exit 0

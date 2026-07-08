@@ -8,7 +8,7 @@ set -u
 GADGET_NAME="${EQUIP1_USB_GADGET_NAME:-equip1}"
 GADGET_DIR="/sys/kernel/config/usb_gadget/$GADGET_NAME"
 ACTIVE_FILE="/run/equip1-usb-storage.active"
-LOGFILE="/var/log/usb-storage.log"
+LOGFILE="/var/log/equip1-usb-storage.log"
 DATA_MNT="${EQUIP1_DATA_MNT:-/data}"
 MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
 RO="${EQUIP1_USB_STORAGE_READONLY:-0}"

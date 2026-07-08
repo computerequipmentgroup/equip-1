@@ -278,7 +278,7 @@ class MjpegPreview:
     def _log(self, message: str, always: bool = False) -> None:
         if always or os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1" or Path("/data/.equip1-debug").exists():
             try:
-                with open("/data/preview-debug.log", "a", encoding="utf-8") as handle:
+                with open("/data/equip1-preview-debug.log", "a", encoding="utf-8") as handle:
                     handle.write(f"{message}\n")
             except OSError:
                 pass

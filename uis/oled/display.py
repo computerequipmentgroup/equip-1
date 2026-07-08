@@ -10,8 +10,12 @@ from .config import BoardConfig
 DrawFunc = Callable[[object, int, int, dict], None]
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _perf_enabled() -> bool:
-    return os.environ.get("EQUIP1_OLED_PERF_LOGS") == "1" or os.environ.get("EQUIP1_PERF_LOGS") == "1"
+    return _truthy(os.environ.get("EQUIP1_OLED_PERF_LOGS")) or _truthy(os.environ.get("EQUIP1_PERF_LOGS"))
 
 
 def _perf_log(name: str, started: float, threshold_ms: float = 10.0) -> None:

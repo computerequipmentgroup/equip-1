@@ -1,10 +1,10 @@
 #!/bin/sh
 # Late no-UART debug capture.
 # Runs after normal init scripts, waits for async device/service startup, then
-# writes a broad snapshot to /data/late-debug.log on the exFAT partition.
+# writes a broad snapshot to /data/equip1-late-debug.log on the exFAT partition.
 
-LOG=/data/late-debug.log
-ROOT_LOG=/var/log/late-debug.log
+LOG=/data/equip1-late-debug.log
+ROOT_LOG=/var/log/equip1-late-debug.log
 
 section() {
     echo "" >>"$LOG" 2>/dev/null || true
@@ -142,11 +142,13 @@ run_capture() {
     fi
 
     append_file /var/log/messages
-    append_file /var/log/network.log
-    append_file /var/log/equip1d.log
+    append_file /data/equip1-daemon.log
+    append_file /data/equip1-oled.log
+    append_file /var/log/equip1-network.log
+    append_file /var/log/equip1-daemon.log
     capture_api_state
     append_file /var/log/equip1-oled.log
-    append_file /var/log/boot-debug.log
+    append_file /var/log/equip1-boot-debug.log
 
     capture_cmd dmesg
 
@@ -157,9 +159,9 @@ run_capture() {
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S99late-debug start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S99late-debug start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
         # Always copy boot crumb log to /data so it's visible on the exFAT partition.
-        cp /var/log/boot-crumb.log /data/boot-crumb.log 2>/dev/null || true
+        cp /var/log/equip1-boot-crumb.log /data/equip1-boot-crumb.log 2>/dev/null || true
         sync
         [ "${EQUIP1_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.equip1-debug ] || exit 0
         (

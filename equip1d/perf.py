@@ -8,8 +8,12 @@ from typing import Any
 _PERF_FLAG = Path("/data/.equip1-perf")
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def enabled() -> bool:
-    return os.environ.get("EQUIP1_PERF_LOGS") == "1" or _PERF_FLAG.exists()
+    return _truthy(os.environ.get("EQUIP1_PERF_LOGS")) or _PERF_FLAG.exists()
 
 
 def threshold_ms(default: float = 25.0) -> float:

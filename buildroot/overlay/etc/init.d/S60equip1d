@@ -2,7 +2,8 @@
 # Equip-1 FastAPI recorder daemon for BusyBox init.
 
 PIDFILE=/var/run/equip1d.pid
-LOGFILE=/var/log/equip1d.log
+LOGFILE=/var/log/equip1-daemon.log
+DATA_LOGFILE=/data/equip1-daemon.log
 APPDIR=/opt/equip1
 
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
@@ -26,6 +27,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_PREVIEW_RECORDING_FPS preview recording_fps 2
     equip1_ini_default EQUIP1_PREVIEW_RECORDING_SIZE preview recording_size 480:360
     equip1_ini_default EQUIP1_PREVIEW_RECORDING_QUALITY preview recording_quality 5
+    equip1_ini_default EQUIP1_PERF_LOGS performance perf_logs 0
 fi
 
 export EQUIP1_CAPTURE_DIR="${EQUIP1_CAPTURE_DIR:-/data/captures}"
@@ -41,12 +43,14 @@ export EQUIP1_AP_IP="${EQUIP1_AP_IP:-10.42.0.1}"
 export EQUIP1_CAPTIVE_PORT="${EQUIP1_CAPTIVE_PORT:-80}"
 export EQUIP1_AUTO_STORAGE_SWITCH="${EQUIP1_AUTO_STORAGE_SWITCH:-1}"
 export EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS="${EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS:-5}"
+export EQUIP1_PERF_LOGS="${EQUIP1_PERF_LOGS:-0}"
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S60equip1d start" >> /var/log/boot-crumb.log 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S60equip1d start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
         echo "Starting equip1d..."
         mkdir -p /var/run /var/log "$EQUIP1_CAPTURE_DIR"
+        [ -d /data ] && LOGFILE="$DATA_LOGFILE"
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "equip1d already running"
             exit 0

@@ -191,7 +191,10 @@ run_build_attempt() {
     fi
 
     echo "==> Syncing files to VM for attempt $attempt/$MAX_HEAL_ATTEMPTS..."
-    rsync -avz -e "ssh $SSH_OPTS" \
+    rsync -avz --delete \
+        --exclude '/opt/equip1/lib/' \
+        --exclude '/opt/equip1/.requirements.sha256' \
+        -e "ssh $SSH_OPTS" \
         "$OVERLAY_DIR/" admin@"$VM_IP":~/overlay/
 
     rsync -avz -e "ssh $SSH_OPTS" \

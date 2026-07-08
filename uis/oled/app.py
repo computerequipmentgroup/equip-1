@@ -15,16 +15,21 @@ from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, Sto
 
 class OledApp:
     def __init__(self) -> None:
+        print("OLED app starting", flush=True)
         self.board = get_board_config()
+        print(f"OLED board config: {self.board.name}", flush=True)
         settings = Equip1Settings()
         api_base = settings.get("ui", "api_base", "http://127.0.0.1:8000/api", env="EQUIP1_API_BASE") or "http://127.0.0.1:8000/api"
         api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="EQUIP1_API_TIMEOUT")
         self.api = Equip1ApiClient(api_base, timeout=api_timeout)
         self.state_fetch_interval = settings.get_float("ui", "state_fetch_interval", 1.0, env="EQUIP1_STATE_FETCH_INTERVAL")
         self.display = make_display(self.board)
+        print("OLED display initialized", flush=True)
         self.buttons = make_buttons(self.board)
+        print("OLED buttons initialized", flush=True)
         self.buzzer = make_buzzer(self.board)
         self.leds = make_boot_leds()
+        print("OLED LEDs initialized", flush=True)
         self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen()]
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
@@ -58,7 +63,8 @@ class OledApp:
             print(f"OLED API offline: {detail or 'unknown error'}", flush=True)
 
     def _perf_enabled(self) -> bool:
-        return os.environ.get("EQUIP1_OLED_PERF_LOGS") == "1" or os.environ.get("EQUIP1_PERF_LOGS") == "1"
+        truthy = {"1", "true", "yes", "on"}
+        return os.environ.get("EQUIP1_OLED_PERF_LOGS", "").strip().lower() in truthy or os.environ.get("EQUIP1_PERF_LOGS", "").strip().lower() in truthy
 
     def _perf_log(self, name: str, started: float, threshold_ms: float = 10.0) -> None:
         if not self._perf_enabled():
@@ -237,6 +243,7 @@ class OledApp:
         self._perf_log("oled.render_total", started)
 
     def run(self) -> None:
+        print("OLED run loop starting", flush=True)
         try:
             while True:
                 frame_started = time.monotonic()
