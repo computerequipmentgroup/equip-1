@@ -5,17 +5,15 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from equip1d.logging_config import log, perf_enabled
+
 from .config import BoardConfig
 
 DrawFunc = Callable[[object, int, int, dict], None]
 
 
-def _truthy(value: str | None) -> bool:
-    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _perf_enabled() -> bool:
-    return _truthy(os.environ.get("EQUIP1_OLED_PERF_LOGS")) or _truthy(os.environ.get("EQUIP1_PERF_LOGS"))
+    return perf_enabled()
 
 
 def _perf_log(name: str, started: float, threshold_ms: float = 10.0) -> None:
@@ -163,7 +161,7 @@ class ConsoleDisplay:
 
     def render(self, draw_func: DrawFunc, context: dict) -> None:
         state = context.get("state") or {}
-        print(f"OLED {state.get('mode', 'offline')} {state.get('recording', {}).get('elapsed_seconds', '')}")
+        log(f"OLED {state.get('mode', 'offline')} {state.get('recording', {}).get('elapsed_seconds', '')}", level="debug")
 
 
 def make_display(board: BoardConfig):
@@ -174,7 +172,7 @@ def make_display(board: BoardConfig):
     attempts = int(os.environ.get("EQUIP1_OLED_INIT_ATTEMPTS", "120"))
     delay = float(os.environ.get("EQUIP1_OLED_INIT_DELAY", "1"))
     if settle_delay > 0:
-        print(f"Waiting {settle_delay:g}s before OLED init", flush=True)
+        log(f"Waiting {settle_delay:g}s before OLED init")
         time.sleep(settle_delay)
 
     last_error: OSError | None = None
@@ -182,14 +180,14 @@ def make_display(board: BoardConfig):
         try:
             display = OledDisplay(board)
             if attempt > 1:
-                print(f"OLED init succeeded on attempt {attempt}/{attempts}", flush=True)
+                log(f"OLED init succeeded on attempt {attempt}/{attempts}")
             return display
         except OSError as exc:
             last_error = exc
-            print(
+            log(
                 f"OLED init failed on i2c-{board.i2c_port} address 0x{board.oled_address:02x} "
                 f"(attempt {attempt}/{attempts}): {exc}",
-                flush=True,
+                level="warning",
             )
             if attempt < attempts:
                 time.sleep(delay)

@@ -6,6 +6,16 @@
 LOG=/data/equip1-late-debug.log
 ROOT_LOG=/var/log/equip1-late-debug.log
 
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
+fi
+export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
+
+debug_enabled() {
+    [ "$(printf '%s' "$EQUIP1_LOG_LEVEL" | tr 'A-Z' 'a-z')" = "debug" ]
+}
+
 section() {
     echo "" >>"$LOG" 2>/dev/null || true
     echo "===== $* =====" >>"$LOG" 2>/dev/null || true
@@ -163,7 +173,7 @@ case "$1" in
         # Always copy boot crumb log to /data so it's visible on the exFAT partition.
         cp /var/log/equip1-boot-crumb.log /data/equip1-boot-crumb.log 2>/dev/null || true
         sync
-        [ "${EQUIP1_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.equip1-debug ] || exit 0
+        debug_enabled || exit 0
         (
             sleep 60
             run_capture

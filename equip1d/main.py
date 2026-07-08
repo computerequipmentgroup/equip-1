@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import uvicorn
 
+from .logging_config import debug_enabled, log, should_log
 from .settings import Equip1Settings
 
 
@@ -26,7 +27,7 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
         self._redirect_to_dashboard()
 
     def log_message(self, fmt: str, *args: object) -> None:
-        if os.environ.get("EQUIP1_CAPTIVE_DEBUG") == "1":
+        if debug_enabled() or os.environ.get("EQUIP1_CAPTIVE_DEBUG") == "1":
             super().log_message(fmt, *args)
 
     def _dashboard_url(self) -> str:
@@ -88,13 +89,13 @@ def _start_captive_portal(settings: Equip1Settings) -> None:
     try:
         server = ThreadingHTTPServer((host, port), CaptivePortalHandler)
     except OSError as exc:
-        print(f"Warning: captive portal could not bind {host}:{port}: {exc}", flush=True)
+        log(f"Warning: captive portal could not bind {host}:{port}: {exc}", level="warning")
         return
 
     server.dashboard_url = dashboard_url  # type: ignore[attr-defined]
     thread = threading.Thread(target=server.serve_forever, name="equip1-captive", daemon=True)
     thread.start()
-    print(f"Captive portal listening on {host}:{port}, redirecting to {dashboard_url}", flush=True)
+    log(f"Captive portal listening on {host}:{port}, redirecting to {dashboard_url}")
 
 
 def main() -> None:
@@ -102,7 +103,8 @@ def main() -> None:
     host = settings.get("network", "host", "0.0.0.0", env="EQUIP1_HOST") or "0.0.0.0"
     port = settings.get_int("network", "port", 8000, env="EQUIP1_PORT")
     _start_captive_portal(settings)
-    uvicorn.run("equip1d.api:app", host=host, port=port)
+    uvicorn_log_level = "critical" if not should_log("info") else "debug" if should_log("debug") else "info"
+    uvicorn.run("equip1d.api:app", host=host, port=port, log_level=uvicorn_log_level)
 
 
 if __name__ == "__main__":

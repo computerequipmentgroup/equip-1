@@ -24,6 +24,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_AP_DHCP_LEASE network ap_dhcp_lease 12h
     equip1_ini_default EQUIP1_AP_COUNTRY network ap_country ""
     equip1_ini_default EQUIP1_NETWORK_BACKGROUND network startup_background 1
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
 fi
 
 WIFI_MODE="${EQUIP1_WIFI_MODE:-ap}"
@@ -38,8 +39,15 @@ AP_DHCP_END="${EQUIP1_AP_DHCP_END:-10.42.0.100}"
 AP_DHCP_LEASE="${EQUIP1_AP_DHCP_LEASE:-12h}"
 AP_COUNTRY="${EQUIP1_AP_COUNTRY:-}"
 NETWORK_BACKGROUND="${EQUIP1_NETWORK_BACKGROUND:-1}"
+LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
+if [ "$LOG_LEVEL" = "quiet" ]; then
+    LOGFILE=/dev/null
+    HOSTAPD_LOG=/dev/null
+    DNSMASQ_LOG=/dev/null
+fi
 
 log() {
+    [ "$LOG_LEVEL" = "quiet" ] && return 0
     mkdir -p /var/log 2>/dev/null || true
     echo "$(date 2>/dev/null || true) $*" >>"$LOGFILE" 2>/dev/null || true
     echo "$*"

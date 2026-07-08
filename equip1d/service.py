@@ -14,6 +14,7 @@ from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
 from .dvsource import DvSource
 from .events import EventBus
+from .logging_config import debug_enabled, log
 from .models import CameraState, DaemonState, DeckState, ErrorState, LightsState, RecordingState, StorageState
 from .network import get_network_state
 from .preview import MjpegPreview
@@ -278,7 +279,7 @@ class Equip1Daemon:
                 await asyncio.to_thread(self._apply_system_time, epoch_seconds)
                 applied = True
             except Exception as exc:
-                print(f"Time sync failed: {exc}", flush=True)
+                log(f"Time sync failed: {exc}", level="warning")
         return {"applied": applied, "now": time.time()}
 
     def _apply_system_time(self, epoch_seconds: float) -> None:
@@ -582,7 +583,7 @@ class Equip1Daemon:
         return self.preview.mkv_media_type
 
     def _debug_log(self, message: str, verbose: bool = False) -> None:
-        if verbose and os.environ.get("EQUIP1_DEBUG_LOGS") != "1" and not Path("/data/.equip1-debug").exists():
+        if verbose and not debug_enabled():
             return
         try:
             stamp = datetime.now(timezone.utc).isoformat()
@@ -595,7 +596,7 @@ class Equip1Daemon:
         try:
             await asyncio.to_thread(self.storage.generate_thumbnails_for_prefix, prefix, self.ffmpeg_bin)
         except Exception as exc:
-            print(f"Thumbnail generation failed for {prefix}: {exc}", flush=True)
+            log(f"Thumbnail generation failed for {prefix}: {exc}", level="warning")
         finally:
             await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
             # Re-publish so the web UI picks up the new thumbnail (or the capture

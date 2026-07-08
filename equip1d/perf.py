@@ -2,18 +2,13 @@ from __future__ import annotations
 
 import os
 import time
-from pathlib import Path
 from typing import Any
 
-_PERF_FLAG = Path("/data/.equip1-perf")
-
-
-def _truthy(value: str | None) -> bool:
-    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+from .logging_config import perf_enabled
 
 
 def enabled() -> bool:
-    return _truthy(os.environ.get("EQUIP1_PERF_LOGS")) or _PERF_FLAG.exists()
+    return perf_enabled()
 
 
 def threshold_ms(default: float = 25.0) -> float:

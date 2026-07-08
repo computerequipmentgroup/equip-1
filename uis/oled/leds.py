@@ -6,6 +6,8 @@ import os
 import time
 from dataclasses import dataclass
 
+from equip1d.logging_config import log
+
 
 SPI_IOC_WR_MODE = 0x40016B01
 SPI_IOC_WR_BITS_PER_WORD = 0x40016B03
@@ -276,7 +278,7 @@ def make_boot_leds():
         return NullLeds()
     backend = os.environ.get("EQUIP1_RGB_LED_BACKEND", "spi").lower()
     if backend != "spi":
-        print(f"RGB LED backend {backend!r} is not supported; disabling LEDs", flush=True)
+        log(f"RGB LED backend {backend!r} is not supported; disabling LEDs", level="warning")
         return NullLeds()
 
     device = os.environ.get("EQUIP1_RGB_LED_SPI_DEVICE", "/dev/spidev0.0")
@@ -295,5 +297,5 @@ def make_boot_leds():
             one_symbol=_env_int_auto("EQUIP1_RGB_LED_ONE_SYMBOL", 0b1110),
         )
     except Exception as exc:
-        print(f"RGB LEDs disabled: {exc}", flush=True)
+        log(f"RGB LEDs disabled: {exc}", level="warning")
         return NullLeds()

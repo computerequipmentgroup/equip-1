@@ -19,12 +19,18 @@ FFMPEG_LOGLEVEL="${EQUIP1_HDMI_FFMPEG_LOGLEVEL:-info}"
 FFMPEG_PROGRESS="${EQUIP1_HDMI_FFMPEG_PROGRESS:-0}"
 FFMPEG_STATS_PERIOD="${EQUIP1_HDMI_FFMPEG_STATS_PERIOD:-5}"
 CLEAR_ON_CONNECT="${EQUIP1_HDMI_CLEAR_ON_CONNECT:-1}"
+LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
+if [ "$LOG_LEVEL" = "quiet" ]; then
+    FFMPEG_LOGLEVEL="quiet"
+    FFMPEG_PROGRESS="0"
+fi
 
 ffmpeg_pid=""
 last_status_summary=""
 last_fb_diag_at=0
 
 log() {
+    [ "$LOG_LEVEL" = "quiet" ] && return 0
     line="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) $*"
     printf '%s\n' "$line"
     if [ -n "$DATA_LOG" ]; then

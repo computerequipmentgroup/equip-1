@@ -7,6 +7,16 @@ LOG=/data/equip1-boot-debug.log
 ROOT_LOG=/var/log/equip1-boot-debug.log
 STAMP=/tmp/boot-debug.started
 
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
+fi
+export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
+
+debug_enabled() {
+    [ "$(printf '%s' "$EQUIP1_LOG_LEVEL" | tr 'A-Z' 'a-z')" = "debug" ]
+}
+
 log_msg() {
     mkdir -p /data /var/log 2>/dev/null || true
     MSG="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) $*"
@@ -40,7 +50,7 @@ case "$1" in
         mkdir -p /var/log 2>/dev/null || true
         echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
 
-        [ "${EQUIP1_DEBUG_LOGS:-0}" = "1" ] || [ -e /data/.equip1-debug ] || exit 0
+        debug_enabled || exit 0
         [ -e "$STAMP" ] && exit 0
         touch "$STAMP" 2>/dev/null || true
         mkdir -p /data /var/log 2>/dev/null || true

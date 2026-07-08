@@ -27,7 +27,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_PREVIEW_RECORDING_FPS preview recording_fps 2
     equip1_ini_default EQUIP1_PREVIEW_RECORDING_SIZE preview recording_size 480:360
     equip1_ini_default EQUIP1_PREVIEW_RECORDING_QUALITY preview recording_quality 5
-    equip1_ini_default EQUIP1_PERF_LOGS performance perf_logs 0
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
 fi
 
 export EQUIP1_CAPTURE_DIR="${EQUIP1_CAPTURE_DIR:-/data/captures}"
@@ -43,7 +43,7 @@ export EQUIP1_AP_IP="${EQUIP1_AP_IP:-10.42.0.1}"
 export EQUIP1_CAPTIVE_PORT="${EQUIP1_CAPTIVE_PORT:-80}"
 export EQUIP1_AUTO_STORAGE_SWITCH="${EQUIP1_AUTO_STORAGE_SWITCH:-1}"
 export EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS="${EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS:-5}"
-export EQUIP1_PERF_LOGS="${EQUIP1_PERF_LOGS:-0}"
+export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
 
 case "$1" in
     start)

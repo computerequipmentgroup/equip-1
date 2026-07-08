@@ -17,6 +17,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_HDMI_FFMPEG_PROGRESS hdmi ffmpeg_progress 0
     equip1_ini_default EQUIP1_HDMI_FFMPEG_STATS_PERIOD hdmi ffmpeg_stats_period 5
     equip1_ini_default EQUIP1_HDMI_CLEAR_ON_CONNECT hdmi clear_on_connect 1
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
 fi
 
 export EQUIP1_HDMI_PREVIEW_ENABLED="${EQUIP1_HDMI_PREVIEW_ENABLED:-1}"
@@ -29,6 +30,7 @@ export EQUIP1_HDMI_FFMPEG_LOGLEVEL="${EQUIP1_HDMI_FFMPEG_LOGLEVEL:-info}"
 export EQUIP1_HDMI_FFMPEG_PROGRESS="${EQUIP1_HDMI_FFMPEG_PROGRESS:-0}"
 export EQUIP1_HDMI_FFMPEG_STATS_PERIOD="${EQUIP1_HDMI_FFMPEG_STATS_PERIOD:-5}"
 export EQUIP1_HDMI_CLEAR_ON_CONNECT="${EQUIP1_HDMI_CLEAR_ON_CONNECT:-1}"
+export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
 export EQUIP1_HDMI_DATA_LOG="${EQUIP1_HDMI_DATA_LOG:-/data/equip1-hdmi-preview.log}"
 
 case "$1" in

@@ -5,9 +5,9 @@ import os
 import signal
 import time
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 from .dvsource import DvSource
+from .logging_config import debug_enabled, log, should_log
 from .settings import Equip1Settings
 
 
@@ -276,11 +276,12 @@ class MjpegPreview:
             self._log(f"{label}: {line.decode(errors='replace').rstrip()}", always=always)
 
     def _log(self, message: str, always: bool = False) -> None:
-        if always or os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1" or Path("/data/.equip1-debug").exists():
+        preview_debug = os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1"
+        if preview_debug or debug_enabled() or (always and should_log("info")):
             try:
                 with open("/data/equip1-preview-debug.log", "a", encoding="utf-8") as handle:
                     handle.write(f"{message}\n")
             except OSError:
                 pass
-        if os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1":
-            print(f"preview: {message}", flush=True)
+        if preview_debug or debug_enabled():
+            log(f"preview: {message}", level="debug")
