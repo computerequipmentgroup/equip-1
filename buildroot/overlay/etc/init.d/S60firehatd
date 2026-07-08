@@ -6,10 +6,33 @@ LOGFILE=/var/log/firehatd.log
 APPDIR=/opt/firehat
 
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
+if [ -r /etc/firehat/settings-env.sh ]; then
+    . /etc/firehat/settings-env.sh
+    firehat_ini_default FIREHAT_CAPTURE_DIR recording capture_dir /data/captures
+    firehat_ini_default FIREHAT_AUTO_STORAGE_SWITCH recording auto_storage_switch 1
+    firehat_ini_default FIREHAT_AUTO_STORAGE_COOLDOWN_SECONDS recording auto_storage_cooldown_seconds 5
+    firehat_ini_default FIREHAT_HOST network host 0.0.0.0
+    firehat_ini_default FIREHAT_PORT network port 8000
+    firehat_ini_default FIREHAT_WIFI_MODE network wifi_mode ap
+    firehat_ini_default FIREHAT_AP_ENABLED network ap_enabled 1
+    firehat_ini_default FIREHAT_AP_IFACE network ap_iface wlan0
+    firehat_ini_default FIREHAT_AP_SSID network ap_ssid Equip-1
+    firehat_ini_default FIREHAT_AP_PASSWORD network ap_password firesecret
+    firehat_ini_default FIREHAT_AP_IP network ap_ip 10.42.0.1
+    firehat_ini_default FIREHAT_CAPTIVE_PORT network captive_port 80
+    firehat_ini_default FIREHAT_PREVIEW_FPS preview fps 25
+    firehat_ini_default FIREHAT_PREVIEW_SIZE preview size 720:540
+    firehat_ini_default FIREHAT_PREVIEW_QUALITY preview quality 4
+    firehat_ini_default FIREHAT_PREVIEW_RECORDING_FPS preview recording_fps 2
+    firehat_ini_default FIREHAT_PREVIEW_RECORDING_SIZE preview recording_size 480:360
+    firehat_ini_default FIREHAT_PREVIEW_RECORDING_QUALITY preview recording_quality 5
+fi
+
 export FIREHAT_CAPTURE_DIR="${FIREHAT_CAPTURE_DIR:-/data/captures}"
 export FIREHAT_HOST="${FIREHAT_HOST:-0.0.0.0}"
 export FIREHAT_PORT="${FIREHAT_PORT:-8000}"
 export FIREHAT_WEB_DIR="${FIREHAT_WEB_DIR:-$APPDIR/uis/web/.output/public}"
+export FIREHAT_WIFI_MODE="${FIREHAT_WIFI_MODE:-ap}"
 export FIREHAT_AP_ENABLED="${FIREHAT_AP_ENABLED:-1}"
 export FIREHAT_AP_IFACE="${FIREHAT_AP_IFACE:-wlan0}"
 export FIREHAT_AP_SSID="${FIREHAT_AP_SSID:-Equip-1}"

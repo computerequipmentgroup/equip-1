@@ -10,11 +10,22 @@
 # of the rootfs disk, which is the SD-card recordings partition created by
 # flash.sh.
 
+if [ -r /etc/firehat/settings-env.sh ]; then
+    . /etc/firehat/settings-env.sh
+    firehat_ini_default FIREHAT_DATA_MNT recording data_mount /data
+    firehat_ini_default FIREHAT_DATA_LABEL recording storage_label EQUIP1
+    firehat_ini_default FIREHAT_DATA_MOUNT_OPTS recording data_mount_options noatime
+    firehat_ini_default FIREHAT_DATA_MOUNT_TIMEOUT recording data_mount_timeout 15
+    firehat_ini_default FIREHAT_USB_DATA_WAIT_SECS recording usb_data_wait_seconds 0
+    firehat_ini_default FIREHAT_DATA_BOOT_DIAGNOSTICS recording data_boot_diagnostics 0
+fi
+
 DATA_MNT="${FIREHAT_DATA_MNT:-/data}"
 DATA_LABEL="${FIREHAT_DATA_LABEL:-EQUIP1}"
-MOUNT_OPTS="${FIREHAT_DATA_MOUNT_OPTS:-noatime,sync,dirsync}"
+MOUNT_OPTS="${FIREHAT_DATA_MOUNT_OPTS:-noatime}"
 MOUNT_TIMEOUT="${FIREHAT_DATA_MOUNT_TIMEOUT:-15}"
-USB_WAIT_SECS="${FIREHAT_USB_DATA_WAIT_SECS:-5}"
+USB_WAIT_SECS="${FIREHAT_USB_DATA_WAIT_SECS:-0}"
+BOOT_DIAGNOSTICS="${FIREHAT_DATA_BOOT_DIAGNOSTICS:-0}"
 BOOT_LOG="/var/log/boot-crumb.log"
 
 log() {
@@ -229,7 +240,9 @@ wait_for_external_data_part() {
         sleep 1
         i=$((i + 1))
     done
-    dump_usb_state "no USB data partition candidate after ${USB_WAIT_SECS}s"
+    if [ "$BOOT_DIAGNOSTICS" = "1" ] || [ "$BOOT_DIAGNOSTICS" = "true" ]; then
+        dump_usb_state "no USB data partition candidate after ${USB_WAIT_SECS}s"
+    fi
     return 1
 }
 
@@ -276,7 +289,9 @@ mount_data_part() {
     else
         log "mount error for $part: no stderr from mount"
     fi
-    dump_usb_state "mount failed for $part"
+    if [ "$BOOT_DIAGNOSTICS" = "1" ] || [ "$BOOT_DIAGNOSTICS" = "true" ]; then
+        dump_usb_state "mount failed for $part"
+    fi
     log "could not mount $source data partition $part; using rootfs-backed $DATA_MNT"
     return 1
 }

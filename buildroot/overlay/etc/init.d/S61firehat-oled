@@ -6,6 +6,16 @@ LOGFILE=/var/log/firehat-oled.log
 APPDIR=/opt/firehat
 
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
+if [ -r /etc/firehat/settings-env.sh ]; then
+    . /etc/firehat/settings-env.sh
+    firehat_ini_default FIREHAT_API_BASE ui api_base http://127.0.0.1:8000/api
+    firehat_ini_default FIREHAT_API_TIMEOUT ui api_timeout 5.0
+    firehat_ini_default FIREHAT_STATE_FETCH_INTERVAL ui state_fetch_interval 1.0
+    firehat_ini_default FIREHAT_BOOT_DURATION_SECONDS ui boot_duration_seconds 3.0
+    firehat_ini_default FIREHAT_BOOT_HOLD_SECONDS ui boot_hold_seconds 1.1
+    firehat_ini_default FIREHAT_OLED_FRAME_INTERVAL ui oled_frame_interval 0.033333
+fi
+
 export EQUIP_1_BOARD_TYPE="${EQUIP_1_BOARD_TYPE:-rock2f}"
 export FIREHAT_API_BASE="${FIREHAT_API_BASE:-http://127.0.0.1:8000/api}"
 # /api/state can take a few seconds when DV deck probing is active.

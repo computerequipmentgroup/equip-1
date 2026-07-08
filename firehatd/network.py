@@ -1,20 +1,10 @@
 from __future__ import annotations
 
-import os
 import socket
 import subprocess
 
 from .models import NetworkState
-
-_FALSE_VALUES = {"0", "false", "no", "off"}
-
-
-def _env_enabled(name: str, default: bool = True) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() not in _FALSE_VALUES
-
+from .settings import FirehatSettings
 
 def _http_url(host: str, port: int) -> str:
     suffix = "" if port == 80 else f":{port}"
@@ -66,13 +56,17 @@ def get_hostname() -> str:
 
 
 def get_network_state(port: int) -> NetworkState:
+    settings = FirehatSettings()
     hostname = get_hostname()
     lan_ip = get_lan_ip()
 
-    ap_enabled = _env_enabled("FIREHAT_AP_ENABLED", default=True)
-    ap_iface = os.environ.get("FIREHAT_AP_IFACE", "wlan0") if ap_enabled else None
-    ap_ssid = os.environ.get("FIREHAT_AP_SSID", "Equip-1") if ap_enabled else None
-    ap_password = os.environ.get("FIREHAT_AP_PASSWORD", "firesecret") if ap_enabled else None
+    wifi_mode = (settings.get("network", "wifi_mode", "ap", env="FIREHAT_WIFI_MODE") or "ap").strip().lower()
+    ap_enabled = wifi_mode == "ap" and settings.get_bool(
+        "network", "ap_enabled", True, env="FIREHAT_AP_ENABLED"
+    )
+    ap_iface = settings.get("network", "ap_iface", "wlan0", env="FIREHAT_AP_IFACE") if ap_enabled else None
+    ap_ssid = settings.get("network", "ap_ssid", "Equip-1", env="FIREHAT_AP_SSID") if ap_enabled else None
+    ap_password = settings.get("network", "ap_password", "firesecret", env="FIREHAT_AP_PASSWORD") if ap_enabled else None
     ap_ip = get_interface_ipv4(ap_iface) if ap_iface else None
 
     if ap_ip:

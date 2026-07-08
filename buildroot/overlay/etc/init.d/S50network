@@ -10,6 +10,22 @@ HOSTAPD_CONF=/var/run/hostapd-firehat.conf
 HOSTAPD_LOG=/var/log/hostapd.log
 DNSMASQ_LOG=/var/log/dnsmasq.log
 
+if [ -r /etc/firehat/settings-env.sh ]; then
+    . /etc/firehat/settings-env.sh
+    firehat_ini_default FIREHAT_WIFI_MODE network wifi_mode ap
+    firehat_ini_default FIREHAT_AP_IFACE network ap_iface wlan0
+    firehat_ini_default FIREHAT_AP_SSID network ap_ssid Equip-1
+    firehat_ini_default FIREHAT_AP_PASSWORD network ap_password firesecret
+    firehat_ini_default FIREHAT_AP_IP network ap_ip 10.42.0.1
+    firehat_ini_default FIREHAT_AP_CIDR network ap_cidr 24
+    firehat_ini_default FIREHAT_AP_CHANNEL network ap_channel 6
+    firehat_ini_default FIREHAT_AP_DHCP_START network ap_dhcp_start 10.42.0.10
+    firehat_ini_default FIREHAT_AP_DHCP_END network ap_dhcp_end 10.42.0.100
+    firehat_ini_default FIREHAT_AP_DHCP_LEASE network ap_dhcp_lease 12h
+    firehat_ini_default FIREHAT_AP_COUNTRY network ap_country ""
+    firehat_ini_default FIREHAT_NETWORK_BACKGROUND network startup_background 1
+fi
+
 WIFI_MODE="${FIREHAT_WIFI_MODE:-ap}"
 AP_IFACE="${FIREHAT_AP_IFACE:-wlan0}"
 AP_SSID="${FIREHAT_AP_SSID:-Equip-1}"
@@ -21,6 +37,7 @@ AP_DHCP_START="${FIREHAT_AP_DHCP_START:-10.42.0.10}"
 AP_DHCP_END="${FIREHAT_AP_DHCP_END:-10.42.0.100}"
 AP_DHCP_LEASE="${FIREHAT_AP_DHCP_LEASE:-12h}"
 AP_COUNTRY="${FIREHAT_AP_COUNTRY:-}"
+NETWORK_BACKGROUND="${FIREHAT_NETWORK_BACKGROUND:-1}"
 
 log() {
     mkdir -p /var/log 2>/dev/null || true
@@ -222,10 +239,20 @@ case "$1" in
         log "Starting network startup sequence mode=$WIFI_MODE"
         case "$WIFI_MODE" in
             ap|access_point|hotspot)
-                start_ap
+                if [ "$NETWORK_BACKGROUND" = "1" ] || [ "$NETWORK_BACKGROUND" = "true" ]; then
+                    log "Continuing boot while AP starts in background"
+                    start_ap >>"$LOGFILE" 2>&1 &
+                else
+                    start_ap
+                fi
                 ;;
             client|station|sta)
-                start_client
+                if [ "$NETWORK_BACKGROUND" = "1" ] || [ "$NETWORK_BACKGROUND" = "true" ]; then
+                    log "Continuing boot while WiFi client starts in background"
+                    start_client >>"$LOGFILE" 2>&1 &
+                else
+                    start_client
+                fi
                 ;;
             off|disabled|none)
                 log "WiFi disabled by FIREHAT_WIFI_MODE=$WIFI_MODE"

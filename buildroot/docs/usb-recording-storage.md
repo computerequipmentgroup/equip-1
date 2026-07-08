@@ -87,6 +87,6 @@ Do not enable transfer mode while recording; the script refuses if `dvgrab` is r
 - DV capture is only about 3.5–4 MB/s, so USB 2.0 bandwidth is enough.
 - Prefer a good SSD/enclosure or powered hub if the drive is unstable.
 - Do not unplug the drive while recording.
-- Hard power-off can still corrupt exFAT; current mount options keep `sync,dirsync` for safer writes at the cost of possible stalls.
+- Hard power-off can still corrupt exFAT; stop recordings cleanly before removing power. `/data` is mounted asynchronously (`noatime`) because synchronous exFAT writes caused DV stream stalls on USB flash media.
 - If multiple non-root `EQUIP1` partitions are attached, the first one reported by `blkid` is used and a warning is logged.
 - If no `EQUIP1` partition is attached and multiple non-root exFAT partitions are present, Firehat refuses to guess and falls back to SD.

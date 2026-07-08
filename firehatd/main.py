@@ -7,6 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import uvicorn
 
+from .settings import FirehatSettings
+
 
 class CaptivePortalHandler(BaseHTTPRequestHandler):
     server_version = "FirehatCaptive/0.1"
@@ -68,16 +70,19 @@ def _portal_page(dashboard_url: str) -> str:
 """
 
 
-def _start_captive_portal() -> None:
-    if os.environ.get("FIREHAT_CAPTIVE_ENABLED", "1") in {"0", "false", "False", "no"}:
+def _start_captive_portal(settings: FirehatSettings) -> None:
+    wifi_mode = (settings.get("network", "wifi_mode", "ap", env="FIREHAT_WIFI_MODE") or "ap").strip().lower()
+    if wifi_mode != "ap" or not settings.get_bool(
+        "network", "captive_enabled", True, env="FIREHAT_CAPTIVE_ENABLED"
+    ):
         return
 
-    host = os.environ.get("FIREHAT_CAPTIVE_HOST", "0.0.0.0")
-    port = int(os.environ.get("FIREHAT_CAPTIVE_PORT", "80"))
-    dashboard_url = os.environ.get("FIREHAT_CAPTIVE_DASHBOARD_URL")
+    host = settings.get("network", "captive_host", "0.0.0.0", env="FIREHAT_CAPTIVE_HOST") or "0.0.0.0"
+    port = settings.get_int("network", "captive_port", 80, env="FIREHAT_CAPTIVE_PORT")
+    dashboard_url = settings.get("network", "captive_dashboard_url", None, env="FIREHAT_CAPTIVE_DASHBOARD_URL")
     if not dashboard_url:
-        ap_ip = os.environ.get("FIREHAT_AP_IP", "10.42.0.1")
-        dashboard_port = int(os.environ.get("FIREHAT_PORT", "8000"))
+        ap_ip = settings.get("network", "ap_ip", "10.42.0.1", env="FIREHAT_AP_IP") or "10.42.0.1"
+        dashboard_port = settings.get_int("network", "port", 8000, env="FIREHAT_PORT")
         dashboard_url = f"http://{ap_ip}:{dashboard_port}/"
 
     try:
@@ -93,9 +98,10 @@ def _start_captive_portal() -> None:
 
 
 def main() -> None:
-    host = os.environ.get("FIREHAT_HOST", "0.0.0.0")
-    port = int(os.environ.get("FIREHAT_PORT", "8000"))
-    _start_captive_portal()
+    settings = FirehatSettings()
+    host = settings.get("network", "host", "0.0.0.0", env="FIREHAT_HOST") or "0.0.0.0"
+    port = settings.get_int("network", "port", 8000, env="FIREHAT_PORT")
+    _start_captive_portal(settings)
     uvicorn.run("firehatd.api:app", host=host, port=port)
 
 

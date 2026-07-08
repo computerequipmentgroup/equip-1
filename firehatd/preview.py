@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 from .dvsource import DvSource
+from .settings import FirehatSettings
 
 
 class PreviewBusyError(RuntimeError):
@@ -31,28 +32,44 @@ class MjpegPreview:
 
     boundary = "firehatframe"
 
-    def __init__(self, source: DvSource, ffmpeg_bin: str = "ffmpeg"):
+    def __init__(self, source: DvSource, ffmpeg_bin: str = "ffmpeg", settings: FirehatSettings | None = None):
         self.source = source
         self.ffmpeg_bin = ffmpeg_bin
+        settings = settings or FirehatSettings()
         # Idle preview defaults aim for VLC-like fidelity: full-rate, full-size
         # MJPEG off the shared DV source. Every value stays env-overridable so
         # the feed can be dialed back on the device if CPU/bandwidth demands it.
-        self.fps = os.environ.get("FIREHAT_PREVIEW_FPS", "25")
-        self.size = os.environ.get("FIREHAT_PREVIEW_SIZE", "720:540")
+        self.fps = settings.get("preview", "fps", "25", env="FIREHAT_PREVIEW_FPS") or "25"
+        self.size = settings.get("preview", "size", "720:540", env="FIREHAT_PREVIEW_SIZE") or "720:540"
         # Recording preview stays modest -- the recorder is writing the capture
         # to disk at the same time, so the browser feed yields CPU to it.
-        self.recording_fps = os.environ.get("FIREHAT_PREVIEW_RECORDING_FPS", "2")
-        self.recording_size = os.environ.get("FIREHAT_PREVIEW_RECORDING_SIZE", "480:360")
-        self.video_filter = os.environ.get(
-            "FIREHAT_PREVIEW_FILTER",
-            f"fps={self.fps},scale={self.size}:force_original_aspect_ratio=increase,crop={self.size},setsar=1",
+        self.recording_fps = settings.get(
+            "preview", "recording_fps", "2", env="FIREHAT_PREVIEW_RECORDING_FPS"
+        ) or "2"
+        self.recording_size = settings.get(
+            "preview", "recording_size", "480:360", env="FIREHAT_PREVIEW_RECORDING_SIZE"
+        ) or "480:360"
+        default_filter = (
+            f"fps={self.fps},scale={self.size}:force_original_aspect_ratio=increase,"
+            f"crop={self.size},setsar=1"
         )
-        self.recording_video_filter = os.environ.get(
-            "FIREHAT_PREVIEW_RECORDING_FILTER",
-            f"fps={self.recording_fps},scale={self.recording_size}:force_original_aspect_ratio=increase,crop={self.recording_size},setsar=1",
+        default_recording_filter = (
+            f"fps={self.recording_fps},scale={self.recording_size}:"
+            f"force_original_aspect_ratio=increase,crop={self.recording_size},setsar=1"
         )
-        self.quality = os.environ.get("FIREHAT_PREVIEW_QUALITY", "4")
-        self.recording_quality = os.environ.get("FIREHAT_PREVIEW_RECORDING_QUALITY", "5")
+        self.video_filter = (
+            settings.get("preview", "filter", default_filter, env="FIREHAT_PREVIEW_FILTER") or default_filter
+        )
+        self.recording_video_filter = (
+            settings.get(
+                "preview", "recording_filter", default_recording_filter, env="FIREHAT_PREVIEW_RECORDING_FILTER"
+            )
+            or default_recording_filter
+        )
+        self.quality = settings.get("preview", "quality", "4", env="FIREHAT_PREVIEW_QUALITY") or "4"
+        self.recording_quality = settings.get(
+            "preview", "recording_quality", "5", env="FIREHAT_PREVIEW_RECORDING_QUALITY"
+        ) or "5"
         self._active = False
         self._active_since: float | None = None
         self._process: asyncio.subprocess.Process | None = None
