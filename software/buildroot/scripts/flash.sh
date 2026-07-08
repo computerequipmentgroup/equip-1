@@ -6,7 +6,7 @@ IMAGE="$ROOT_DIR/buildroot/output/sdcard.img"
 
 if [ ! -f "$IMAGE" ]; then
     echo "ERROR: No image found at $IMAGE"
-    echo "Run ./buildroot/scripts/build.sh first."
+    echo "Run ./software/buildroot/scripts/build.sh first."
     exit 1
 fi
 

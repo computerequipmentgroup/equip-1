@@ -256,7 +256,8 @@ async def events(websocket: WebSocket) -> None:
 
 
 def _mount_static_web() -> None:
-    web_dir = Path(os.environ.get("EQUIP1_WEB_DIR", "uis/web/.output/public"))
+    default_web_dir = Path(__file__).resolve().parents[1] / "uis" / "web" / ".output" / "public"
+    web_dir = Path(os.environ.get("EQUIP1_WEB_DIR", str(default_web_dir)))
     if web_dir.exists():
         app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
 

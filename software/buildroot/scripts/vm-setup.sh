@@ -19,7 +19,7 @@ fi
 # Check if VM already exists
 if tart list | grep -q "$VM_NAME"; then
     echo "VM '$VM_NAME' already exists."
-    echo "To recreate: tart delete $VM_NAME && ./buildroot/scripts/vm-setup.sh"
+    echo "To recreate: tart delete $VM_NAME && ./software/buildroot/scripts/vm-setup.sh"
     exit 0
 fi
 
@@ -143,8 +143,8 @@ PROVISION
 echo ""
 echo "==> VM '$VM_NAME' is ready."
 echo "    IP: $VM_IP"
-echo "    SSH: ssh -i $SSH_KEY admin@$VM_IP   (or ./buildroot/scripts/vm-ssh.sh)"
+echo "    SSH: ssh -i $SSH_KEY admin@$VM_IP   (or ./software/buildroot/scripts/vm-ssh.sh)"
 echo ""
-echo "==> Stopping VM. Use './buildroot/scripts/build.sh' to build images."
+echo "==> Stopping VM. Use './software/buildroot/scripts/build.sh' to build images."
 tart stop "$VM_NAME" 2>/dev/null || true
 wait $VM_PID 2>/dev/null || true

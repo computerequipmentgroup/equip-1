@@ -4,7 +4,7 @@ output/
 # Compiled DT overlays (generated during build)
 overlay/boot/overlay-user/*.dtbo
 
-# Copied application files/dependencies (generated during build from repo root)
+# Copied application files/dependencies (generated during build from software/)
 overlay/opt/equip1/equip1d/
 overlay/opt/equip1/uis/
 overlay/opt/equip1/fonts/

@@ -106,7 +106,7 @@ echo ""
 echo "========== Build started: $(date) =========="
 
 # Build the web UI into a static bundle on the host before staging it.
-# equip1d serves the captured files and dashboard from uis/web/.output/public,
+# equip1d serves the captured files and dashboard from software/uis/web/.output/public,
 # so a fresh `nuxt generate` must run before the overlay is assembled — the
 # Buildroot build itself only copies the generated output, it does not build it.
 WEB_DIR="$ROOT_DIR/uis/web"
@@ -459,5 +459,5 @@ wait $VM_PID 2>/dev/null || true
 echo ""
 echo "==> Image ready: $OUTPUT_DIR/sdcard.img"
 echo "    Size: $(du -h "$OUTPUT_DIR/sdcard.img" | cut -f1)"
-echo "    Flash with: ./buildroot/scripts/flash.sh"
+echo "    Flash with: ./software/buildroot/scripts/flash.sh"
 echo "========== Build finished: $(date) =========="
