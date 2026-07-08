@@ -1,4 +1,4 @@
-# Equip-1
+# Equip-1 ◯ DV RECORDER
 
 Equip-1 is an open-source, portable DV recorder for camcorders with FireWire/i.LINK/DV output. It is built around a Radxa ROCK 2F and a custom PCIe FireWire HAT, so you can mount it near a camera, power it from USB-C, press one button, and record tape footage directly to removable storage.
 
@@ -6,7 +6,7 @@ The project is for camera enthusiasts, videographers, film schools, archivists, 
 
 Website: <https://www.equip-1.c-e.group/>
 
-## What is in this repo?
+## Structure
 
 - `equip1d/` — FastAPI recorder daemon. Owns camera detection, `dvgrab`, deck control, capture storage, preview streaming, and recorder state.
 - `uis/oled/` — 128×64 OLED/buttons frontend for on-device control.
@@ -14,16 +14,6 @@ Website: <https://www.equip-1.c-e.group/>
 - `buildroot/` — appliance image, kernel/boot fragments, rootfs overlay, init scripts, and flash/build tooling.
 - `systemd/` — optional Debian/Radxa service templates for development outside the Buildroot image.
 - `scripts/` — helper scripts used by the optional systemd install path.
-
-## Product goals
-
-Equip-1 aims to be:
-
-- **Simple in the field** — connect FireWire, power from USB-C, press record.
-- **Archive friendly** — record raw DV to removable media with predictable filenames and local web download.
-- **Self-contained** — OLED controls, Wi-Fi dashboard, HDMI preview, and optional USB-C disk mode.
-- **Hackable** — Buildroot-first system image, Python daemon, web UI, documented init scripts, and commodity Linux tooling.
-- **Community maintainable** — open hardware/software direction, clear seams for camera/deck support, UI improvements, storage workflows, testing, and docs.
 
 ## Hardware/software snapshot
 
