@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 
 from equip1d.settings import Equip1Settings, LIGHTS_BRIGHTNESS_DEFAULT
@@ -30,9 +31,12 @@ class OledApp:
         self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="EQUIP1_BOOT_DURATION_SECONDS")
         self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="EQUIP1_BOOT_HOLD_SECONDS")
         self.frame_interval = settings.get_float("ui", "oled_frame_interval", 1 / 60, env="EQUIP1_OLED_FRAME_INTERVAL")
+        self.idle_frame_interval = settings.get_float("ui", "oled_idle_frame_interval", 0.2, env="EQUIP1_OLED_IDLE_FRAME_INTERVAL")
         self.current_screen_idx = 0
         self.state: dict | None = None
         self._last_state_fetch = 0.0
+        self._last_render = 0.0
+        self._needs_render = True
         self._api_was_connected: bool | None = None
         self._boot_leds_cleared = False
 
@@ -53,7 +57,19 @@ class OledApp:
         else:
             print(f"OLED API offline: {detail or 'unknown error'}", flush=True)
 
+    def _perf_enabled(self) -> bool:
+        return os.environ.get("EQUIP1_OLED_PERF_LOGS") == "1" or os.environ.get("EQUIP1_PERF_LOGS") == "1"
+
+    def _perf_log(self, name: str, started: float, threshold_ms: float = 10.0) -> None:
+        if not self._perf_enabled():
+            return
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        if elapsed_ms >= threshold_ms:
+            print(f"[PERF] {name} {elapsed_ms:.1f}ms", flush=True)
+
     def _set_state(self, state: dict) -> None:
+        if state != self.state:
+            self._needs_render = True
         self.state = state
 
     def fetch_state_if_due(self, interval: float | None = None) -> None:
@@ -62,7 +78,9 @@ class OledApp:
         if now - self._last_state_fetch < interval:
             return
         self._last_state_fetch = now
+        started = time.monotonic()
         result = self.api.get_state()
+        self._perf_log("oled.api_state", started)
         if result.ok and isinstance(result.data, dict):
             self._set_state(result.data)
             self._log_api_transition(True)
@@ -93,6 +111,7 @@ class OledApp:
 
     def _change_screen(self, delta: int) -> None:
         self.current_screen_idx = (self.current_screen_idx + delta) % len(self.screens)
+        self._needs_render = True
         on_enter = getattr(self.current_screen, "on_enter", None)
         if on_enter is not None:
             on_enter(self)
@@ -117,6 +136,8 @@ class OledApp:
 
     def poll_buttons(self) -> None:
         events = self.buttons.poll()
+        if events.up or events.down or events.select:
+            self._needs_render = True
         if events.up:
             self.buzzer.beep()
             self.navigate_down()
@@ -180,6 +201,7 @@ class OledApp:
         return None
 
     def render(self) -> None:
+        started = time.monotonic()
         boot_elapsed = time.monotonic() - self.boot_started_at
         if self.is_booting:
             self.leds.boot_marquee(boot_elapsed)
@@ -210,6 +232,9 @@ class OledApp:
                 "boot_hold_seconds": self.boot_hold_seconds,
             },
         )
+        self._last_render = time.monotonic()
+        self._needs_render = False
+        self._perf_log("oled.render_total", started)
 
     def run(self) -> None:
         try:
@@ -218,7 +243,14 @@ class OledApp:
                 if not self.is_booting:
                     self.fetch_state_if_due()
                     self.poll_buttons()
-                self.render()
+                now = time.monotonic()
+                should_render = (
+                    self.is_booting
+                    or self._needs_render
+                    or now - self._last_render >= self.idle_frame_interval
+                )
+                if should_render:
+                    self.render()
                 if self.frame_interval > 0:
                     time.sleep(max(0.0, self.frame_interval - (time.monotonic() - frame_started)))
         except KeyboardInterrupt:

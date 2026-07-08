@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import perf
 from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
 from .dvsource import DvSource
@@ -128,6 +129,14 @@ class Equip1Daemon:
         self._last_auto_storage_attempt_at: dict[str, float] = {"usb": 0.0, "sd": 0.0}
         self._last_state: dict[str, Any] | None = None
         self._last_captures_storage_key: tuple[Any, ...] | None = None
+        self._storage_snapshot_cache: tuple[float, Any] | None = None
+        self._storage_snapshot_ttl = self.settings.get_float(
+            "performance", "storage_snapshot_ttl", 0.75, env="EQUIP1_STORAGE_SNAPSHOT_TTL"
+        )
+        self._captures_cache: tuple[float, list[dict]] | None = None
+        self._captures_cache_ttl = self.settings.get_float(
+            "performance", "captures_cache_ttl", 2.0, env="EQUIP1_CAPTURES_CACHE_TTL"
+        )
         self._legacy_lights_config_path = Path(
             os.environ.get("EQUIP1_LIGHTS_CONFIG", LEGACY_LIGHTS_CONFIG_DEFAULT)
         ).expanduser()
@@ -174,12 +183,17 @@ class Equip1Daemon:
         await self.publish_state()
 
     async def snapshot(self) -> dict[str, Any]:
+        started = time.perf_counter()
         async with self._lock:
-            return self._snapshot_unlocked().to_dict()
+            state = self._snapshot_unlocked().to_dict()
+        perf.log_elapsed("daemon.snapshot", started)
+        return state
 
     async def publish_state(self) -> dict[str, Any]:
+        started = time.perf_counter()
         state = await self.snapshot()
         await self.events.publish({"type": "state", "state": state})
+        perf.log_elapsed("daemon.publish_state", started)
         return state
 
     async def start_recording(self) -> dict[str, Any]:
@@ -332,6 +346,8 @@ class Equip1Daemon:
                 self.error = None
         except Exception as exc:
             self.error = ErrorState(message="USB disk failed", detail=str(exc))
+        self._storage_snapshot_cache = None
+        self._captures_cache = None
         state = await self.publish_state()
         await self.publish_captures_for_state(state)
 
@@ -349,6 +365,8 @@ class Equip1Daemon:
             self.error = ErrorState(message="USB disk stop failed", detail=detail)
             raise CommandError(detail)
         self.error = None
+        self._storage_snapshot_cache = None
+        self._captures_cache = None
         state = await self.publish_state()
         await self.publish_captures_for_state(state)
         return state
@@ -438,6 +456,8 @@ class Equip1Daemon:
                 await self.publish_state()
                 raise CommandError(detail)
             self.error = None
+            self._storage_snapshot_cache = None
+            self._captures_cache = None
             state = await self.publish_state()
             await self.publish_captures_for_state(state)
             return state
@@ -460,10 +480,23 @@ class Equip1Daemon:
         await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
 
     async def list_captures(self) -> list[dict]:
-        return await asyncio.to_thread(self.storage.list_captures)
+        return await self._list_captures_cached()
+
+    async def _list_captures_cached(self, *, force: bool = False) -> list[dict]:
+        now = time.monotonic()
+        if not force and self._captures_cache is not None:
+            cached_at, captures = self._captures_cache
+            if now - cached_at <= self._captures_cache_ttl:
+                return [dict(capture) for capture in captures]
+
+        started = time.perf_counter()
+        captures = await asyncio.to_thread(self.storage.list_captures)
+        perf.log_elapsed("storage.list_captures", started)
+        self._captures_cache = (now, [dict(capture) for capture in captures])
+        return captures
 
     async def publish_captures(self) -> list[dict]:
-        captures = await asyncio.to_thread(self.storage.list_captures)
+        captures = await self._list_captures_cached(force=True)
         await self.events.publish({"type": "captures", "captures": captures})
         return captures
 
@@ -471,8 +504,9 @@ class Equip1Daemon:
         self._last_captures_storage_key = self._captures_storage_key(state)
         if state.get("mode") == "usb_transfer":
             captures: list[dict] = []
+            self._captures_cache = (time.monotonic(), [])
         else:
-            captures = await asyncio.to_thread(self.storage.list_captures)
+            captures = await self._list_captures_cached(force=True)
         await self.events.publish({"type": "captures", "captures": captures})
         return captures
 
@@ -657,10 +691,25 @@ class Equip1Daemon:
         # task finishes -- covering the window before the ".active" flag exists.
         return self._usb_storage_task is not None and not self._usb_storage_task.done()
 
+    def _storage_snapshot_cached(self):
+        now = time.monotonic()
+        if self._storage_snapshot_cache is not None:
+            cached_at, snapshot = self._storage_snapshot_cache
+            if now - cached_at <= self._storage_snapshot_ttl:
+                return snapshot
+        started = time.perf_counter()
+        snapshot = self.storage.snapshot()
+        perf.log_elapsed("storage.snapshot", started)
+        self._storage_snapshot_cache = (now, snapshot)
+        return snapshot
+
     def _snapshot_unlocked(self) -> DaemonState:
+        started = time.perf_counter()
         self._poll_recorder_unlocked()
         usb_transfer_active = self._usb_transfer_active()
+        probe_started = time.perf_counter()
         probe = self.camera.probe()
+        perf.log_elapsed("camera.probe", probe_started)
         if usb_transfer_active:
             storage = StorageState(
                 capture_dir=str(self.capture_dir),
@@ -674,7 +723,7 @@ class Equip1Daemon:
                 filesystem_type=None,
             )
         else:
-            snapshot = self.storage.snapshot()
+            snapshot = self._storage_snapshot_cached()
             storage = StorageState(
                 capture_dir=snapshot.capture_dir,
                 total_bytes=snapshot.total_bytes,
@@ -700,7 +749,10 @@ class Equip1Daemon:
         else:
             mode = "idle"
 
-        return DaemonState(
+        network_started = time.perf_counter()
+        network = get_network_state(self.host_url_port)
+        perf.log_elapsed("network.state", network_started)
+        state = DaemonState(
             mode=mode,
             camera=CameraState(
                 connected=probe.connected,
@@ -715,7 +767,7 @@ class Equip1Daemon:
                 pid=self.recorder.state.pid,
             ),
             storage=storage,
-            network=get_network_state(self.host_url_port),
+            network=network,
             # Deck status/timecode is no longer polled: probing it ran dvcont
             # (AV/C transactions) on the FireWire bus every second, contending
             # with the shared DV stream, and nothing consumes those fields. The
@@ -734,3 +786,5 @@ class Equip1Daemon:
             ),
             error=self.error,
         )
+        perf.log_elapsed("daemon.snapshot_unlocked", started)
+        return state

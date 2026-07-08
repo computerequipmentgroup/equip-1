@@ -10,6 +10,18 @@ from .config import BoardConfig
 DrawFunc = Callable[[object, int, int, dict], None]
 
 
+def _perf_enabled() -> bool:
+    return os.environ.get("EQUIP1_OLED_PERF_LOGS") == "1" or os.environ.get("EQUIP1_PERF_LOGS") == "1"
+
+
+def _perf_log(name: str, started: float, threshold_ms: float = 10.0) -> None:
+    if not _perf_enabled():
+        return
+    elapsed_ms = (time.perf_counter() - started) * 1000.0
+    if elapsed_ms >= threshold_ms:
+        print(f"[PERF] {name} {elapsed_ms:.1f}ms", flush=True)
+
+
 class ScaledBitmapFont:
     """A native bitmap font drawn at an integer scale with nearest-neighbor pixels."""
 
@@ -125,8 +137,12 @@ class OledDisplay:
         self.device.display(Image.new("1", self.device.size))
 
     def render(self, draw_func: DrawFunc, context: dict) -> None:
+        started = time.perf_counter()
         img = render_oled_image(draw_func, context, self.width, self.height, self.fonts)
+        _perf_log("oled.render_image", started)
+        started = time.perf_counter()
         self.device.display(img)
+        _perf_log("oled.flush", started)
 
 
 class ConsoleDisplay:

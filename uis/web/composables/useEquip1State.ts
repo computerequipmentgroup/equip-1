@@ -195,10 +195,20 @@ export const useEquip1State = () => {
   const captures = useState<CaptureEntry[]>('equip1-captures', () => [])
   const mockInterval = useState<ReturnType<typeof setInterval> | null>('equip1-mock-interval', () => null)
   const resyncInterval = useState<ReturnType<typeof setInterval> | null>('equip1-resync-interval', () => null)
+  const capturesResyncInterval = useState<ReturnType<typeof setInterval> | null>('equip1-captures-resync-interval', () => null)
 
   const apiBase = config.public.apiBase as string
   const wsBase = config.public.wsBase as string
   const mock = computed(() => isMockEnabled())
+  const perfOn = () => import.meta.client && ['1', 'true', 'yes', 'on'].includes(String(config.public.equip1Perf ?? '').toLowerCase())
+  const timedFetch = async <T>(label: string, url: string, options?: any): Promise<T> => {
+    const started = import.meta.client ? performance.now() : 0
+    try {
+      return await $fetch<T>(url, options)
+    } finally {
+      if (perfOn()) console.info(`[PERF] web.${label} ${(performance.now() - started).toFixed(1)}ms`)
+    }
+  }
 
   const refresh = async () => {
     if (mock.value) {
@@ -210,7 +220,7 @@ export const useEquip1State = () => {
     }
 
     try {
-      state.value = await $fetch<Equip1State>(`${apiBase}/state`)
+      state.value = await timedFetch<Equip1State>('state', `${apiBase}/state`)
       connected.value = true
       error.value = null
     } catch (err: any) {
@@ -219,24 +229,33 @@ export const useEquip1State = () => {
     }
   }
 
-  const resync = async () => {
+  const resyncState = async () => {
     if (mock.value) return
     try {
-      const [nextState, nextCaptures] = await Promise.all([
-        $fetch<Equip1State>(`${apiBase}/state`),
-        $fetch<CaptureEntry[]>(`${apiBase}/captures`)
-      ])
-      state.value = nextState
-      captures.value = nextCaptures
+      state.value = await timedFetch<Equip1State>('resync_state', `${apiBase}/state`)
       connected.value = true
     } catch {
       /* websocket/reconnect path owns visible connection errors */
     }
   }
 
+  const resyncCaptures = async () => {
+    if (mock.value) return
+    try {
+      captures.value = await timedFetch<CaptureEntry[]>('resync_captures', `${apiBase}/captures`)
+    } catch {
+      /* websocket/reconnect path owns visible connection errors */
+    }
+  }
+
+  const resync = async () => {
+    await Promise.all([resyncState(), resyncCaptures()])
+  }
+
   const startResync = () => {
-    if (!import.meta.client || mock.value || resyncInterval.value) return
-    resyncInterval.value = setInterval(resync, 1500)
+    if (!import.meta.client || mock.value) return
+    if (!resyncInterval.value) resyncInterval.value = setInterval(resyncState, 3000)
+    if (!capturesResyncInterval.value) capturesResyncInterval.value = setInterval(resyncCaptures, 10000)
   }
 
   const command = async (name: string) => {
@@ -246,7 +265,7 @@ export const useEquip1State = () => {
       error.value = null
       return
     }
-    state.value = await $fetch<Equip1State>(`${apiBase}/commands/${name}`, { method: 'POST' })
+    state.value = await timedFetch<Equip1State>(`command.${name}`, `${apiBase}/commands/${name}`, { method: 'POST' })
   }
 
   // Push the per-LED standard colors to the daemon over the live websocket so
@@ -295,7 +314,7 @@ export const useEquip1State = () => {
   const syncTime = async () => {
     if (!import.meta.client || mock.value) return
     try {
-      await $fetch(`${apiBase}/time`, { method: 'POST', body: { now: Date.now() / 1000 } })
+      await timedFetch('time', `${apiBase}/time`, { method: 'POST', body: { now: Date.now() / 1000 } })
     } catch {
       /* non-fatal */
     }
@@ -319,14 +338,18 @@ export const useEquip1State = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const url = wsBase.startsWith('ws') ? wsBase : `${protocol}//${window.location.host}${wsBase}`
     ws.value = new WebSocket(url)
+    const wsStarted = performance.now()
     ws.value.onopen = () => {
       connected.value = true
+      if (perfOn()) console.info(`[PERF] web.ws_open ${(performance.now() - wsStarted).toFixed(1)}ms`)
       resync()
     }
     ws.value.onmessage = (event) => {
+      const started = performance.now()
       const payload = JSON.parse(event.data)
       if (payload.type === 'state') state.value = payload.state
       else if (payload.type === 'captures') captures.value = payload.captures
+      if (perfOn()) console.info(`[PERF] web.ws_message.${payload.type || 'unknown'} ${(performance.now() - started).toFixed(1)}ms bytes=${event.data.length}`)
     }
     ws.value.onerror = () => { error.value = 'Event stream failed' }
     ws.value.onclose = () => {
@@ -353,7 +376,11 @@ export const useEquip1System = () => {
     }
 
     try {
+      const started = import.meta.client ? performance.now() : 0
       system.value = await $fetch<SystemStats>(`${config.public.apiBase}/system`)
+      if (import.meta.client && ['1', 'true', 'yes', 'on'].includes(String(config.public.equip1Perf ?? '').toLowerCase())) {
+        console.info(`[PERF] web.system ${(performance.now() - started).toFixed(1)}ms`)
+      }
       error.value = null
     } catch (err: any) {
       error.value = err?.message || 'Could not load system stats'
@@ -377,7 +404,11 @@ export const useEquip1Captures = () => {
     }
 
     try {
+      const started = import.meta.client ? performance.now() : 0
       captures.value = await $fetch<CaptureEntry[]>(`${config.public.apiBase}/captures`)
+      if (import.meta.client && ['1', 'true', 'yes', 'on'].includes(String(config.public.equip1Perf ?? '').toLowerCase())) {
+        console.info(`[PERF] web.captures ${(performance.now() - started).toFixed(1)}ms rows=${captures.value.length}`)
+      }
       error.value = null
     } catch (err: any) {
       error.value = err?.message || 'Could not load captures'

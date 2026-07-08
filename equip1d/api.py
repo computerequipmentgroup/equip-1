@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import perf
 from .service import CommandError, Equip1Daemon
 from .sysinfo import get_system_stats
 
@@ -32,23 +34,39 @@ app = FastAPI(title="Equip-1 Daemon", version="0.1.0", lifespan=lifespan)
 
 @app.get("/api/state")
 async def get_state() -> dict:
-    return await daemon.snapshot()
+    started = time.perf_counter()
+    try:
+        return await daemon.snapshot()
+    finally:
+        perf.log_elapsed("api.state", started)
 
 
 @app.get("/api/storage")
 async def get_storage() -> dict:
-    state = await daemon.snapshot()
-    return state["storage"]
+    started = time.perf_counter()
+    try:
+        state = await daemon.snapshot()
+        return state["storage"]
+    finally:
+        perf.log_elapsed("api.storage", started)
 
 
 @app.get("/api/system")
 async def get_system() -> dict:
-    return get_system_stats()
+    started = time.perf_counter()
+    try:
+        return get_system_stats()
+    finally:
+        perf.log_elapsed("api.system", started)
 
 
 @app.get("/api/captures")
 async def get_captures() -> list[dict]:
-    return await daemon.list_captures()
+    started = time.perf_counter()
+    try:
+        return await daemon.list_captures()
+    finally:
+        perf.log_elapsed("api.captures", started)
 
 
 @app.post("/api/time")
@@ -218,13 +236,20 @@ async def _handle_ws_command(message: object) -> None:
 async def events(websocket: WebSocket) -> None:
     await websocket.accept()
     async with daemon.events.subscribe() as queue:
-        await websocket.send_json({"type": "state", "state": await daemon.snapshot()})
-        await websocket.send_json({"type": "captures", "captures": await daemon.list_captures()})
+        started = time.perf_counter()
+        await websocket.send_json({"type": "state", "state": await daemon.snapshot(), "server_sent_at": time.time()})
+        perf.log_elapsed("ws.initial_state", started)
+        started = time.perf_counter()
+        await websocket.send_json({"type": "captures", "captures": await daemon.list_captures(), "server_sent_at": time.time()})
+        perf.log_elapsed("ws.initial_captures", started)
 
         async def pump_outgoing() -> None:
             while True:
                 event = await queue.get()
-                await websocket.send_json(event)
+                started = time.perf_counter()
+                payload = {**event, "server_sent_at": time.time()}
+                await websocket.send_json(payload)
+                perf.log_elapsed("ws.send", started, type=event.get("type"))
 
         outgoing = asyncio.create_task(pump_outgoing())
         try:

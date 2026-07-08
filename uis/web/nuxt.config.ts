@@ -25,7 +25,8 @@ export default defineNuxtConfig({
     public: {
       apiBase: '/api',
       wsBase: '/api/events',
-      equip1Mock: ''
+      equip1Mock: '',
+      equip1Perf: ''
     }
   },
   css: ['~/assets/main.css']
