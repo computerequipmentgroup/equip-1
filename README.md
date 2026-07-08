@@ -1,6 +1,6 @@
-# Equip-1 ◯ DV RECORDER
-
 ![Equip-1 DV Recorder](media/equip-1.png)
+
+# Equip-1 ◯ DV RECORDER
 
 Equip-1 is an open-source, portable DV recorder for camcorders with FireWire/i.LINK/DV output. It is built around a Radxa ROCK 2F and a custom PCIe FireWire HAT, so you can mount it near a camera, power it from USB-C, press one button, and record tape footage directly to removable storage.
 
