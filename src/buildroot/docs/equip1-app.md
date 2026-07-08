@@ -1,17 +1,17 @@
 # Equip-1 application integration
 
-The Buildroot image stages the `software/` tree into `/opt/equip1` at build time.
+The Buildroot image stages the `src/` tree into `/opt/equip1` at build time.
 
-`software/buildroot/scripts/build.sh` copies:
+`src/buildroot/scripts/build.sh` copies:
 
-- `software/equip1d/` to `/opt/equip1/equip1d`
-- `software/uis/` to `/opt/equip1/uis`
-- `software/fonts/` to `/opt/equip1/fonts`
-- `software/requirements.txt` to `/opt/equip1/requirements.txt`
+- `src/equip1d/` to `/opt/equip1/equip1d`
+- `src/uis/` to `/opt/equip1/uis`
+- `src/fonts/` to `/opt/equip1/fonts`
+- `src/requirements.txt` to `/opt/equip1/requirements.txt`
 
 Runtime-only helper scripts live directly in the Buildroot overlay under
-`software/buildroot/overlay/opt/equip1/scripts/`; they are not copied from a
-`software/scripts/` directory.
+`src/buildroot/overlay/opt/equip1/scripts/`; they are not copied from a
+`src/scripts/` directory.
 
 During the VM build it installs Python dependencies into `/opt/equip1/lib` in the overlay and then Buildroot packs that overlay into the root filesystem.
 

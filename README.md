@@ -1,4 +1,4 @@
-![Equip-1 DV Recorder](media/equip-1.png)
+![Equip-1 DV Recorder](gfx/README.md.png)
 
 # Equip-1 ◯ DV RECORDER
 
@@ -45,19 +45,18 @@ If you like this project and want to know more about the development and future 
 
 ## Structure
 
-This is an open-source hardware product repository. Editable product sources, generated manufacturing files, software, and media assets are kept separate:
+This is an open-source hardware product repository. Editable product sources, generated manufacturing files, source code, and graphics assets are kept separate:
 
-- `hardware/` — electronics, mechanical design, manufacturing exports, and validation notes.
-- `software/` — recorder daemon, OLED/web UIs, Buildroot image tooling, and development service templates.
-- `media/` — renders, photos, product images, diagrams, screenshots, and logos.
-- `releases/` — frozen release/manufacturing bundles and image checksums.
+- `hw/` — electronics, mechanical design, manufacturing exports, and validation notes.
+- `src/` — recorder daemon, OLED/web UIs, Buildroot image tooling, and development service templates.
+- `gfx/` — renders, photos, product images, diagrams, screenshots, and logos.
 
-Key software paths:
+Key source paths:
 
-- `software/equip1d/` — FastAPI recorder daemon. Owns camera detection, `dvgrab`, deck control, capture storage, preview streaming, and recorder state.
-- `software/uis/oled/` — 128×64 OLED/buttons frontend for on-device control.
-- `software/uis/web/` — Nuxt static web dashboard for phone/laptop control over the local Equip-1 Wi-Fi AP.
-- `software/buildroot/` — appliance image, kernel/boot fragments, rootfs overlay, init scripts, and flash/build tooling.
+- `src/equip1d/` — FastAPI recorder daemon. Owns camera detection, `dvgrab`, deck control, capture storage, preview streaming, and recorder state.
+- `src/uis/oled/` — 128×64 OLED/buttons frontend for on-device control.
+- `src/uis/web/` — Nuxt static web dashboard for phone/laptop control over the local Equip-1 Wi-Fi AP.
+- `src/buildroot/` — appliance image, kernel/boot fragments, rootfs overlay, init scripts, and flash/build tooling.
 
 ## Development
 
@@ -66,32 +65,32 @@ Install Python dependencies:
 ```bash
 python -m venv .venv
 . .venv/bin/activate
-pip install -r software/requirements.txt
+pip install -r src/requirements.txt
 ```
 
 Run the daemon locally:
 
 ```bash
-PYTHONPATH=software python -m equip1d.main
+PYTHONPATH=src python -m equip1d.main
 ```
 
 Design OLED screens in a browser without hardware:
 
 ```bash
-PYTHONPATH=software python -m uis.oled.designer
+PYTHONPATH=src python -m uis.oled.designer
 ```
 
-Open <http://127.0.0.1:8765>. The designer renders the real `software/uis/oled/screens.py` drawing code to a 128×64 PNG, with screen/scenario selectors, button simulation, and editable state JSON.
+Open <http://127.0.0.1:8765>. The designer renders the real `src/uis/oled/screens.py` drawing code to a 128×64 PNG, with screen/scenario selectors, button simulation, and editable state JSON.
 
 Build the web dashboard:
 
 ```bash
-cd software/uis/web
+cd src/uis/web
 npm install
 npm run generate
 ```
 
-The daemon serves `software/uis/web/.output/public` when it exists.
+The daemon serves `src/uis/web/.output/public` when it exists.
 
 ## Image
 
@@ -100,8 +99,8 @@ Equip-1 is Buildroot-first. The Buildroot overlay stages runtime files into `/op
 Build and flash:
 
 ```bash
-./software/buildroot/scripts/build.sh
-./software/buildroot/scripts/flash.sh
+./src/buildroot/scripts/build.sh
+./src/buildroot/scripts/flash.sh
 ```
 
 Default device access:
@@ -111,18 +110,18 @@ Default device access:
 - Device URL: `http://10.42.0.1:8000`
 - Settings file: `/etc/equip1/equip-1.ini`
 
-Override device settings in `software/buildroot/overlay/etc/equip1/equip-1.ini` before building.
+Override device settings in `src/buildroot/overlay/etc/equip1/equip-1.ini` before building.
 
 These instructions are for development on an already-running Debian/Radxa OS.
 
 ```bash
 sudo mkdir -p /opt/equip1/scripts
-sudo install -m 0755 software/scripts/equip1-ap-nm.sh /opt/equip1/scripts/equip1-ap-nm.sh
-sudo install -m 0755 software/scripts/equip1-hdmi-preview-fb.sh /opt/equip1/scripts/equip1-hdmi-preview-fb.sh
-sudo install -m 0644 software/systemd/equip1-ap.service /etc/systemd/system/equip1-ap.service
-sudo install -m 0644 software/systemd/equip1d.service /etc/systemd/system/equip1d.service
-sudo install -m 0644 software/systemd/equip1-oled.service /etc/systemd/system/equip1-oled.service
-sudo install -m 0644 software/systemd/equip1-hdmi-preview.service /etc/systemd/system/equip1-hdmi-preview.service
+sudo install -m 0755 src/scripts/equip1-ap-nm.sh /opt/equip1/scripts/equip1-ap-nm.sh
+sudo install -m 0755 src/scripts/equip1-hdmi-preview-fb.sh /opt/equip1/scripts/equip1-hdmi-preview-fb.sh
+sudo install -m 0644 src/systemd/equip1-ap.service /etc/systemd/system/equip1-ap.service
+sudo install -m 0644 src/systemd/equip1d.service /etc/systemd/system/equip1d.service
+sudo install -m 0644 src/systemd/equip1-oled.service /etc/systemd/system/equip1-oled.service
+sudo install -m 0644 src/systemd/equip1-hdmi-preview.service /etc/systemd/system/equip1-hdmi-preview.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now equip1-ap.service equip1d.service equip1-oled.service equip1-hdmi-preview.service
 ```
