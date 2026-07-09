@@ -91,6 +91,16 @@ class DvSource:
         self._subscribers: list[DvSubscription] = []
         self._preview_maxsize = int(os.environ.get("EQUIP1_DV_PREVIEW_QUEUE", "32"))
 
+        # Some camcorders emit otherwise-valid DV DIF blocks with a sequence
+        # nibble that libavformat rejects as "Cannot find DV header". Normalise
+        # only the DIF block ID byte at each 80-byte block boundary. Known-good
+        # streams are unchanged; set EQUIP1_DV_NORMALIZE_DIF=0 to disable.
+        normalize_setting = os.environ.get("EQUIP1_DV_NORMALIZE_DIF", "1").strip().lower()
+        self._normalize_dif_headers = normalize_setting not in {"0", "false", "no", "off"}
+        self._dif_stream_offset = 0
+        self._dif_normalized_blocks = 0
+        self._dif_normalizer_logged = False
+
         # Recording sink. The reference is swapped atomically so the read loop
         # only ever sees a fully-initialised writer.
         self._rec_queue: queue.Queue[bytes | None] | None = None
@@ -125,6 +135,8 @@ class DvSource:
     async def _spawn(self) -> None:
         self._stopping = False
         self._loop = asyncio.get_running_loop()
+        self._dif_stream_offset = 0
+        self._dif_normalizer_logged = False
         self._log("starting shared dvgrab DV source", always=True)
         # Give dvgrab a private pipe we own the read end of, so a blocking thread
         # can drain it independently of the event loop.
@@ -237,6 +249,7 @@ class DvSource:
                     break
                 if not chunk:
                     break
+                chunk = self._normalize_dif_chunk(chunk)
                 if first:
                     loop.call_soon_threadsafe(self._log, "DV source emitted first bytes", True)
                     first = False
@@ -255,6 +268,35 @@ class DvSource:
             except OSError:
                 pass
             loop.call_soon_threadsafe(self._on_reader_eof)
+
+    def _normalize_dif_chunk(self, chunk: bytes) -> bytes:
+        if not self._normalize_dif_headers or not chunk:
+            return chunk
+
+        data = bytearray(chunk)
+        first_block = (80 - self._dif_stream_offset) % 80
+        changed = 0
+        for offset in range(first_block, len(data), 80):
+            block_id = data[offset]
+            section = block_id & 0xF0
+            if section in (0x10, 0x30):
+                normalized = section | 0x0F
+            elif section in (0x50, 0x70, 0x90):
+                normalized = section | 0x07
+            else:
+                continue
+            if normalized != block_id:
+                data[offset] = normalized
+                changed += 1
+
+        self._dif_stream_offset = (self._dif_stream_offset + len(chunk)) % 80
+        if changed:
+            self._dif_normalized_blocks += changed
+            if not self._dif_normalizer_logged:
+                self._dif_normalizer_logged = True
+                self._log("normalizing non-standard DV DIF headers", always=True)
+            return bytes(data)
+        return chunk
 
     def _fanout(self, chunk: bytes) -> None:
         # Runs on the event loop, where the asyncio subscriber queues live.
