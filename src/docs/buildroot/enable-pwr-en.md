@@ -1,19 +1,23 @@
-``` zsh
-# Create overlay directory if needed
-sudo mkdir -p /boot/overlay-user
+# Enable PCIe power on ROCK 2F development images
 
-# Create the DTS file
+These notes add a user device-tree overlay that drives the PCIe power-enable GPIO as a fixed regulator. Use this on Armbian-style development images when the Firehat PCIe controller is not powered. The Buildroot image uses DTS overlays from `src/buildroot/dts/` instead.
+
+## Create the overlay source
+
+```sh
+sudo mkdir -p /boot/overlay-user
 sudo nano /boot/overlay-user/pcie-enable.dts
 ```
 
-Paste this in the file:
-``` zsh
+Paste:
+
+```dts
 /dts-v1/;
 /plugin/;
 
 / {
     compatible = "rockchip,rk3528";
-    
+
     fragment@0 {
         target-path = "/";
         __overlay__ {
@@ -32,17 +36,24 @@ Paste this in the file:
 };
 ```
 
-Save and compile the file:
-``` zsh
+## Compile it
+
+```sh
 sudo dtc -I dts -O dtb -o /boot/overlay-user/pcie-enable.dtbo /boot/overlay-user/pcie-enable.dts
 ```
 
-Edit Armbian config:
-```zsh
-sudo nano /boot/armbianEnv.txt
+## Enable it
+
+Edit `/boot/armbianEnv.txt`:
+
+```sh
+sudo nano /boot/armbianEnv.txt
 ```
 
-Add this line:
-```zsh
+Add or extend this line:
+
+```text
 user_overlays=pcie-enable
 ```
+
+Reboot and verify that the PCIe FireWire controller appears on the bus.
