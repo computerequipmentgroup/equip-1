@@ -8,19 +8,42 @@ set -u
 GADGET_NAME="${EQUIP1_USB_GADGET_NAME:-equip1}"
 GADGET_DIR="/sys/kernel/config/usb_gadget/$GADGET_NAME"
 ACTIVE_FILE="/run/equip1-usb-storage.active"
-LOGFILE="/var/log/equip1-usb-storage.log"
+LOG_EXPORT_INHIBIT="/run/equip1-log-export.inhibit"
+LOG_DIR="/var/log/equip1"
+LOGFILE="$LOG_DIR/usb-storage.log"
 DATA_MNT="${EQUIP1_DATA_MNT:-/data}"
 MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
 RO="${EQUIP1_USB_STORAGE_READONLY:-0}"
 
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
+fi
+LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
+
+log_files_enabled() {
+    [ "$LOG_LEVEL" != "quiet" ]
+}
+
 log() {
-    mkdir -p /var/log /run 2>/dev/null || true
+    mkdir -p "$LOG_DIR" /run 2>/dev/null || true
     line="$(date 2>/dev/null || true) $*"
-    echo "$line" >>"$LOGFILE" 2>/dev/null || true
-    if grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
-        echo "$line" >>"$DATA_MNT/usb-storage.log" 2>/dev/null || true
+    if log_files_enabled; then
+        echo "$line" >>"$LOGFILE" 2>/dev/null || true
+        if grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
+            mkdir -p "$DATA_MNT/logs" 2>/dev/null || true
+            echo "$line" >>"$DATA_MNT/logs/usb-storage.log" 2>/dev/null || true
+        fi
     fi
     echo "$*"
+}
+
+wait_log_export_idle() {
+    tries=0
+    while [ -d /run/equip1-export-logs.lock ] && [ "$tries" -lt 10 ]; do
+        sleep 1
+        tries=$((tries + 1))
+    done
 }
 
 partition_disk() {
@@ -178,6 +201,7 @@ fail_start() {
     msg="$*"
     log "$msg"
     remove_gadget
+    rm -f "$LOG_EXPORT_INHIBIT"
     if remount_data "$part"; then
         log "USB disk mode aborted; remounted $DATA_MNT"
     else
@@ -196,7 +220,7 @@ start_mode() {
         return 1
     fi
 
-    mkdir -p /run /var/log "$DATA_MNT" 2>/dev/null || true
+    mkdir -p /run "$LOG_DIR" "$DATA_MNT" 2>/dev/null || true
     if [ -s "$ACTIVE_FILE" ]; then
         log "USB disk mode already active"
         return 0
@@ -204,10 +228,15 @@ start_mode() {
 
     source="$(part_source "$part")"
     log "Starting USB disk mode for $source data partition $part"
+    /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
+    wait_log_export_idle
+    touch "$LOG_EXPORT_INHIBIT" 2>/dev/null || true
     sync
     if grep -q " $DATA_MNT " /proc/mounts 2>/dev/null; then
         if ! umount "$DATA_MNT"; then
+            rm -f "$LOG_EXPORT_INHIBIT"
             log "Could not unmount $DATA_MNT; refusing to export live filesystem"
+            /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
             return 1
         fi
     fi
@@ -247,6 +276,7 @@ start_mode() {
         echo "readonly=$RO"
         echo "source=$source"
     } >"$ACTIVE_FILE"
+    rm -f "$LOG_EXPORT_INHIBIT"
     log "USB disk ready: exported $source data partition $part via $udc"
 }
 
@@ -266,7 +296,8 @@ stop_mode() {
             return 1
         fi
     fi
-    rm -f "$ACTIVE_FILE"
+    rm -f "$ACTIVE_FILE" "$LOG_EXPORT_INHIBIT"
+    /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
     if [ -n "$part" ] && [ -b "$part" ]; then
         log "USB disk mode stopped; $DATA_MNT mounted from $(part_source "$part") data partition $part"
     else

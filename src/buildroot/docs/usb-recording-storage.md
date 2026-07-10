@@ -82,6 +82,17 @@ Set `EQUIP1_AUTO_STORAGE_SWITCH=0` to disable automatic switching.
 
 Do not enable transfer mode while recording; the script refuses if `dvgrab` is running.
 
+## Logs
+
+Live logs are written under `/var/log/equip1/` so long-running services do not keep `/data` busy. A short-lived exporter mirrors snapshots to `/data/logs/` when `log_level` is not `quiet`:
+
+- once after `/data` mounts at boot;
+- periodically while the device is running;
+- immediately before USB-C transfer mode attempts to unmount `/data`;
+- after USB-C transfer mode stops and `/data` is mounted again.
+
+This keeps logs visible when a user powers off and plugs the SD card into a computer, while still allowing `/data` to unmount for transfer mode.
+
 ## Operational notes
 
 - DV capture is only about 3.5–4 MB/s, so USB 2.0 bandwidth is enough.

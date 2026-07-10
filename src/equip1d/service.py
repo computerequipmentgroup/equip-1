@@ -574,7 +574,9 @@ class Equip1Daemon:
             return
         try:
             stamp = datetime.now(timezone.utc).isoformat()
-            with open("/data/equip1-daemon-debug.log", "a", encoding="utf-8") as handle:
+            log_path = Path(os.environ.get("EQUIP1_DAEMON_DEBUG_LOG", "/var/log/equip1/daemon-debug.log"))
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(f"{stamp} {message}\n")
         except OSError:
             pass

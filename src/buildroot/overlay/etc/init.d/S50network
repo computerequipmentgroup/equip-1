@@ -3,12 +3,13 @@
 # Default mode is a self-contained Wi-Fi access point for phone/laptop control.
 # Set EQUIP1_WIFI_MODE=client to use /etc/wpa_supplicant.conf instead.
 
-LOGFILE=/var/log/equip1-network.log
+LOG_DIR=/var/log/equip1
+LOGFILE=$LOG_DIR/network.log
 HOSTAPD_PID=/var/run/hostapd-equip1.pid
 DNSMASQ_PID=/var/run/dnsmasq-equip1.pid
 HOSTAPD_CONF=/var/run/hostapd-equip1.conf
-HOSTAPD_LOG=/var/log/hostapd.log
-DNSMASQ_LOG=/var/log/dnsmasq.log
+HOSTAPD_LOG=$LOG_DIR/hostapd.log
+DNSMASQ_LOG=$LOG_DIR/dnsmasq.log
 
 if [ -r /etc/equip1/settings-env.sh ]; then
     . /etc/equip1/settings-env.sh
@@ -48,7 +49,7 @@ fi
 
 log() {
     [ "$LOG_LEVEL" = "quiet" ] && return 0
-    mkdir -p /var/log 2>/dev/null || true
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "$(date 2>/dev/null || true) $*" >>"$LOGFILE" 2>/dev/null || true
     echo "$*"
 }
@@ -241,7 +242,8 @@ start_client() {
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S50network start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S50network start" >> "$LOG_DIR/boot-crumb.log" 2>/dev/null || true
         mkdir -p /var/run /var/log 2>/dev/null || true
         : >"$LOGFILE" 2>/dev/null || true
         log "Starting network startup sequence mode=$WIFI_MODE"

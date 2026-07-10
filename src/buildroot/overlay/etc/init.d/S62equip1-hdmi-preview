@@ -2,7 +2,8 @@
 # Equip-1 HDMI framebuffer preview for BusyBox init.
 
 PIDFILE=/var/run/equip1-hdmi-preview.pid
-LOGFILE=/var/log/equip1-hdmi-preview.log
+LOG_DIR=/var/log/equip1
+LOGFILE=$LOG_DIR/hdmi-preview.log
 APPDIR=/opt/equip1
 
 if [ -r /etc/equip1/settings-env.sh ]; then
@@ -31,17 +32,18 @@ export EQUIP1_HDMI_FFMPEG_PROGRESS="${EQUIP1_HDMI_FFMPEG_PROGRESS:-0}"
 export EQUIP1_HDMI_FFMPEG_STATS_PERIOD="${EQUIP1_HDMI_FFMPEG_STATS_PERIOD:-5}"
 export EQUIP1_HDMI_CLEAR_ON_CONNECT="${EQUIP1_HDMI_CLEAR_ON_CONNECT:-1}"
 export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
-export EQUIP1_HDMI_DATA_LOG="${EQUIP1_HDMI_DATA_LOG:-/data/equip1-hdmi-preview.log}"
+export EQUIP1_HDMI_DATA_LOG="${EQUIP1_HDMI_DATA_LOG:-$LOG_DIR/hdmi-preview-data.log}"
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S62equip1-hdmi-preview start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S62equip1-hdmi-preview start" >> "$LOG_DIR/boot-crumb.log" 2>/dev/null || true
         if [ "$EQUIP1_HDMI_PREVIEW_ENABLED" = "0" ] || [ "$EQUIP1_HDMI_PREVIEW_ENABLED" = "false" ]; then
             echo "Equip-1 HDMI preview disabled"
             exit 0
         fi
         echo "Starting Equip-1 HDMI framebuffer preview watcher..."
-        mkdir -p /var/run /var/log
+        mkdir -p /var/run "$LOG_DIR"
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "Equip-1 HDMI framebuffer preview watcher already running"
             exit 0

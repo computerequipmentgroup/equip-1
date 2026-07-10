@@ -2,8 +2,8 @@
 # Equip-1 FastAPI recorder daemon for BusyBox init.
 
 PIDFILE=/var/run/equip1d.pid
-LOGFILE=/var/log/equip1-daemon.log
-DATA_LOGFILE=/data/equip1-daemon.log
+LOG_DIR=/var/log/equip1
+LOGFILE=$LOG_DIR/daemon.log
 APPDIR=/opt/equip1
 
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
@@ -49,10 +49,9 @@ export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S60equip1d start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p /var/run "$LOG_DIR" "$EQUIP1_CAPTURE_DIR"
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S60equip1d start" >> "$LOG_DIR/boot-crumb.log" 2>/dev/null || true
         echo "Starting equip1d..."
-        mkdir -p /var/run /var/log "$EQUIP1_CAPTURE_DIR"
-        [ -d /data ] && LOGFILE="$DATA_LOGFILE"
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "equip1d already running"
             exit 0

@@ -2,8 +2,8 @@
 # Equip-1 OLED/buttons frontend for BusyBox init.
 
 PIDFILE=/var/run/equip1-oled.pid
-LOGFILE=/var/log/equip1-oled.log
-DATA_LOGFILE=/data/equip1-oled.log
+LOG_DIR=/var/log/equip1
+LOGFILE=$LOG_DIR/oled.log
 APPDIR=/opt/equip1
 
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
@@ -49,10 +49,9 @@ export EQUIP1_RGB_LED_STEP_SECONDS="${EQUIP1_RGB_LED_STEP_SECONDS:-0.28}"
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S61equip1-oled start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p /var/run "$LOG_DIR"
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S61equip1-oled start" >> "$LOG_DIR/boot-crumb.log" 2>/dev/null || true
         echo "Starting equip1 OLED UI..."
-        mkdir -p /var/run /var/log
-        [ -d /data ] && LOGFILE="$DATA_LOGFILE"
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
             echo "equip1 OLED UI already running"
             exit 0

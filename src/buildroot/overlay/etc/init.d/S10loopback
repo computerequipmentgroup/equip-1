@@ -3,7 +3,8 @@
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S10loopback start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p /var/log/equip1 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S10loopback start" >> /var/log/equip1/boot-crumb.log 2>/dev/null || true
         if command -v ip >/dev/null 2>&1; then
             ip link set lo up 2>/dev/null || true
             ip addr show dev lo 2>/dev/null | grep -q '127\.0\.0\.1' || \

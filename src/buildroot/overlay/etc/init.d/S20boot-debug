@@ -1,10 +1,10 @@
 #!/bin/sh
 # No-UART boot/debug breadcrumbs.
-# Writes progress to /data/equip1-boot-debug.log, which should be readable from the
-# exFAT EQUIP1 partition after powering off and moving the SD card to a laptop.
+# Writes progress to rootfs-backed live logs. A short-lived exporter mirrors
+# snapshots to /data/logs for users who pull the SD card.
 
-LOG=/data/equip1-boot-debug.log
-ROOT_LOG=/var/log/equip1-boot-debug.log
+LOG_DIR=/var/log/equip1
+LOG=$LOG_DIR/boot-debug.log
 STAMP=/tmp/boot-debug.started
 
 if [ -r /etc/equip1/settings-env.sh ]; then
@@ -18,10 +18,9 @@ debug_enabled() {
 }
 
 log_msg() {
-    mkdir -p /data /var/log 2>/dev/null || true
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
     MSG="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) $*"
     echo "$MSG" >> "$LOG" 2>/dev/null || true
-    echo "$MSG" >> "$ROOT_LOG" 2>/dev/null || true
 }
 
 try_ethernet_dhcp() {
@@ -47,15 +46,14 @@ try_ethernet_dhcp() {
 case "$1" in
     start)
         # Always write a minimal breadcrumb so we can tell init reached S20.
-        mkdir -p /var/log 2>/dev/null || true
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown-time) S20boot-debug start reached" >> "$LOG_DIR/boot-crumb.log" 2>/dev/null || true
 
         debug_enabled || exit 0
         [ -e "$STAMP" ] && exit 0
         touch "$STAMP" 2>/dev/null || true
-        mkdir -p /data /var/log 2>/dev/null || true
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
         : >"$LOG" 2>/dev/null || true
-        : >"$ROOT_LOG" 2>/dev/null || true
         (
             # Give S15data a moment to mount /data if the block device is slow.
             sleep 2
@@ -77,6 +75,7 @@ case "$1" in
             ls -l /etc/init.d >>"$LOG" 2>&1 || true
             sync
             log_msg "==== boot-debug done ===="
+            /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
         ) &
         ;;
     stop)

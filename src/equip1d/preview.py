@@ -279,7 +279,9 @@ class MjpegPreview:
         preview_debug = os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1"
         if preview_debug or debug_enabled() or (always and should_log("info")):
             try:
-                with open("/data/equip1-preview-debug.log", "a", encoding="utf-8") as handle:
+                log_path = os.environ.get("EQUIP1_PREVIEW_DEBUG_LOG", "/var/log/equip1/preview-debug.log")
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                with open(log_path, "a", encoding="utf-8") as handle:
                     handle.write(f"{message}\n")
             except OSError:
                 pass

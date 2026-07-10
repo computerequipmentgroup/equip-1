@@ -389,7 +389,9 @@ class DvSource:
         preview_debug = os.environ.get("EQUIP1_PREVIEW_DEBUG") == "1"
         if preview_debug or debug_enabled() or (always and should_log("info")):
             try:
-                with open("/data/equip1-dvsource-debug.log", "a", encoding="utf-8") as handle:
+                log_path = os.environ.get("EQUIP1_DVSOURCE_DEBUG_LOG", "/var/log/equip1/dvsource-debug.log")
+                os.makedirs(os.path.dirname(log_path), exist_ok=True)
+                with open(log_path, "a", encoding="utf-8") as handle:
                     handle.write(f"{time.time():.3f} {message}\n")
             except OSError:
                 pass

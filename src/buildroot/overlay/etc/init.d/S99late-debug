@@ -1,10 +1,11 @@
 #!/bin/sh
 # Late no-UART debug capture.
 # Runs after normal init scripts, waits for async device/service startup, then
-# writes a broad snapshot to /data/equip1-late-debug.log on the exFAT partition.
+# writes a broad snapshot to rootfs-backed live logs. The log exporter mirrors
+# snapshots to /data/logs when logging is enabled.
 
-LOG=/data/equip1-late-debug.log
-ROOT_LOG=/var/log/equip1-late-debug.log
+LOG_DIR=/var/log/equip1
+LOG=$LOG_DIR/late-debug.log
 
 if [ -r /etc/equip1/settings-env.sh ]; then
     . /etc/equip1/settings-env.sh
@@ -106,7 +107,7 @@ capture_wifi_details() {
 }
 
 run_capture() {
-    mkdir -p /data /var/log 2>/dev/null || true
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
     : >"$LOG" 2>/dev/null || true
 
     echo "late-debug started at $(date 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
@@ -152,26 +153,26 @@ run_capture() {
     fi
 
     append_file /var/log/messages
-    append_file /data/equip1-daemon.log
-    append_file /data/equip1-oled.log
-    append_file /var/log/equip1-network.log
-    append_file /var/log/equip1-daemon.log
+    append_file /var/log/equip1/daemon.log
+    append_file /var/log/equip1/oled.log
+    append_file /var/log/equip1/network.log
+    append_file /var/log/equip1/usb-storage.log
     capture_api_state
-    append_file /var/log/equip1-oled.log
-    append_file /var/log/equip1-boot-debug.log
+    append_file /var/log/equip1/hdmi-preview.log
+    append_file /var/log/equip1/boot-debug.log
 
     capture_cmd dmesg
 
     echo "late-debug finished at $(date 2>/dev/null || true)" >>"$LOG" 2>/dev/null || true
-    cp "$LOG" "$ROOT_LOG" 2>/dev/null || true
+    /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
     sync
 }
 
 case "$1" in
     start)
-        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S99late-debug start" >> /var/log/equip1-boot-crumb.log 2>/dev/null || true
-        # Always copy boot crumb log to /data so it's visible on the exFAT partition.
-        cp /var/log/equip1-boot-crumb.log /data/equip1-boot-crumb.log 2>/dev/null || true
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S99late-debug start" >> "$LOG_DIR/boot-crumb.log" 2>/dev/null || true
+        /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
         sync
         debug_enabled || exit 0
         (

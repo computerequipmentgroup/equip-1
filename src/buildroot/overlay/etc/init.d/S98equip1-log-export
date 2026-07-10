@@ -1,0 +1,34 @@
+#!/bin/sh
+# Periodically mirror rootfs-backed live logs to /data/logs for users who pull
+# the SD card, without keeping /data open between copies.
+
+PIDFILE=/var/run/equip1-log-export.pid
+
+case "$1" in
+    start)
+        mkdir -p /var/run /var/log/equip1 2>/dev/null || true
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S98equip1-log-export start" >> /var/log/equip1/boot-crumb.log 2>/dev/null || true
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "Equip-1 log exporter already running"
+            exit 0
+        fi
+        /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
+        /usr/sbin/equip1-export-logs loop >/dev/null 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

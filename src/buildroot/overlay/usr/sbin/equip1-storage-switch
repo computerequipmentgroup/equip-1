@@ -11,19 +11,26 @@ DATA_LABEL="${EQUIP1_DATA_LABEL:-EQUIP1}"
 MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
 MOUNT_TIMEOUT="${EQUIP1_DATA_MOUNT_TIMEOUT:-15}"
 USB_WAIT_SECS="${EQUIP1_USB_DATA_WAIT_SECS:-5}"
-LOGFILE="/var/log/equip1-storage-switch.log"
-BOOT_LOG="/var/log/equip1-boot-crumb.log"
+LOG_DIR="/var/log/equip1"
+LOGFILE="$LOG_DIR/storage-switch.log"
+BOOT_LOG="$LOG_DIR/boot-crumb.log"
 USB_STORAGE_ACTIVE="/run/equip1-usb-storage.active"
+LOG_EXPORT_INHIBIT="/run/equip1-log-export.inhibit"
 
 log() {
-    mkdir -p /var/log /run 2>/dev/null || true
+    mkdir -p "$LOG_DIR" /run 2>/dev/null || true
     line="$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) storage-switch: $*"
     echo "$line" >>"$LOGFILE" 2>/dev/null || true
     echo "$line" >>"$BOOT_LOG" 2>/dev/null || true
-    if mounted_at_data; then
-        echo "$line" >>"$DATA_MNT/storage-switch.log" 2>/dev/null || true
-    fi
     echo "$*" >&2
+}
+
+wait_log_export_idle() {
+    tries=0
+    while [ -d /run/equip1-export-logs.lock ] && [ "$tries" -lt 10 ]; do
+        sleep 1
+        tries=$((tries + 1))
+    done
 }
 
 mounted_at_data() {
@@ -274,7 +281,7 @@ mount_data_part() {
 
     if mounted_at_data; then
         mkdir -p "$DATA_MNT/captures" 2>/dev/null || true
-        cp "$BOOT_LOG" "$DATA_MNT/equip1-boot-crumb.log" 2>/dev/null || true
+        /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
         label="$(blkid_field LABEL "$part")"
         if [ -n "$label" ]; then
             log "using $source data partition $part label $label"
@@ -333,16 +340,21 @@ switch_to_part() {
     fi
 
     log "switching $DATA_MNT from ${current:-rootfs directory} to $source data partition $target"
+    /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
+    wait_log_export_idle
+    touch "$LOG_EXPORT_INHIBIT" 2>/dev/null || true
     sync
     if mounted_at_data; then
         if ! umount "$DATA_MNT"; then
             if [ -n "$current" ] && [ ! -b "$current" ]; then
                 log "could not normally unmount stale $DATA_MNT source $current; trying lazy unmount"
                 if ! umount -l "$DATA_MNT"; then
+                    rm -f "$LOG_EXPORT_INHIBIT"
                     log "could not lazily unmount $DATA_MNT; leaving current storage active"
                     return 1
                 fi
             else
+                rm -f "$LOG_EXPORT_INHIBIT"
                 log "could not unmount $DATA_MNT; leaving current storage active"
                 return 1
             fi
@@ -350,12 +362,16 @@ switch_to_part() {
     fi
 
     if mount_data_part "$target" "$source"; then
+        rm -f "$LOG_EXPORT_INHIBIT"
         log "storage switch complete: $DATA_MNT now uses $source data partition $target"
+        /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
         return 0
     fi
 
     log "storage switch failed; attempting to restore previous/fallback storage"
     restore_previous_or_sd "$current" || true
+    rm -f "$LOG_EXPORT_INHIBIT"
+    /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
     return 1
 }
 

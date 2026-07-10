@@ -26,10 +26,11 @@ MOUNT_OPTS="${EQUIP1_DATA_MOUNT_OPTS:-noatime}"
 MOUNT_TIMEOUT="${EQUIP1_DATA_MOUNT_TIMEOUT:-15}"
 USB_WAIT_SECS="${EQUIP1_USB_DATA_WAIT_SECS:-0}"
 BOOT_DIAGNOSTICS="${EQUIP1_DATA_BOOT_DIAGNOSTICS:-0}"
-BOOT_LOG="/var/log/equip1-boot-crumb.log"
+LOG_DIR="/var/log/equip1"
+BOOT_LOG="$LOG_DIR/boot-crumb.log"
 
 log() {
-    mkdir -p /var/log 2>/dev/null || true
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
     echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) S15data: $*" >>"$BOOT_LOG" 2>/dev/null || true
 }
 
@@ -325,8 +326,8 @@ case "$1" in
         fi
 
         mkdir -p "$DATA_MNT/captures"
-        # Sync any existing boot crumb log to the data partition.
-        cp "$BOOT_LOG" "$DATA_MNT/equip1-boot-crumb.log" 2>/dev/null || true
+        # Export any existing boot crumb log to the user-visible data partition.
+        /usr/sbin/equip1-export-logs once >/dev/null 2>&1 || true
         sync
         ;;
     stop)

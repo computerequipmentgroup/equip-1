@@ -1,0 +1,81 @@
+#!/bin/sh
+# Copy live Equip-1 logs from rootfs-backed /var/log/equip1 to the user-visible
+# exFAT data partition. This helper is intentionally short-lived so no process
+# keeps /data open and blocks USB-C transfer mode.
+
+set -u
+
+DATA_MNT="${EQUIP1_DATA_MNT:-/data}"
+LIVE_LOG_DIR="${EQUIP1_LIVE_LOG_DIR:-/var/log/equip1}"
+EXPORT_DIR="${EQUIP1_LOG_EXPORT_DIR:-$DATA_MNT/logs}"
+ACTIVE_FILE="/run/equip1-usb-storage.active"
+INHIBIT_FILE="/run/equip1-log-export.inhibit"
+LOCKDIR="/run/equip1-export-logs.lock"
+
+if [ -r /etc/equip1/settings-env.sh ]; then
+    . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
+fi
+
+LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
+INTERVAL="${EQUIP1_LOG_EXPORT_INTERVAL_SECONDS:-60}"
+
+log_enabled() {
+    [ "$LOG_LEVEL" != "quiet" ]
+}
+
+mounted_data() {
+    grep -q " $DATA_MNT " /proc/mounts 2>/dev/null
+}
+
+copy_if_present() {
+    src="$1"
+    dst="$2"
+    [ -e "$src" ] || return 0
+    cp "$src" "$dst" 2>/dev/null || true
+}
+
+export_once() {
+    log_enabled || return 0
+    mounted_data || return 0
+    [ ! -e "$ACTIVE_FILE" ] || return 0
+    [ ! -e "$INHIBIT_FILE" ] || return 0
+
+    if ! mkdir "$LOCKDIR" 2>/dev/null; then
+        return 0
+    fi
+    trap 'rmdir "$LOCKDIR" 2>/dev/null || true' EXIT INT TERM
+
+    mkdir -p "$EXPORT_DIR" 2>/dev/null || return 0
+
+    if [ -d "$LIVE_LOG_DIR" ]; then
+        for src in "$LIVE_LOG_DIR"/*; do
+            [ -e "$src" ] || continue
+            [ -f "$src" ] || continue
+            copy_if_present "$src" "$EXPORT_DIR/$(basename "$src")"
+        done
+    fi
+
+    # Keep syslog with the rest of the exported logs when present.
+    copy_if_present /var/log/messages "$EXPORT_DIR/messages.log"
+
+    sync "$EXPORT_DIR" 2>/dev/null || sync
+    rmdir "$LOCKDIR" 2>/dev/null || true
+    trap - EXIT INT TERM
+}
+
+case "${1:-once}" in
+    once)
+        export_once
+        ;;
+    loop)
+        while :; do
+            export_once
+            sleep "$INTERVAL"
+        done
+        ;;
+    *)
+        echo "Usage: $0 {once|loop}"
+        exit 2
+        ;;
+esac
