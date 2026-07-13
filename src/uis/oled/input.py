@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from .config import BoardConfig
 
 
+DEFAULT_BUTTON_DEBOUNCE_SECONDS = 0.025
+DEFAULT_BUZZER_BEEP_SECONDS = 0.020
+
+
 @dataclass(frozen=True)
 class ButtonEvents:
     up: bool = False
@@ -17,17 +21,18 @@ class ButtonEvents:
 
 
 class Button:
-    def __init__(self, chip: str, line: int):
+    def __init__(self, chip: str, line: int, debounce_seconds: float = DEFAULT_BUTTON_DEBOUNCE_SECONDS):
         from periphery import GPIO
 
         self.gpio = GPIO(chip, line, "in")
+        self.debounce_seconds = max(0.0, debounce_seconds)
         self.last_state = True
         self.last_press = 0.0
 
     def pressed(self) -> bool:
         current = self.gpio.read()
-        now = time.time()
-        if self.last_state and not current and (now - self.last_press) > 0.05:
+        now = time.monotonic()
+        if self.last_state and not current and (now - self.last_press) > self.debounce_seconds:
             self.last_press = now
             self.last_state = current
             return True
@@ -39,10 +44,10 @@ class Button:
 
 
 class HardwareButtons:
-    def __init__(self, board: BoardConfig):
-        self.up = Button(board.gpiochip, board.btn_up)
-        self.select = Button(board.gpiochip, board.btn_select)
-        self.down = Button(board.gpiochip, board.btn_down)
+    def __init__(self, board: BoardConfig, debounce_seconds: float = DEFAULT_BUTTON_DEBOUNCE_SECONDS):
+        self.up = Button(board.gpiochip, board.btn_up, debounce_seconds)
+        self.select = Button(board.gpiochip, board.btn_select, debounce_seconds)
+        self.down = Button(board.gpiochip, board.btn_down, debounce_seconds)
 
     def poll(self) -> ButtonEvents:
         return ButtonEvents(
@@ -58,26 +63,48 @@ class HardwareButtons:
 
 
 class Buzzer:
-    def __init__(self, board: BoardConfig):
+    def __init__(
+        self,
+        board: BoardConfig,
+        beep_seconds: float = DEFAULT_BUZZER_BEEP_SECONDS,
+        active_low: bool = True,
+    ):
         from periphery import GPIO
 
         self.gpio = GPIO(board.gpiochip, board.buzzer, "out")
+        self.beep_seconds = max(0.0, beep_seconds)
+        self.active_value = not active_low
+        self.idle_value = active_low
+        self._silence()
 
-    def beep(self, duration: float = 0.05, freq: int = 2048) -> None:
-        cycles = int(duration * freq)
-        half_period = 1.0 / freq / 2
-        for _ in range(cycles):
-            self.gpio.write(True)
-            time.sleep(half_period)
-            self.gpio.write(False)
-            time.sleep(half_period)
+    def _silence(self) -> None:
+        self.gpio.write(self.idle_value)
+
+    def beep(self, duration: float | None = None, freq: int = 2048) -> None:
+        """Make one loud, bounded button-click pulse.
+
+        The Firehat buzzer line is active-low, so the silent idle level is high.
+        Always return to that idle level after the click so the buzzer cannot
+        keep sounding between button presses. ``freq`` is kept for compatibility
+        with older callers.
+        """
+        duration = self.beep_seconds if duration is None else max(0.0, duration)
+        if duration <= 0:
+            self._silence()
+            return
+        self.gpio.write(self.active_value)
+        try:
+            time.sleep(duration)
+        finally:
+            self._silence()
 
     def close(self) -> None:
+        self._silence()
         self.gpio.close()
 
 
 class NullBuzzer:
-    def beep(self, duration: float = 0.05, freq: int = 2048) -> None:
+    def beep(self, duration: float | None = None, freq: int = 2048) -> None:
         pass
 
     def close(self) -> None:
@@ -97,13 +124,13 @@ class KeyboardButtons:
         pass
 
 
-def make_buttons(board: BoardConfig):
+def make_buttons(board: BoardConfig, debounce_seconds: float = DEFAULT_BUTTON_DEBOUNCE_SECONDS):
     if os.environ.get("EQUIP1_OLED_MOCK") == "1":
         return KeyboardButtons()
-    return HardwareButtons(board)
+    return HardwareButtons(board, debounce_seconds)
 
 
-def make_buzzer(board: BoardConfig):
+def make_buzzer(board: BoardConfig, beep_seconds: float = DEFAULT_BUZZER_BEEP_SECONDS):
     if os.environ.get("EQUIP1_OLED_MOCK") == "1":
         return NullBuzzer()
-    return Buzzer(board)
+    return Buzzer(board, beep_seconds)

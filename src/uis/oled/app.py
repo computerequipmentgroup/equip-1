@@ -8,7 +8,12 @@ from equip1d.settings import Equip1Settings, LIGHTS_BRIGHTNESS_DEFAULT
 from .api_client import Equip1ApiClient
 from .config import get_board_config
 from .display import make_display
-from .input import make_buttons, make_buzzer
+from .input import (
+    DEFAULT_BUTTON_DEBOUNCE_SECONDS,
+    DEFAULT_BUZZER_BEEP_SECONDS,
+    make_buttons,
+    make_buzzer,
+)
 from .leds import STANDARD_LED_SCALE, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
 from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, UsbTransferScreen
 
@@ -23,11 +28,23 @@ class OledApp:
         api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="EQUIP1_API_TIMEOUT")
         self.api = Equip1ApiClient(api_base, timeout=api_timeout)
         self.state_fetch_interval = settings.get_float("ui", "state_fetch_interval", 1.0, env="EQUIP1_STATE_FETCH_INTERVAL")
+        button_debounce_ms = settings.get_float(
+            "ui",
+            "button_debounce_ms",
+            DEFAULT_BUTTON_DEBOUNCE_SECONDS * 1000.0,
+            env="EQUIP1_BUTTON_DEBOUNCE_MS",
+        )
+        button_beep_ms = settings.get_float(
+            "ui",
+            "button_beep_ms",
+            DEFAULT_BUZZER_BEEP_SECONDS * 1000.0,
+            env="EQUIP1_BUTTON_BEEP_MS",
+        )
         self.display = make_display(self.board)
         log("OLED display initialized")
-        self.buttons = make_buttons(self.board)
-        log("OLED buttons initialized")
-        self.buzzer = make_buzzer(self.board)
+        self.buttons = make_buttons(self.board, debounce_seconds=button_debounce_ms / 1000.0)
+        log(f"OLED buttons initialized; debounce={button_debounce_ms:g}ms")
+        self.buzzer = make_buzzer(self.board, beep_seconds=button_beep_ms / 1000.0)
         self.leds = make_boot_leds()
         log("OLED LEDs initialized")
         self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen()]
