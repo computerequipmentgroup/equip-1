@@ -8,6 +8,7 @@ import signal
 import threading
 import time
 
+from .dvmetadata import DvRecordingDateScanner
 from .logging import debug_enabled, log, should_log
 
 
@@ -111,6 +112,9 @@ class DvSource:
         self._rec_dropped = 0
         self.recording_error: str | None = None
 
+        self._date_scanner = DvRecordingDateScanner()
+        self._latest_recording_datetime = None
+
     # ---- lifecycle -----------------------------------------------------
 
     @property
@@ -120,6 +124,10 @@ class DvSource:
     @property
     def recording(self) -> bool:
         return self._rec_queue is not None
+
+    @property
+    def latest_recording_datetime(self):
+        return self._latest_recording_datetime
 
     async def ensure_running(self, want: bool) -> None:
         # Serialised so concurrent callers (monitor loop, record start, stream
@@ -137,6 +145,8 @@ class DvSource:
         self._loop = asyncio.get_running_loop()
         self._dif_stream_offset = 0
         self._dif_normalizer_logged = False
+        self._date_scanner = DvRecordingDateScanner()
+        self._latest_recording_datetime = None
         self._log("starting shared dvgrab DV source", always=True)
         # Give dvgrab a private pipe we own the read end of, so a blocking thread
         # can drain it independently of the event loop.
@@ -250,6 +260,9 @@ class DvSource:
                 if not chunk:
                     break
                 chunk = self._normalize_dif_chunk(chunk)
+                recorded_at = self._date_scanner.feed(chunk)
+                if recorded_at is not None:
+                    self._latest_recording_datetime = recorded_at
                 if first:
                     loop.call_soon_threadsafe(self._log, "DV source emitted first bytes", True)
                     first = False

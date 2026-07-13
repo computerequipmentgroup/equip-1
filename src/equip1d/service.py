@@ -12,6 +12,7 @@ from typing import Any
 from . import perf
 from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
+from .dvmetadata import stamp_file_from_dv_recording_date
 from .dvsource import DvSource
 from .events import EventBus
 from .logging import debug_enabled, log
@@ -212,13 +213,13 @@ class Equip1Daemon:
                 raise CommandError("Storage full")
 
             now = datetime.now(timezone.utc)
-            timestamp = now.strftime("%Y%m%d_%H%M%S")
-            self._debug_log(f"start-recording requested timestamp={timestamp}")
             try:
                 # The FireWire device is already held by the shared DV source, so
                 # recording just opens a file on the live stream -- no preview
                 # hand-off, no device acquisition, effectively instant.
                 await self.dv.ensure_running(True)
+                timestamp = await self._recording_timestamp(now)
+                self._debug_log(f"start-recording requested timestamp={timestamp}")
                 await asyncio.to_thread(self.recorder.start, timestamp)
                 self._debug_log(f"recorder started filename={self.recorder.state.filename} pid={self.recorder.state.pid}")
                 self.error = None
@@ -236,6 +237,13 @@ class Equip1Daemon:
                 thumbnail_prefix = self.recorder.state.filename
                 self._debug_log(f"stop-recording requested filename={thumbnail_prefix} pid={self.recorder.state.pid}")
                 await asyncio.to_thread(self.recorder.stop)
+                recorded_at = await asyncio.to_thread(
+                    stamp_file_from_dv_recording_date,
+                    self.capture_dir / thumbnail_prefix,
+                )
+                if recorded_at is not None:
+                    self._captures_cache = None
+                    self._debug_log(f"recorder stamped filename={thumbnail_prefix} recorded_at={recorded_at.isoformat()}")
                 self._debug_log(f"recorder stopped filename={thumbnail_prefix}")
                 # Preview keeps running on the shared DV source; nothing to release.
             state = self._snapshot_unlocked().to_dict()
@@ -264,6 +272,29 @@ class Equip1Daemon:
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         return state
+
+    async def _recording_timestamp(self, fallback: datetime) -> str:
+        if not self._system_clock_unset():
+            return fallback.strftime("%Y%m%d_%H%M%S")
+        recorded_at = await self._wait_for_dv_recording_datetime()
+        if recorded_at is None:
+            return fallback.strftime("%Y%m%d_%H%M%S")
+        self._debug_log(f"using DV camera date for filename recorded_at={recorded_at.isoformat()}")
+        return recorded_at.strftime("%Y%m%d_%H%M%S")
+
+    async def _wait_for_dv_recording_datetime(self, timeout: float = 1.5) -> datetime | None:
+        deadline = time.monotonic() + timeout
+        while True:
+            recorded_at = self.dv.latest_recording_datetime
+            if recorded_at is not None:
+                return recorded_at
+            if time.monotonic() >= deadline:
+                return None
+            await asyncio.sleep(0.05)
+
+    @staticmethod
+    def _system_clock_unset() -> bool:
+        return time.time() < 1_600_000_000
 
     async def sync_time(self, epoch_seconds: float) -> dict[str, Any]:
         # The device has no RTC and no network time, so it boots at the epoch and
