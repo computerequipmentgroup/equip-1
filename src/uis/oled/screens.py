@@ -128,7 +128,7 @@ class BootScreen(Screen):
         hold = max(0.0, float(context.get("boot_hold_seconds", 1.1)))
 
         font = _font(context, "font_boot")
-        lines = ("equip-1", "equip1")
+        lines = ("equip-1", "firehat")
         line_gap = 2
         line_layout = []
         total_text_height = line_gap * (len(lines) - 1)
