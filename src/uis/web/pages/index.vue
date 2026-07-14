@@ -8,6 +8,7 @@ const {
   setLightColors,
   setLightsEnabled,
   setLightsBrightness,
+  setCaptureNaming,
   connectEvents,
   mock
 } = useEquip1State()
@@ -15,6 +16,8 @@ const { captures, error: capturesError, load, downloadUrl } = useEquip1Captures(
 const { system, error: systemError, load: loadSystem } = useEquip1System()
 const config = useRuntimeConfig()
 
+const defaultCaptureNaming = { prefix: 'capture_', template: '{date}_{time}' }
+const captureNamingVariables = ['date', 'time', 'datetime', 'year', 'month', 'day', 'hour', 'minute', 'second']
 // Only surface captures whose thumbnail has finished rendering, so a new
 // recording appears in the list complete rather than as a blank placeholder.
 const readyCaptures = computed(() => captures.value.filter((capture) => capture.thumbnail_url))
@@ -22,7 +25,19 @@ const readyCaptures = computed(() => captures.value.filter((capture) => capture.
 const mode = computed(() => state.value?.mode || 'offline')
 const recording = computed(() => state.value?.recording || {})
 const storage = computed(() => state.value?.storage || {})
+const captureNaming = computed(() => state.value?.capture_naming || defaultCaptureNaming)
+const captureNamingPatternFromState = computed(
+  () =>
+    `${captureNaming.value.prefix ?? defaultCaptureNaming.prefix}${captureNaming.value.template || defaultCaptureNaming.template}`
+)
+const namingDirty = computed(() => captureNamingPattern.value !== captureNamingPatternFromState.value)
 const actionError = ref<string | null>(null)
+const captureNamingPattern = ref(`${defaultCaptureNaming.prefix}${defaultCaptureNaming.template}`)
+const namingSaving = ref(false)
+const namingSaved = ref(false)
+const namingTouched = ref(false)
+const namingError = ref<string | null>(null)
+const namingSaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const systemInterval = ref<ReturnType<typeof setInterval> | null>(null)
 const closedCards = ref<Record<string, boolean>>({})
 const cardOpen = (name: string) => !closedCards.value[name]
@@ -188,9 +203,53 @@ const modified = (value: number | string | null | undefined) => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const saveCaptureNaming = async (throwOnError = false) => {
+  if (namingSaveTimer.value) {
+    clearTimeout(namingSaveTimer.value)
+    namingSaveTimer.value = null
+  }
+  const pattern = captureNamingPattern.value
+  namingSaving.value = true
+  namingSaved.value = false
+  namingError.value = null
+  try {
+    await setCaptureNaming('', pattern)
+    if (captureNamingPattern.value === pattern) {
+      namingTouched.value = false
+      namingSaved.value = true
+    }
+  } catch (err: any) {
+    namingError.value = err?.data?.detail || err?.message || 'Could not save file name settings'
+    if (throwOnError) throw err
+  } finally {
+    namingSaving.value = false
+  }
+}
+const scheduleCaptureNamingSave = () => {
+  namingTouched.value = true
+  namingSaved.value = false
+  if (namingSaveTimer.value) clearTimeout(namingSaveTimer.value)
+  namingSaveTimer.value = setTimeout(() => {
+    namingSaveTimer.value = null
+    if (namingDirty.value || namingTouched.value) saveCaptureNaming()
+  }, 700)
+}
+const appendCaptureNamingVariable = (variable: string) => {
+  if (mode.value === 'recording') return
+  captureNamingPattern.value = `${captureNamingPattern.value}{${variable}}`
+  scheduleCaptureNamingSave()
+}
+
 const runCommand = async (name: string) => {
   try {
     actionError.value = null
+    if (name === 'start-recording' && namingDirty.value) {
+      if (namingSaveTimer.value) {
+        clearTimeout(namingSaveTimer.value)
+        namingSaveTimer.value = null
+      }
+      await saveCaptureNaming(true)
+    }
     if (name === 'start-recording' && previewing.value) {
       previewing.value = false
       await nextTick()
@@ -250,9 +309,20 @@ watch(mode, async (next, previous) => {
   startPreview()
 })
 
+watch(
+  captureNaming,
+  () => {
+    if (namingTouched.value) return
+    captureNamingPattern.value = captureNamingPatternFromState.value
+  },
+  { immediate: true, deep: true }
+)
+
 onBeforeUnmount(() => {
   previewing.value = false
   if (previewRetryTimer.value) clearTimeout(previewRetryTimer.value)
+  if (namingDirty.value || namingTouched.value) saveCaptureNaming()
+  else if (namingSaveTimer.value) clearTimeout(namingSaveTimer.value)
   if (systemInterval.value) clearInterval(systemInterval.value)
 })
 
@@ -475,6 +545,43 @@ onMounted(async () => {
               @input="onLightsBrightnessInput"
             />
           </label>
+        </div>
+      </template>
+    </article>
+
+    <article class="card full-span">
+      <div class="card-top" @click="toggleCard('file-names')">
+        <span class="card-title">Filename</span>
+      </div>
+      <template v-if="cardOpen('file-names')">
+        <p v-if="namingError" class="error">{{ namingError }}</p>
+        <div class="naming-grid">
+          <label class="field-row">
+            <input
+              v-model="captureNamingPattern"
+              class="text-input filename-label"
+              type="text"
+              maxlength="96"
+              placeholder="capture_{date}_{time}"
+              aria-label="Filename"
+              :disabled="mode === 'recording'"
+              @input="scheduleCaptureNamingSave"
+              @change="saveCaptureNaming"
+              @blur="saveCaptureNaming"
+            />
+          </label>
+        </div>
+        <div class="naming-variables" aria-label="Available filename variables">
+          <button
+            v-for="variable in captureNamingVariables"
+            :key="variable"
+            class="naming-variable-chip"
+            type="button"
+            :disabled="mode === 'recording'"
+            @click="appendCaptureNamingVariable(variable)"
+          >
+            <code>{{ '{' + variable + '}' }}</code>
+          </button>
         </div>
       </template>
     </article>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -16,12 +17,18 @@ from .dvmetadata import stamp_file_from_dv_recording_date
 from .dvsource import DvSource
 from .events import EventBus
 from .logging import debug_enabled, log
-from .models import CameraState, DaemonState, DeckState, ErrorState, LightsState, RecordingState, StorageState
+from .models import CameraState, CaptureNamingState, DaemonState, DeckState, ErrorState, LightsState, RecordingState, StorageState
 from .network import get_network_state
 from .preview import MjpegPreview
 from .recorder import RecordingTracker
 from .storage import StorageManager
-from .settings import Equip1Settings, LEGACY_LIGHTS_CONFIG_DEFAULT, LIGHTS_BRIGHTNESS_DEFAULT
+from .settings import (
+    CAPTURE_FILENAME_PREFIX_DEFAULT,
+    CAPTURE_FILENAME_TEMPLATE_DEFAULT,
+    Equip1Settings,
+    LEGACY_LIGHTS_CONFIG_DEFAULT,
+    LIGHTS_BRIGHTNESS_DEFAULT,
+)
 
 
 class CommandError(RuntimeError):
@@ -50,6 +57,8 @@ def _coerce_rgb(color: Any) -> list[int] | None:
 
 
 LIGHTS_COUNT_DEFAULT = 3
+_FILENAME_UNSAFE_RE = re.compile(r"[\\/:*?\"<>|\s]+")
+_TAG_RE = re.compile(r"\{([a-zA-Z_]+)\}")
 
 
 def _coerce_colors(value: Any, count: int) -> list[list[int]] | None:
@@ -95,6 +104,51 @@ def _light_colors_from_env(count: int) -> list[list[int]]:
         if parsed is not None:
             base = parsed
     return [list(base) for _ in range(count)]
+
+
+def _clean_capture_naming_value(value: Any, default: str, max_length: int, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str):
+        return default
+    cleaned = value.replace("\x00", "").strip()
+    if not cleaned:
+        return "" if allow_empty else default
+    return cleaned[:max_length]
+
+
+def _filename_tag_values(recorded_at: datetime) -> dict[str, str]:
+    return {
+        "date": recorded_at.strftime("%Y%m%d"),
+        "time": recorded_at.strftime("%H%M%S"),
+        "datetime": recorded_at.strftime("%Y%m%d_%H%M%S"),
+        "year": recorded_at.strftime("%Y"),
+        "month": recorded_at.strftime("%m"),
+        "day": recorded_at.strftime("%d"),
+        "hour": recorded_at.strftime("%H"),
+        "minute": recorded_at.strftime("%M"),
+        "second": recorded_at.strftime("%S"),
+    }
+
+
+def _sanitize_filename_stem(value: str) -> str:
+    stem = _FILENAME_UNSAFE_RE.sub("_", value).strip("._-")
+    stem = re.sub(r"_+", "_", stem)
+    if not stem:
+        stem = _render_capture_filename_stem(
+            CAPTURE_FILENAME_PREFIX_DEFAULT,
+            CAPTURE_FILENAME_TEMPLATE_DEFAULT,
+            datetime.now(timezone.utc),
+        )
+    return stem[:120].strip("._-") or "capture"
+
+
+def _render_capture_filename_stem(prefix: str, template: str, recorded_at: datetime) -> str:
+    tags = _filename_tag_values(recorded_at)
+
+    def replace_tag(match: re.Match[str]) -> str:
+        return tags.get(match.group(1).lower(), "")
+
+    raw = f"{prefix}{_TAG_RE.sub(replace_tag, template)}"
+    return _sanitize_filename_stem(raw)
 
 
 class Equip1Daemon:
@@ -144,6 +198,7 @@ class Equip1Daemon:
         ).expanduser()
         self._lights_count = _lights_count_from_env()
         self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
+        self.capture_naming_prefix, self.capture_naming_template = self._load_capture_naming()
         self.error: ErrorState | None = None
 
     @classmethod
@@ -218,9 +273,10 @@ class Equip1Daemon:
                 # recording just opens a file on the live stream -- no preview
                 # hand-off, no device acquisition, effectively instant.
                 await self.dv.ensure_running(True)
-                timestamp = await self._recording_timestamp(now)
-                self._debug_log(f"start-recording requested timestamp={timestamp}")
-                await asyncio.to_thread(self.recorder.start, timestamp)
+                recorded_at = await self._recording_datetime(now)
+                filename_stem = self._render_capture_filename_stem(recorded_at)
+                self._debug_log(f"start-recording requested filename_stem={filename_stem}")
+                await asyncio.to_thread(self.recorder.start, filename_stem=filename_stem)
                 self._debug_log(f"recorder started filename={self.recorder.state.filename} pid={self.recorder.state.pid}")
                 self.error = None
             except OSError as exc:
@@ -273,14 +329,21 @@ class Equip1Daemon:
         await self.events.publish({"type": "state", "state": state})
         return state
 
-    async def _recording_timestamp(self, fallback: datetime) -> str:
+    async def _recording_datetime(self, fallback: datetime) -> datetime:
         if not self._system_clock_unset():
-            return fallback.strftime("%Y%m%d_%H%M%S")
+            return fallback
         recorded_at = await self._wait_for_dv_recording_datetime()
         if recorded_at is None:
-            return fallback.strftime("%Y%m%d_%H%M%S")
+            return fallback
         self._debug_log(f"using DV camera date for filename recorded_at={recorded_at.isoformat()}")
-        return recorded_at.strftime("%Y%m%d_%H%M%S")
+        return recorded_at
+
+    def _render_capture_filename_stem(self, recorded_at: datetime) -> str:
+        return _render_capture_filename_stem(
+            self.capture_naming_prefix,
+            self.capture_naming_template,
+            recorded_at,
+        )
 
     async def _wait_for_dv_recording_datetime(self, timeout: float = 1.5) -> datetime | None:
         deadline = time.monotonic() + timeout
@@ -421,6 +484,33 @@ class Equip1Daemon:
             )
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    def _load_capture_naming(self) -> tuple[str, str]:
+        prefix, template = self.settings.load_capture_naming()
+        return (
+            _clean_capture_naming_value(prefix, CAPTURE_FILENAME_PREFIX_DEFAULT, 48, allow_empty=True),
+            _clean_capture_naming_value(template, CAPTURE_FILENAME_TEMPLATE_DEFAULT, 96),
+        )
+
+    def _save_capture_naming(self) -> None:
+        try:
+            self.settings.save_capture_naming(
+                prefix=self.capture_naming_prefix,
+                template=self.capture_naming_template,
+            )
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    async def set_capture_naming(self, prefix: Any, template: Any) -> dict[str, Any]:
+        next_prefix = _clean_capture_naming_value(prefix, CAPTURE_FILENAME_PREFIX_DEFAULT, 48, allow_empty=True)
+        next_template = _clean_capture_naming_value(template, CAPTURE_FILENAME_TEMPLATE_DEFAULT, 96)
+        async with self._lock:
+            self.capture_naming_prefix = next_prefix
+            self.capture_naming_template = next_template
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_capture_naming)
+        await self.events.publish({"type": "state", "state": state})
+        return state
 
     async def set_light_color(self, payload: Any) -> dict[str, Any]:
         colors = _coerce_colors(payload, self._lights_count)
@@ -804,6 +894,10 @@ class Equip1Daemon:
                 default_colors=[list(color) for color in self.lights_default_colors],
                 enabled=self.lights_enabled,
                 brightness=self.lights_brightness,
+            ),
+            capture_naming=CaptureNamingState(
+                prefix=self.capture_naming_prefix,
+                template=self.capture_naming_template,
             ),
             error=self.error,
         )

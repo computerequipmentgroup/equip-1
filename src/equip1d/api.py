@@ -80,6 +80,14 @@ async def sync_time(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail="Invalid 'now'") from exc
 
 
+@app.post("/api/settings/capture-naming")
+async def set_capture_naming(payload: dict) -> dict:
+    try:
+        return await daemon.set_capture_naming(payload.get("prefix"), payload.get("template"))
+    except CommandError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/captures/{capture_name}/download")
 async def download_capture(capture_name: str) -> FileResponse:
     path = await daemon.capture_path(capture_name)
@@ -221,6 +229,9 @@ async def _handle_ws_command(message: object) -> None:
     elif message.get("type") == "set-lights-brightness":
         with contextlib.suppress(CommandError):
             await daemon.set_lights_brightness(message.get("brightness"))
+    elif message.get("type") == "set-capture-naming":
+        with contextlib.suppress(CommandError):
+            await daemon.set_capture_naming(message.get("prefix"), message.get("template"))
 
 
 @app.websocket("/api/events")

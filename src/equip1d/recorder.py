@@ -38,12 +38,28 @@ class RecordingTracker:
     def capture_prefix(self, timestamp: str) -> Path:
         return self.capture_dir / f"capture_{timestamp}"
 
-    def start(self, timestamp: str | None = None) -> RecorderProcessState:
+    def capture_path(self, stem: str) -> Path:
+        return self.capture_dir / f"{stem}.dv"
+
+    def unique_capture_path(self, stem: str) -> Path:
+        path = self.capture_path(stem)
+        if not path.exists() and not path.with_suffix(".jpg").exists():
+            return path
+        for index in range(1, 1000):
+            candidate = self.capture_path(f"{stem}-{index:03d}")
+            if not candidate.exists() and not candidate.with_suffix(".jpg").exists():
+                return candidate
+        raise RuntimeError("Could not find an available capture filename")
+
+    def start(self, timestamp: str | None = None, filename_stem: str | None = None) -> RecorderProcessState:
         if self.state.active:
             raise RuntimeError("Already recording")
-        if timestamp is None:
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        path = self.capture_prefix(timestamp).with_suffix(".dv")
+        if filename_stem is None:
+            if timestamp is None:
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            path = self.unique_capture_path(f"capture_{timestamp}")
+        else:
+            path = self.unique_capture_path(filename_stem)
         self.source.start_recording(path)
         self._intent = True
         self.state = RecorderProcessState(

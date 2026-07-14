@@ -8,6 +8,8 @@ from typing import Any, Callable
 SETTINGS_FILE_DEFAULT = "/etc/equip1/equip-1.ini"
 LEGACY_LIGHTS_CONFIG_DEFAULT = "/etc/equip1/lights.json"
 LIGHTS_BRIGHTNESS_DEFAULT = 0.25
+CAPTURE_FILENAME_PREFIX_DEFAULT = "capture_"
+CAPTURE_FILENAME_TEMPLATE_DEFAULT = "{date}_{time}"
 
 
 class Equip1Settings:
@@ -87,6 +89,32 @@ class Equip1Settings:
         parser.set("lights", "enabled", _format_bool(enabled))
         parser.set("lights", "brightness", _format_float(_clamp_float(brightness, 0.0, 1.0)))
         parser.set("lights", "default_colors", _format_colors(colors))
+        self._write(parser)
+
+    def load_capture_naming(self) -> tuple[str, str]:
+        prefix = self.get(
+            "recording",
+            "capture_prefix",
+            CAPTURE_FILENAME_PREFIX_DEFAULT,
+            env="EQUIP1_CAPTURE_PREFIX",
+        )
+        template = self.get(
+            "recording",
+            "filename_template",
+            CAPTURE_FILENAME_TEMPLATE_DEFAULT,
+            env="EQUIP1_FILENAME_TEMPLATE",
+        )
+        return (
+            prefix if prefix is not None else CAPTURE_FILENAME_PREFIX_DEFAULT,
+            template or CAPTURE_FILENAME_TEMPLATE_DEFAULT,
+        )
+
+    def save_capture_naming(self, *, prefix: str, template: str) -> None:
+        parser = self._read()
+        if not parser.has_section("recording"):
+            parser.add_section("recording")
+        parser.set("recording", "capture_prefix", prefix)
+        parser.set("recording", "filename_template", template)
         self._write(parser)
 
     def _read(self) -> configparser.ConfigParser:

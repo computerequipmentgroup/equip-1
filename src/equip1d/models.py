@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
-from .settings import LIGHTS_BRIGHTNESS_DEFAULT
+from .settings import CAPTURE_FILENAME_PREFIX_DEFAULT, CAPTURE_FILENAME_TEMPLATE_DEFAULT, LIGHTS_BRIGHTNESS_DEFAULT
 
 RecorderMode = Literal[
     "booting",
@@ -81,6 +81,12 @@ class ErrorState:
 
 
 @dataclass
+class CaptureNamingState:
+    prefix: str = CAPTURE_FILENAME_PREFIX_DEFAULT
+    template: str = CAPTURE_FILENAME_TEMPLATE_DEFAULT
+
+
+@dataclass
 class LightsState:
     # Per-LED "standard" colors, one [r, g, b] per physical LED, authored at
     # full 0-255 brightness. Clients (OLED) dim each to the same level as the
@@ -104,6 +110,7 @@ class DaemonState:
     network: NetworkState
     deck: DeckState
     lights: LightsState = field(default_factory=LightsState)
+    capture_naming: CaptureNamingState = field(default_factory=CaptureNamingState)
     error: ErrorState | None = None
     updated_at: str = field(default_factory=utc_now_iso)
 

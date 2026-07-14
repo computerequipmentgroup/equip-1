@@ -5,6 +5,30 @@ type SystemStats = Record<string, any>
 const dvBytesPerSecond = Math.floor((216 * 1024 * 1024) / 60)
 
 const nowIso = () => new Date().toISOString()
+const defaultCaptureNaming = { prefix: 'capture_', template: '{date}_{time}' }
+
+const pad2 = (value: number) => value.toString().padStart(2, '0')
+const filenameTagValues = (date = new Date()) => ({
+  date: `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}`,
+  time: `${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`,
+  datetime: `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}_${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`,
+  year: `${date.getFullYear()}`,
+  month: pad2(date.getMonth() + 1),
+  day: pad2(date.getDate()),
+  hour: pad2(date.getHours()),
+  minute: pad2(date.getMinutes()),
+  second: pad2(date.getSeconds())
+})
+const sanitizeCaptureStem = (value: string) => {
+  const stem = value.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/_+/g, '_').replace(/^[._-]+|[._-]+$/g, '')
+  return (stem || 'capture').slice(0, 120).replace(/^[._-]+|[._-]+$/g, '') || 'capture'
+}
+const renderCaptureStem = (naming: Record<string, any> = defaultCaptureNaming, date = new Date()) => {
+  const tags = filenameTagValues(date)
+  const prefix = typeof naming.prefix === 'string' ? naming.prefix : defaultCaptureNaming.prefix
+  const template = typeof naming.template === 'string' ? naming.template : defaultCaptureNaming.template
+  return sanitizeCaptureStem(`${prefix}${template.replace(/\{([a-zA-Z_]+)\}/g, (_, tag) => tags[String(tag).toLowerCase()] || '')}`)
+}
 
 const isMockEnabled = () => {
   const config = useRuntimeConfig()
@@ -15,8 +39,8 @@ const isMockEnabled = () => {
 const mockThumbnail = (label: string, color = '#5500ff') =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#050505"/><rect y="54" width="160" height="36" fill="${color}" opacity=".82"/><circle cx="116" cy="34" r="22" fill="#fff" opacity=".18"/><text x="10" y="78" fill="#fff" font-family="monospace" font-size="13">${label}</text></svg>`)}`
 
-const formatCaptureName = (date = new Date()) =>
-  `capture_${date.toISOString().slice(0, 19).replace(/[-:T]/g, '')}-001.dv`
+const formatCaptureName = (date = new Date(), naming: Record<string, any> = defaultCaptureNaming) =>
+  `${renderCaptureStem(naming, date)}.dv`
 
 const mockCaptureRows = (): CaptureEntry[] => [
   {
@@ -111,6 +135,7 @@ const mockState = (): Equip1State => ({
     enabled: true,
     brightness: 0.25
   },
+  capture_naming: { ...defaultCaptureNaming },
   error: null
 })
 
@@ -162,7 +187,7 @@ const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureE
     current.storage.base_used_bytes = current.storage.used_bytes
     current.recording = {
       active: true,
-      filename: formatCaptureName(new Date(startedAt)),
+      filename: formatCaptureName(new Date(startedAt), current.capture_naming || defaultCaptureNaming),
       started_at: startedAt,
       elapsed_seconds: 0,
       pid: 4242
@@ -308,6 +333,23 @@ export const useEquip1State = () => {
     }
   }
 
+  const setCaptureNaming = async (prefix: string, template: string) => {
+    const clean = {
+      prefix: String(prefix ?? defaultCaptureNaming.prefix).slice(0, 48),
+      template: String(template || defaultCaptureNaming.template).slice(0, 96)
+    }
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, capture_naming: clean }
+      return state.value
+    }
+    state.value = await timedFetch<Equip1State>('settings.capture_naming', `${apiBase}/settings/capture-naming`, {
+      method: 'POST',
+      body: clean
+    })
+    return state.value
+  }
+
   // The device has no clock; hand it the browser's time so captures are stamped
   // with a real date. Best-effort — the daemon only applies it when its own
   // clock is still unset.
@@ -359,7 +401,7 @@ export const useEquip1State = () => {
     }
   }
 
-  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, connectEvents, syncTime, mock }
+  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setCaptureNaming, connectEvents, syncTime, mock }
 }
 
 export const useEquip1System = () => {
