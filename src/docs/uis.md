@@ -109,6 +109,6 @@ Common settings live in `/etc/equip1/equip-1.ini` under `[ui]`, with environment
 | `state_fetch_interval` | `EQUIP1_STATE_FETCH_INTERVAL` | `1.0` |
 | `boot_duration_seconds` | `EQUIP1_BOOT_DURATION_SECONDS` | `3.0` |
 | `boot_hold_seconds` | `EQUIP1_BOOT_HOLD_SECONDS` | `1.1` |
-| `oled_fps` | `EQUIP1_OLED_FPS` | `30` |
+| `oled_fps` | `EQUIP1_OLED_FPS` | `8` |
 
 The web app uses Nuxt public runtime variables (`NUXT_PUBLIC_*`) for client-side API base, WebSocket base, mock mode, and performance logging.

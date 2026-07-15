@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from equip1d.logging import log, perf_enabled
@@ -52,13 +53,18 @@ class OledApp:
         self.boot_started_at = time.monotonic()
         self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="EQUIP1_BOOT_DURATION_SECONDS")
         self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="EQUIP1_BOOT_HOLD_SECONDS")
-        oled_fps = settings.get_float("ui", "oled_fps", 30.0, env="EQUIP1_OLED_FPS")
+        oled_fps = settings.get_float("ui", "oled_fps", 8.0, env="EQUIP1_OLED_FPS")
         self.frame_interval = 1.0 / oled_fps if oled_fps > 0 else 0.0
         self.current_screen_idx = 0
         self.state: dict | None = None
         self._last_state_fetch = 0.0
         self._api_was_connected: bool | None = None
         self._boot_leds_cleared = False
+        self._api_lock = threading.Lock()
+        self._command_thread: threading.Thread | None = None
+        self._pending_command: str | None = None
+        self._state_fetch_thread: threading.Thread | None = None
+        self._stop_recording_requested_at: float | None = None
 
     @property
     def current_screen(self):
@@ -89,6 +95,12 @@ class OledApp:
 
     def _set_state(self, state: dict) -> None:
         self.state = state
+        if state.get("mode") != "recording":
+            self._stop_recording_requested_at = None
+
+    @property
+    def stop_recording_pending(self) -> bool:
+        return self._stop_recording_requested_at is not None and (self.state or {}).get("mode") == "recording"
 
     def fetch_state_if_due(self, interval: float | None = None) -> None:
         interval = self.state_fetch_interval if interval is None else interval
@@ -96,9 +108,29 @@ class OledApp:
         if now - self._last_state_fetch < interval:
             return
         self._last_state_fetch = now
+        self._fetch_state()
+
+    def fetch_state_in_background_if_due(self, interval: float | None = None) -> None:
+        interval = self.state_fetch_interval if interval is None else interval
+        now = time.time()
+        if now - self._last_state_fetch < interval:
+            return
+        if self._pending_command is not None:
+            return
+        if self._state_fetch_thread is not None and self._state_fetch_thread.is_alive():
+            return
+        self._last_state_fetch = now
+        thread = threading.Thread(target=self._fetch_state, name="oled-state-fetch", daemon=True)
+        self._state_fetch_thread = thread
+        thread.start()
+
+    def _fetch_state(self) -> None:
         started = time.monotonic()
-        result = self.api.get_state()
+        with self._api_lock:
+            result = self.api.get_state()
         self._perf_log("oled.api_state", started)
+        if self._pending_command is not None:
+            return
         if result.ok and isinstance(result.data, dict):
             self._set_state(result.data)
             self._log_api_transition(True)
@@ -115,17 +147,62 @@ class OledApp:
                 })
 
     def command(self, name: str) -> None:
-        result = self.api.command(name)
+        self._run_command(name)
+
+    def command_async(self, name: str) -> bool:
+        if self._command_thread is not None and self._command_thread.is_alive():
+            return False
+        if name == "stop-recording":
+            self._stop_recording_requested_at = time.monotonic()
+        self._pending_command = name
+        thread = threading.Thread(target=self._command_worker, args=(name,), name=f"oled-command-{name}", daemon=True)
+        self._command_thread = thread
+        thread.start()
+        return True
+
+    def _command_worker(self, name: str) -> None:
+        try:
+            self._run_command(name)
+        finally:
+            self._pending_command = None
+
+    def _run_command(self, name: str) -> None:
+        started = time.monotonic()
+        with self._api_lock:
+            result = self.api.command(name)
+        elapsed_ms = (time.monotonic() - started) * 1000.0
         if result.ok and isinstance(result.data, dict) and "mode" in result.data:
+            log(f"OLED command {name} ok mode={result.data.get('mode')} {elapsed_ms:.1f}ms", level="debug")
             self._set_state(result.data)
         elif result.ok:
+            log(f"OLED command {name} ok; refreshing state {elapsed_ms:.1f}ms", level="debug")
             self.fetch_state_if_due(interval=0)
+        elif name == "stop-recording" and self._recover_stop_command_failure(result.error or name):
+            log(f"OLED command {name} failed but stop state recovered: {result.error or name}", level="warning")
         else:
+            detail = result.error or name
+            log(f"OLED command {name} failed: {detail}", level="warning")
             self._set_state({
                 **(self.state or {}),
                 "mode": "error",
-                "error": {"message": "Command failed", "detail": result.error or name},
+                "error": {"message": "Command failed", "detail": detail},
             })
+
+    def _recover_stop_command_failure(self, detail: str) -> bool:
+        # Stop is safety/UX critical: a transient OLED HTTP timeout should not
+        # leave the local UI stuck in error if the daemon has already left
+        # recording (or can report current state). Check once synchronously in
+        # the command worker before surfacing a command error.
+        started = time.monotonic()
+        with self._api_lock:
+            state_result = self.api.get_state()
+        self._perf_log("oled.api_state_after_stop_error", started)
+        if state_result.ok and isinstance(state_result.data, dict):
+            self._set_state(state_result.data)
+            self._log_api_transition(True)
+            return state_result.data.get("mode") != "recording"
+        self._log_api_transition(False, state_result.error or detail)
+        return False
 
     def _change_screen(self, delta: int) -> None:
         self.current_screen_idx = (self.current_screen_idx + delta) % len(self.screens)
@@ -245,6 +322,7 @@ class OledApp:
                 "boot_elapsed": boot_elapsed,
                 "boot_duration_seconds": self.boot_duration_seconds,
                 "boot_hold_seconds": self.boot_hold_seconds,
+                "stop_recording_pending": self.stop_recording_pending,
             },
         )
         self._perf_log("oled.render_total", started)
@@ -255,7 +333,7 @@ class OledApp:
             while True:
                 frame_started = time.monotonic()
                 if not self.is_booting:
-                    self.fetch_state_if_due()
+                    self.fetch_state_in_background_if_due()
                     self.poll_buttons()
                 self.render()
                 if self.frame_interval > 0:

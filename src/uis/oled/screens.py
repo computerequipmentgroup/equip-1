@@ -188,7 +188,10 @@ class RecordingScreen(Screen):
     def on_select(self, app) -> None:
         state = app.state or {}
         if state.get("mode") == "recording":
-            app.command("stop-recording")
+            if hasattr(app, "command_async"):
+                app.command_async("stop-recording")
+            else:
+                app.command("stop-recording")
         elif state.get("mode") in {"idle", "no_camera", "storage_full", "error"}:
             if state.get("mode") == "error":
                 app.command("clear-error")
@@ -216,7 +219,27 @@ class RecordingScreen(Screen):
             if int(time.time() * 2) % 2:
                 draw.ellipse((dot_x, dot_y, dot_x + dot_size - 1, dot_y + dot_size - 1), fill=255)
             _right(draw, width, HEADER_Y, minutes_label, font_medium)
-            _center(draw, width, CONTENT_Y, hhmmss(recording.get("elapsed_seconds")), font_big)
+            time_text = hhmmss(recording.get("elapsed_seconds"))
+            blink_time = bool(context.get("stop_recording_pending")) and int(time.monotonic() * 4) % 2 == 0
+            if blink_time:
+                time_bbox = draw.textbbox((0, 0), time_text, font=font_big)
+                time_width = time_bbox[2] - time_bbox[0]
+                time_height = time_bbox[3] - time_bbox[1]
+                time_x = (width - time_width) // 2
+                pad_x = 4
+                pad_y = 2
+                draw.rectangle(
+                    (
+                        max(0, time_x - pad_x),
+                        max(0, CONTENT_Y - pad_y),
+                        min(width - 1, time_x + time_width + pad_x),
+                        min(height - 1, CONTENT_Y + time_height + pad_y),
+                    ),
+                    fill=255,
+                )
+                draw.text((time_x, CONTENT_Y), time_text, font=font_big, fill=0)
+            else:
+                _center(draw, width, CONTENT_Y, time_text, font_big)
             return
 
         draw.text((0, HEADER_Y), "RECORD", font=font_medium, fill=255)

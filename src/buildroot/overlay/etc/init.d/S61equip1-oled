@@ -14,7 +14,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_STATE_FETCH_INTERVAL ui state_fetch_interval 1.0
     equip1_ini_default EQUIP1_BOOT_DURATION_SECONDS ui boot_duration_seconds 3.0
     equip1_ini_default EQUIP1_BOOT_HOLD_SECONDS ui boot_hold_seconds 1.1
-    equip1_ini_default EQUIP1_OLED_FPS ui oled_fps 30
+    equip1_ini_default EQUIP1_OLED_FPS ui oled_fps 8
     equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
 fi
 
@@ -26,7 +26,7 @@ export EQUIP1_STATE_FETCH_INTERVAL="${EQUIP1_STATE_FETCH_INTERVAL:-1.0}"
 export EQUIP1_FONT_DIR="${EQUIP1_FONT_DIR:-$APPDIR/fonts}"
 export EQUIP1_BOOT_DURATION_SECONDS="${EQUIP1_BOOT_DURATION_SECONDS:-3.0}"
 export EQUIP1_BOOT_HOLD_SECONDS="${EQUIP1_BOOT_HOLD_SECONDS:-1.1}"
-export EQUIP1_OLED_FPS="${EQUIP1_OLED_FPS:-30}"
+export EQUIP1_OLED_FPS="${EQUIP1_OLED_FPS:-8}"
 export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
 export EQUIP1_OLED_SETTLE_DELAY="${EQUIP1_OLED_SETTLE_DELAY:-0}"
 export EQUIP1_OLED_INIT_ATTEMPTS="${EQUIP1_OLED_INIT_ATTEMPTS:-120}"
