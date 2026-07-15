@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,9 +10,23 @@ PAL_DV_FRAME_BYTES = 144_000
 DIF_SEQUENCE_BYTES = 150 * 80
 DV_AUDIO_RECORD_DATE_PACK = 0x52
 DV_AUDIO_RECORD_TIME_PACK = 0x53
+DV_SUBCODE_TIMECODE_PACK = 0x13
 DV_VIDEO_RECORD_DATE_PACK = 0x62
 DV_VIDEO_RECORD_TIME_PACK = 0x63
 DEFAULT_SCAN_BYTES = PAL_DV_FRAME_BYTES * 20
+
+
+@dataclass(frozen=True)
+class DvTimecode:
+    hour: int
+    minute: int
+    second: int
+    frame: int
+    drop_frame: bool = False
+
+    def __str__(self) -> str:
+        separator = ";" if self.drop_frame else ":"
+        return f"{self.hour:02d}:{self.minute:02d}:{self.second:02d}{separator}{self.frame:02d}"
 
 
 def dv_frame_size(buffer: bytes | bytearray | memoryview) -> int:
@@ -47,6 +62,44 @@ def read_recording_datetime(frame: bytes | bytearray | memoryview) -> datetime |
         if recorded_at is not None:
             return recorded_at
     return None
+
+
+def read_timecode(frame: bytes | bytearray | memoryview) -> DvTimecode | None:
+    """Extract SMPTE-style tape/program timecode from one raw DV frame.
+
+    DV timecode is a subcode SSYB pack (0x13) stored as BCD hour/minute/second
+    plus frame number. Unlike datecode, this is a media position such as
+    ``00:12:43:08``; it is not a wall-clock timestamp.
+    """
+
+    if len(frame) < 4:
+        return None
+    frame_size = dv_frame_size(frame)
+    if len(frame) < frame_size:
+        return None
+
+    pack = _find_ssyb_pack(frame, DV_SUBCODE_TIMECODE_PACK)
+    if pack is None:
+        return None
+
+    frame_number = _decode_bcd(pack[1], 0x3)
+    second = _decode_bcd(pack[2], 0x7)
+    minute = _decode_bcd(pack[3], 0x7)
+    hour = _decode_bcd(pack[4], 0x3)
+    if None in {frame_number, second, minute, hour}:
+        return None
+
+    frame_limit = 25 if frame_size == PAL_DV_FRAME_BYTES else 30
+    if int(hour) > 23 or int(minute) > 59 or int(second) > 59 or int(frame_number) >= frame_limit:
+        return None
+
+    return DvTimecode(
+        hour=int(hour),
+        minute=int(minute),
+        second=int(second),
+        frame=int(frame_number),
+        drop_frame=bool(pack[1] & 0x40),
+    )
 
 
 def read_first_recording_datetime(path: str | os.PathLike[str], max_bytes: int = DEFAULT_SCAN_BYTES) -> datetime | None:
@@ -92,24 +145,45 @@ class DvRecordingDateScanner:
         self.latest: datetime | None = None
 
     def feed(self, chunk: bytes) -> datetime | None:
-        if not chunk:
-            return None
-        self._buffer.extend(chunk)
-        while len(self._buffer) >= 4:
-            frame_size = dv_frame_size(self._buffer)
-            if len(self._buffer) < frame_size:
-                break
-            frame = memoryview(self._buffer)[:frame_size]
-            recorded_at = read_recording_datetime(frame)
-            del frame
-            del self._buffer[:frame_size]
-            if recorded_at is not None:
-                self.latest = recorded_at
-                return recorded_at
-        # Bound memory if the stream is malformed or starts mid-frame.
-        if len(self._buffer) > PAL_DV_FRAME_BYTES * 2:
-            del self._buffer[:-PAL_DV_FRAME_BYTES]
+        found = _feed_raw_dv_frames(self._buffer, chunk, read_recording_datetime)
+        if found is not None:
+            self.latest = found
+        return found
+
+
+class DvTimecodeScanner:
+    """Incrementally parse raw DV bytes from dvgrab stdout for timecode."""
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+        self.latest: DvTimecode | None = None
+
+    def feed(self, chunk: bytes) -> DvTimecode | None:
+        found = _feed_raw_dv_frames(self._buffer, chunk, read_timecode)
+        if found is not None:
+            self.latest = found
+        return found
+
+
+def _feed_raw_dv_frames(buffer: bytearray, chunk: bytes, reader):
+    if not chunk:
         return None
+    buffer.extend(chunk)
+    latest = None
+    while len(buffer) >= 4:
+        frame_size = dv_frame_size(buffer)
+        if len(buffer) < frame_size:
+            break
+        frame = memoryview(buffer)[:frame_size]
+        found = reader(frame)
+        del frame
+        del buffer[:frame_size]
+        if found is not None:
+            latest = found
+    # Bound memory if the stream is malformed or starts mid-frame.
+    if len(buffer) > PAL_DV_FRAME_BYTES * 2:
+        del buffer[:-PAL_DV_FRAME_BYTES]
+    return latest
 
 
 def _recording_date_pack_pairs(frame: bytes | bytearray | memoryview) -> list[tuple[bytes | None, bytes | None]]:

@@ -199,6 +199,7 @@ class Equip1Daemon:
         self._lights_count = _lights_count_from_env()
         self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
         self.capture_naming_prefix, self.capture_naming_template = self._load_capture_naming()
+        self._recording_date_hints: dict[str, datetime] = {}
         self.error: ErrorState | None = None
 
     @classmethod
@@ -277,6 +278,8 @@ class Equip1Daemon:
                 filename_stem = self._render_capture_filename_stem(recorded_at)
                 self._debug_log(f"start-recording requested filename_stem={filename_stem}")
                 await asyncio.to_thread(self.recorder.start, filename_stem=filename_stem)
+                if self.recorder.state.filename:
+                    self._recording_date_hints[self.recorder.state.filename] = recorded_at
                 self._debug_log(f"recorder started filename={self.recorder.state.filename} pid={self.recorder.state.pid}")
                 self.error = None
             except OSError as exc:
@@ -288,27 +291,24 @@ class Equip1Daemon:
 
     async def stop_recording(self) -> dict[str, Any]:
         thumbnail_prefix: str | None = None
+        recorded_at_hint: datetime | None = None
         async with self._lock:
             if self.recorder.state.active:
                 thumbnail_prefix = self.recorder.state.filename
+                if thumbnail_prefix is not None:
+                    recorded_at_hint = self._recording_date_hints.pop(thumbnail_prefix, None)
                 self._debug_log(f"stop-recording requested filename={thumbnail_prefix} pid={self.recorder.state.pid}")
                 await asyncio.to_thread(self.recorder.stop)
-                recorded_at = await asyncio.to_thread(
-                    stamp_file_from_dv_recording_date,
-                    self.capture_dir / thumbnail_prefix,
-                )
-                if recorded_at is not None:
-                    self._captures_cache = None
-                    self._debug_log(f"recorder stamped filename={thumbnail_prefix} recorded_at={recorded_at.isoformat()}")
                 self._debug_log(f"recorder stopped filename={thumbnail_prefix}")
                 # Preview keeps running on the shared DV source; nothing to release.
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         if thumbnail_prefix:
-            # Push the freshly finished capture immediately, then push again once
-            # its thumbnail has been rendered, so the web UI updates live.
+            # Push the closed capture immediately so UI state/LEDs do not wait on
+            # slower mtime stamping, global sync, or thumbnail rendering. Those
+            # finalization steps re-publish captures when they complete.
             await self.publish_captures()
-            asyncio.create_task(self._generate_thumbnails(thumbnail_prefix))
+            asyncio.create_task(self._finalize_recording(thumbnail_prefix, recorded_at_hint=recorded_at_hint))
         return state
 
     async def rescan_camera(self) -> dict[str, Any]:
@@ -702,13 +702,49 @@ class Equip1Daemon:
         except OSError:
             pass
 
+    async def _finalize_recording(self, prefix: str, recorded_at_hint: datetime | None = None) -> None:
+        try:
+            capture_path = self.capture_dir / prefix
+            recorded_at = await asyncio.to_thread(
+                stamp_file_from_dv_recording_date,
+                capture_path,
+            )
+            if recorded_at is None and recorded_at_hint is not None:
+                recorded_at = await asyncio.to_thread(self._stamp_capture_mtime, capture_path, recorded_at_hint)
+            if recorded_at is not None:
+                self._captures_cache = None
+                self._debug_log(f"recorder stamped filename={prefix} recorded_at={recorded_at.isoformat()}")
+        except Exception as exc:
+            log(f"Recording finalization failed for {prefix}: {exc}", level="warning")
+        finally:
+            await self._sync_storage("recording finalization")
+            # Re-publish after mtime stamping/global sync, then again after the
+            # thumbnail is rendered.
+            await self.publish_captures()
+            await self._generate_thumbnails(prefix)
+
+    @staticmethod
+    def _stamp_capture_mtime(path: Path, recorded_at: datetime) -> datetime | None:
+        try:
+            current = path.stat()
+            os.utime(path, (current.st_atime, recorded_at.timestamp()))
+        except OSError:
+            return None
+        return recorded_at
+
+    async def _sync_storage(self, label: str) -> None:
+        try:
+            await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
+        except Exception as exc:
+            log(f"Storage sync failed after {label}: {exc}", level="warning")
+
     async def _generate_thumbnails(self, prefix: str) -> None:
         try:
             await asyncio.to_thread(self.storage.generate_thumbnails_for_prefix, prefix, self.ffmpeg_bin)
         except Exception as exc:
             log(f"Thumbnail generation failed for {prefix}: {exc}", level="warning")
         finally:
-            await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
+            await self._sync_storage("thumbnail generation")
             # Re-publish so the web UI picks up the new thumbnail (or the capture
             # even if thumbnailing failed).
             await self.publish_captures()
@@ -879,14 +915,15 @@ class Equip1Daemon:
             ),
             storage=storage,
             network=network,
-            # Deck status/timecode is no longer polled: probing it ran dvcont
-            # (AV/C transactions) on the FireWire bus every second, contending
-            # with the shared DV stream, and nothing consumes those fields. The
-            # on-demand transport commands (deck_command) still use dvcont.
+            # Deck status is no longer polled: probing it ran dvcont (AV/C
+            # transactions) on the FireWire bus every second, contending with
+            # the shared DV stream. Timecode is parsed passively from the live
+            # DV subcode stream instead; on-demand transport commands
+            # (deck_command) still use dvcont.
             deck=DeckState(
                 available=probe.connected,
                 status="unknown",
-                timecode=None,
+                timecode=self.dv.latest_timecode if probe.connected else None,
                 last_command=self.deck.last_command,
                 error=self.deck.last_error,
             ),

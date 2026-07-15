@@ -74,7 +74,7 @@ Only regular files with capture extensions are listed: `.dv`, `.avi`, `.mov`, `.
 
 ## Thumbnails
 
-After recording stops, the daemon first stamps the capture file mtime from embedded DV camera datecode when present. It checks the common DV pack layouts: VAUX video date/time (`0x62`/`0x63`), AAUX audio date/time (`0x52`/`0x53`), and a subcode fallback for video date/time packs. It then generates `capture_...jpg` beside the capture file using `ffmpeg`. It tries a few seek points and writes through a temporary file before replacing the final JPG. The web UI only surfaces capture cards whose thumbnails are ready, so a fresh recording appears complete.
+After recording stops, the daemon immediately publishes the freshly closed capture list. Finalization then continues in the background: the daemon stamps the capture file mtime from embedded DV camera datecode when present, checks the common DV pack layouts (VAUX video date/time `0x62`/`0x63`, AAUX audio date/time `0x52`/`0x53`, and a subcode fallback), runs `sync`, and republishes captures. It then generates `capture_...jpg` beside the capture file using `ffmpeg`, trying a few seek points and writing through a temporary file before replacing the final JPG. The web UI only surfaces capture cards whose thumbnails are ready, so a fresh recording appears complete.
 
 ## Capacity estimate
 

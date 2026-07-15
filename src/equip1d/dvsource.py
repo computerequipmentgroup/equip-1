@@ -8,7 +8,7 @@ import signal
 import threading
 import time
 
-from .dvmetadata import DvRecordingDateScanner
+from .dvmetadata import DvRecordingDateScanner, DvTimecodeScanner
 from .logging import debug_enabled, log, should_log
 
 
@@ -113,7 +113,9 @@ class DvSource:
         self.recording_error: str | None = None
 
         self._date_scanner = DvRecordingDateScanner()
+        self._timecode_scanner = DvTimecodeScanner()
         self._latest_recording_datetime = None
+        self._latest_timecode = None
 
     # ---- lifecycle -----------------------------------------------------
 
@@ -128,6 +130,10 @@ class DvSource:
     @property
     def latest_recording_datetime(self):
         return self._latest_recording_datetime
+
+    @property
+    def latest_timecode(self):
+        return self._latest_timecode
 
     async def ensure_running(self, want: bool) -> None:
         # Serialised so concurrent callers (monitor loop, record start, stream
@@ -146,7 +152,9 @@ class DvSource:
         self._dif_stream_offset = 0
         self._dif_normalizer_logged = False
         self._date_scanner = DvRecordingDateScanner()
+        self._timecode_scanner = DvTimecodeScanner()
         self._latest_recording_datetime = None
+        self._latest_timecode = None
         self._log("starting shared dvgrab DV source", always=True)
         # Give dvgrab a private pipe we own the read end of, so a blocking thread
         # can drain it independently of the event loop.
@@ -213,8 +221,11 @@ class DvSource:
             # and exits once dvgrab finally dies.
             await asyncio.to_thread(thread.join, 2.0)
         # A caller-initiated stop closes the recording sink cleanly without
-        # flagging it as a failure.
+        # flagging it as a failure. Clear live metadata so snapshots do not show
+        # stale tape position while the DV source is stopped.
         self.stop_recording()
+        self._latest_recording_datetime = None
+        self._latest_timecode = None
         self._close_all_subscribers()
 
     async def _terminate_proc(self) -> None:
@@ -263,6 +274,9 @@ class DvSource:
                 recorded_at = self._date_scanner.feed(chunk)
                 if recorded_at is not None:
                     self._latest_recording_datetime = recorded_at
+                timecode = self._timecode_scanner.feed(chunk)
+                if timecode is not None:
+                    self._latest_timecode = str(timecode)
                 if first:
                     loop.call_soon_threadsafe(self._log, "DV source emitted first bytes", True)
                     first = False
@@ -324,6 +338,8 @@ class DvSource:
         if self.recording:
             self.recording_error = "DV source stopped while recording"
             self.stop_recording()
+        self._latest_recording_datetime = None
+        self._latest_timecode = None
         self._close_all_subscribers()
 
     # ---- preview subscribers ------------------------------------------

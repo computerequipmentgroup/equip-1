@@ -31,7 +31,7 @@ A start command does this:
 5. Opens `capture_YYYYMMDD_HHMMSS.dv` in `/data/captures`. If the ROCK 2F clock is still unset, the daemon first tries to use the DV camera datecode from the live stream for that timestamp.
 6. Publishes the updated state.
 
-A stop command closes the recording sink, reads the first raw DV frames for embedded camera recording date/time, stamps the capture file mtime when datecode is present, runs `sync`, publishes captures immediately, then generates JPG thumbnails in the background and republishes captures.
+A stop command closes the recording sink and immediately publishes idle state plus the freshly closed capture list, so LEDs/UI do not wait on slower finalization. In the background the daemon reads the first raw DV frames for embedded camera recording date/time, stamps the capture file mtime when datecode is present, runs `sync`, republishes captures, then generates JPG thumbnails and republishes captures again.
 
 ## Preview path
 

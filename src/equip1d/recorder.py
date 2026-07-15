@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -74,7 +73,6 @@ class RecordingTracker:
     def stop(self, timeout: float = 2.0) -> RecorderProcessState:
         self._intent = False
         self.source.stop_recording()
-        subprocess.run(["sync"], check=False, timeout=10)
         self.state = RecorderProcessState()
         return self.state
 
