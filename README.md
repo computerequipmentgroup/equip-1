@@ -12,8 +12,6 @@ Website: <https://www.equip-1.c-e.group/>
 
 ## Hardware
 
-**Equip-1**
-
 - Radxa ROCK 2F (Rockchip RK3528A, quad-core ARM Cortex-A53, 2 GB RAM, 8 GB eMMC)
 - Firehat (see below)
 - MicroSD storage
@@ -22,16 +20,6 @@ Website: <https://www.equip-1.c-e.group/>
 - WiFi 6, Bluetooth 5.4
 - 2x USB 2.0 Type-A
 - 60 mm x 70 mm x 25 mm, ~100 g
-
-**Firehat**
-
-- VIA VT6315N FireWire controller
-- 6-pin FireWire port (DVin)
-- PCIe 2.0 x1 via FPC connector
-- 40-pin 2.54 mm GPIO header (Raspberry Pi-compatible)
-- OLED display
-- 3x SMD buttons, RGB LED, buzzer
-- 56 mm x 70 mm x 12 mm, ~25 g
 
 ## Open Source
 
