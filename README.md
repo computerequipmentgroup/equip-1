@@ -13,7 +13,7 @@ Website: <https://www.equip-1.c-e.group/>
 ## Hardware
 
 - Radxa ROCK 2F (Rockchip RK3528A, quad-core ARM Cortex-A53, 2 GB RAM, 8 GB eMMC)
-- Firehat (see below)
+- Firehat (see above)
 - MicroSD storage
 - USB-C power input, 5V
 - HDMI output
