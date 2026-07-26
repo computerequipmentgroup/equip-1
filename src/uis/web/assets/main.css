@@ -17,17 +17,18 @@
 :root {
   color-scheme: dark;
   --bg: #000;
-  --panel: rgba(0, 0, 0, 0.9);
-  --panel-soft: rgba(255, 255, 255, 0.06);
-  --line: rgba(255, 255, 255, 0.5);
-  --line-soft: rgba(255, 255, 255, 0.24);
+  --panel: rgba(8, 8, 8, 0.98);
+  --panel-raised: linear-gradient(180deg, rgba(18, 18, 18, 0.98), rgba(4, 4, 4, 0.98));
+  --panel-soft: rgba(255, 255, 255, 0.1);
+  --line: rgba(255, 255, 255, 0.72);
+  --line-soft: rgba(255, 255, 255, 0.34);
   --text: #fff;
-  --muted: rgba(255, 255, 255, 0.68);
-  --dim: rgba(255, 255, 255, 0.4);
-  --green: #aaff22;
-  --red: #ff3d3d;
-  --violet: #5500ff;
-  --amber: #ffbf47;
+  --muted: rgba(255, 255, 255, 0.8);
+  --dim: rgba(255, 255, 255, 0.56);
+  --green: #b7ff3c;
+  --red: #ff4d4d;
+  --violet: #6b2cff;
+  --amber: #ffc861;
   --radius: 4px;
   --nav-height: 4rem;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -270,8 +271,9 @@ button:disabled {
 }
 .app-header {
   align-items: center;
-  background: rgba(0, 0, 0, 0.94);
+  background: rgba(0, 0, 0, 0.98);
   border-bottom: 1px solid var(--line-soft);
+  box-shadow: 0 0.45rem 1.3rem rgba(0, 0, 0, 0.72);
   display: flex;
   justify-content: space-between;
   padding: 1rem 1rem 0.8rem;
@@ -295,9 +297,10 @@ button:disabled {
 }
 .header-chip {
   align-items: center;
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  color: var(--muted);
+  color: var(--text);
   display: inline-flex;
   font-size: 0.85rem;
   gap: 0.45rem;
@@ -394,10 +397,13 @@ button:disabled {
 }
 .hero-card,
 .card {
-  background: var(--panel);
+  background: var(--panel-raised);
   border: 0;
   border-bottom: 1px solid var(--line-soft);
   border-radius: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.9);
   overflow: hidden;
 }
 .screen > article:last-of-type {
@@ -424,7 +430,7 @@ button:disabled {
 }
 .card-title,
 .label {
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 0.6rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -595,7 +601,7 @@ button:disabled {
 }
 .text-input {
   appearance: none;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.1);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   color: var(--text);
@@ -727,7 +733,7 @@ button:disabled {
   margin-top: 0.45rem;
 }
 .storage-bar {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.13);
   border: 1px solid var(--line-soft);
   border-radius: 0;
   height: 1rem;
@@ -783,6 +789,7 @@ button:disabled {
 .preview-section {
   background: #000;
   border-bottom: 1px solid var(--line-soft);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
   overflow: hidden;
   padding: 1.75rem;
 }
@@ -803,11 +810,12 @@ button:disabled {
     2.28rem 2.28rem,
     100% 100%;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.55),
-    inset 1px 0 0 rgba(255, 255, 255, 0.18),
-    inset -2px 0 0 rgba(0, 0, 0, 0.65),
-    inset 0 0 3rem rgba(0, 0, 0, 0.82);
+    inset 0 1px 0 rgba(255, 255, 255, 0.62),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.72),
+    inset 1px 0 0 rgba(255, 255, 255, 0.26),
+    inset -2px 0 0 rgba(0, 0, 0, 0.78),
+    inset 0 0 3rem rgba(0, 0, 0, 0.86),
+    0 0 0 1px rgba(255, 255, 255, 0.12);
   clip-path: polygon(
     1.14rem 0,
     calc(100% - 1.14rem) 0,
@@ -868,10 +876,10 @@ button:disabled {
 }
 .included span,
 .spec-chip {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.12);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  color: rgba(255, 255, 255, 0.86);
+  color: rgba(255, 255, 255, 0.94);
   display: inline-flex;
   font-size: 0.6rem;
   padding: 0.15rem 0.2rem;
@@ -917,7 +925,8 @@ button:disabled {
   align-items: center;
 }
 .capture-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--line-soft);
   flex-shrink: 0;
   height: 3.2rem;
   overflow: hidden;
