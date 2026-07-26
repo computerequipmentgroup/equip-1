@@ -87,6 +87,8 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
         "network": {},
         "error": {"message": "Daemon offline", "detail": "Connection refused"},
     }
+    mounting = _base_state("mounting")
+    mounting["storage"].update({"total_bytes": 0, "used_bytes": 0, "free_bytes": 0, "recording_minutes_available": 0, "device": "Mounting", "device_kind": "mounting", "mount_point": None, "filesystem_type": None})
     usb_transfer = _base_state("usb_transfer")
     return {
         "boot": boot,
@@ -98,6 +100,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
         "storage_full": storage_full,
         "error": error,
         "offline": offline,
+        "mounting": mounting,
         "usb_transfer": usb_transfer,
     }
 

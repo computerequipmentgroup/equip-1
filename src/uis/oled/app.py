@@ -15,7 +15,7 @@ from .input import (
     make_buttons,
     make_buzzer,
 )
-from .leds import STANDARD_LED_SCALE, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
+from .leds import STANDARD_LED_SCALE, STATUS_MOUNTING, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
 from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, UsbTransferScreen
 
 
@@ -283,6 +283,8 @@ class OledApp:
         mode = (self.state or {}).get("mode")
         if mode == "recording":
             return self._dim_led(STATUS_RECORDING)
+        if mode == "mounting":
+            return self._dim_led(STATUS_MOUNTING)
         # On the record screen, show ready-green whenever a camera is attached;
         # otherwise fall back to the standard colors. Every other screen shows
         # the standard colors, so the LEDs are never fully off.

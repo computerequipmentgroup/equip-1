@@ -80,7 +80,7 @@ Set `EQUIP1_AUTO_STORAGE_SWITCH=0` to disable automatic switching.
 
 `equip1-usb-storage` exports the block device currently mounted at `/data`. If `/data` is mounted from the USB SSD, USB-C transfer mode exports that USB partition. If `/data` is mounted from SD fallback, it exports the SD recordings partition.
 
-Do not enable transfer mode while recording; the script refuses if `dvgrab` is running.
+Do not enable transfer mode while recording; the script refuses if `dvgrab` is running. The daemon reports `state.mode = mounting` while switching `/data` or stopping/starting USB-C disk mode so the web and OLED UIs can show a wait indicator.
 
 ## Logs
 

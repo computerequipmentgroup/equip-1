@@ -6,6 +6,7 @@ const headerChipLabel = computed(() => {
   if (!connected.value) return 'Offline'
   if (mode.value === 'recording') return 'Recording'
   if (mode.value === 'usb_transfer') return 'USB mode'
+  if (mode.value === 'mounting') return 'Mounting'
   if (mode.value === 'booting') return 'Booting'
   if (mode.value === 'no_camera') return 'No cam'
   if (mode.value === 'storage_full') return 'Storage full'
@@ -16,6 +17,7 @@ const headerChipClass = computed(() => ({
   offline: !connected.value,
   recording: connected.value && mode.value === 'recording',
   usb: connected.value && mode.value === 'usb_transfer',
+  mounting: connected.value && mode.value === 'mounting',
   warning: connected.value && ['booting', 'no_camera', 'storage_full'].includes(mode.value),
   error: connected.value && mode.value === 'error',
   ready: connected.value && mode.value === 'idle'

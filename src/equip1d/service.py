@@ -57,6 +57,9 @@ def _coerce_rgb(color: Any) -> list[int] | None:
 
 
 LIGHTS_COUNT_DEFAULT = 3
+USB_STORAGE_ACTIVE_FILE = Path("/run/equip1-usb-storage.active")
+USB_LOG_EXPORT_INHIBIT_FILE = Path("/run/equip1-log-export.inhibit")
+USB_GADGET_DIR = Path("/sys/kernel/config/usb_gadget") / os.environ.get("EQUIP1_USB_GADGET_NAME", "equip1")
 _FILENAME_UNSAFE_RE = re.compile(r"[\\/:*?\"<>|\s]+")
 _TAG_RE = re.compile(r"\{([a-zA-Z_]+)\}")
 
@@ -176,6 +179,7 @@ class Equip1Daemon:
         self._monitor_task: asyncio.Task | None = None
         self._usb_storage_task: asyncio.Task | None = None
         self._storage_switch_lock = asyncio.Lock()
+        self._transient_mode: str | None = None
         self.auto_storage_switch = self.settings.get_bool(
             "recording", "auto_storage_switch", True, env="EQUIP1_AUTO_STORAGE_SWITCH"
         )
@@ -220,6 +224,7 @@ class Equip1Daemon:
         )
 
     async def start_monitor(self) -> None:
+        self._cleanup_stale_usb_storage_state()
         if self._monitor_task is None:
             self._monitor_task = asyncio.create_task(self._monitor_loop())
 
@@ -259,6 +264,8 @@ class Equip1Daemon:
             self._poll_recorder_unlocked()
             if self.recorder.state.active:
                 raise CommandError("Already recording")
+            if self._storage_operation_active():
+                raise CommandError("Storage is mounting")
             if self._usb_transfer_active():
                 raise CommandError("USB disk mode is active")
             probe = self.camera.probe()
@@ -403,12 +410,15 @@ class Equip1Daemon:
         await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
 
     async def start_usb_storage(self) -> dict[str, Any]:
+        if self._storage_operation_active():
+            return await self.publish_state()
         if self._usb_transfer_active():
             return await self.publish_state()
         if self._usb_storage_task and not self._usb_storage_task.done():
             return await self.publish_state()
+        state = await self._set_transient_mode("mounting")
         self._usb_storage_task = asyncio.create_task(self._run_usb_storage_start())
-        return await self.publish_state()
+        return state
 
     async def _run_usb_storage_start(self) -> None:
         try:
@@ -430,10 +440,11 @@ class Equip1Daemon:
             self.error = ErrorState(message="USB disk failed", detail=str(exc))
         self._storage_snapshot_cache = None
         self._captures_cache = None
-        state = await self.publish_state()
+        state = await self._finish_storage_operation()
         await self.publish_captures_for_state(state)
 
     async def stop_usb_storage(self) -> dict[str, Any]:
+        await self._set_transient_mode("mounting")
         result = await asyncio.to_thread(
             subprocess.run,
             ["/usr/sbin/equip1-usb-storage", "stop"],
@@ -442,14 +453,16 @@ class Equip1Daemon:
             text=True,
             timeout=60,
         )
+        self._storage_snapshot_cache = None
+        self._captures_cache = None
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "USB disk stop failed").strip()
             self.error = ErrorState(message="USB disk stop failed", detail=detail)
+            state = await self._finish_storage_operation()
+            await self.publish_captures_for_state(state)
             raise CommandError(detail)
         self.error = None
-        self._storage_snapshot_cache = None
-        self._captures_cache = None
-        state = await self.publish_state()
+        state = await self._finish_storage_operation()
         await self.publish_captures_for_state(state)
         return state
 
@@ -551,6 +564,7 @@ class Equip1Daemon:
     async def _switch_storage(self, target: str, publish_pre_state: bool = True) -> dict[str, Any]:
         async with self._storage_switch_lock:
             await self._prepare_storage_switch(publish_pre_state=publish_pre_state)
+            await self._set_transient_mode("mounting")
             result = await asyncio.to_thread(
                 subprocess.run,
                 ["/usr/sbin/equip1-storage-switch", target],
@@ -559,15 +573,16 @@ class Equip1Daemon:
                 text=True,
                 timeout=90,
             )
+            self._storage_snapshot_cache = None
+            self._captures_cache = None
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or f"Storage switch to {target} failed").strip()
                 self.error = ErrorState(message="Storage switch failed", detail=detail)
-                await self.publish_state()
+                state = await self._finish_storage_operation()
+                await self.publish_captures_for_state(state)
                 raise CommandError(detail)
             self.error = None
-            self._storage_snapshot_cache = None
-            self._captures_cache = None
-            state = await self.publish_state()
+            state = await self._finish_storage_operation()
             await self.publish_captures_for_state(state)
             return state
 
@@ -576,6 +591,8 @@ class Equip1Daemon:
             self._poll_recorder_unlocked()
             if self.recorder.state.active:
                 raise CommandError("Stop recording before switching storage")
+            if self._storage_operation_active():
+                raise CommandError("Storage is mounting")
             if self._usb_transfer_active() or self._usb_storage_starting():
                 raise CommandError("USB disk mode is active")
             # Stop the shared DV/preview subprocesses before the helper checks
@@ -589,6 +606,8 @@ class Equip1Daemon:
         await asyncio.to_thread(subprocess.run, ["sync"], check=False, timeout=10)
 
     async def list_captures(self) -> list[dict]:
+        if self._storage_operation_active() or self._usb_transfer_active():
+            return []
         return await self._list_captures_cached()
 
     async def _list_captures_cached(self, *, force: bool = False) -> list[dict]:
@@ -611,7 +630,7 @@ class Equip1Daemon:
 
     async def publish_captures_for_state(self, state: dict[str, Any]) -> list[dict]:
         self._last_captures_storage_key = self._captures_storage_key(state)
-        if state.get("mode") == "usb_transfer":
+        if state.get("mode") in {"mounting", "usb_transfer"}:
             captures: list[dict] = []
             self._captures_cache = (time.monotonic(), [])
         else:
@@ -629,7 +648,7 @@ class Equip1Daemon:
     def _captures_storage_key(state: dict[str, Any]) -> tuple[Any, ...]:
         storage = state.get("storage") or {}
         return (
-            state.get("mode") == "usb_transfer",
+            state.get("mode") in {"mounting", "usb_transfer"},
             storage.get("capture_dir"),
             storage.get("device"),
             storage.get("device_kind"),
@@ -656,8 +675,8 @@ class Equip1Daemon:
         # is ever active at a time.
         state = await self.snapshot()
         self._debug_log(f"{kind} stream requested mode={state['mode']} connected={state['camera']['connected']}", verbose=True)
-        if state["mode"] == "usb_transfer":
-            raise CommandError("Live streaming is not available in USB disk mode")
+        if state["mode"] in {"mounting", "usb_transfer"}:
+            raise CommandError("Live streaming is not available while storage is unavailable")
         if not state["camera"]["connected"]:
             raise CommandError("No DV camera detected")
         try:
@@ -764,7 +783,7 @@ class Equip1Daemon:
                 # respawn the source in that window or we deadlock the hand-off.
                 want_source = (
                     state["camera"]["connected"]
-                    and state["mode"] != "usb_transfer"
+                    and state["mode"] not in {"mounting", "usb_transfer"}
                     and not self._usb_storage_starting()
                 )
                 try:
@@ -794,7 +813,7 @@ class Equip1Daemon:
     async def _auto_switch_storage_if_needed(self, state: dict[str, Any]) -> bool:
         if not self.auto_storage_switch or self._storage_switch_lock.locked():
             return False
-        if self._usb_storage_starting() or state.get("mode") in {"recording", "usb_transfer"}:
+        if self._usb_storage_starting() or state.get("mode") in {"recording", "mounting", "usb_transfer"}:
             return False
 
         storage = state.get("storage") or {}
@@ -830,8 +849,51 @@ class Equip1Daemon:
     def _usb_block_present() -> bool:
         return any(Path("/sys/block").glob("sd*"))
 
+    def _storage_operation_active(self) -> bool:
+        return self._transient_mode == "mounting"
+
+    async def _set_transient_mode(self, mode: str) -> dict[str, Any]:
+        async with self._lock:
+            self._transient_mode = mode
+            self._storage_snapshot_cache = None
+            self._captures_cache = (time.monotonic(), [])
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        await self.events.publish({"type": "captures", "captures": []})
+        return state
+
+    async def _finish_storage_operation(self) -> dict[str, Any]:
+        async with self._lock:
+            self._transient_mode = None
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    def _usb_gadget_bound(self) -> bool:
+        try:
+            return bool((USB_GADGET_DIR / "UDC").read_text(encoding="utf-8").strip())
+        except OSError:
+            return False
+
+    def _cleanup_stale_usb_storage_state(self) -> None:
+        if not USB_STORAGE_ACTIVE_FILE.exists() or self._usb_gadget_bound():
+            return
+        self._debug_log("removing stale USB disk active marker")
+        for path in (USB_STORAGE_ACTIVE_FILE, USB_LOG_EXPORT_INHIBIT_FILE):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                self._debug_log(f"could not remove stale {path}: {exc}")
+
     def _usb_transfer_active(self) -> bool:
-        return Path("/run/equip1-usb-storage.active").exists()
+        if not USB_STORAGE_ACTIVE_FILE.exists():
+            return False
+        if self._storage_operation_active() or self._usb_gadget_bound():
+            return True
+        self._cleanup_stale_usb_storage_state()
+        return False
 
     def _usb_storage_starting(self) -> bool:
         # True from the moment start_usb_storage schedules its task until that
@@ -853,11 +915,24 @@ class Equip1Daemon:
     def _snapshot_unlocked(self) -> DaemonState:
         started = time.perf_counter()
         self._poll_recorder_unlocked()
-        usb_transfer_active = self._usb_transfer_active()
+        transient_mode = self._transient_mode
+        usb_transfer_active = False if transient_mode == "mounting" else self._usb_transfer_active()
         probe_started = time.perf_counter()
         probe = self.camera.probe()
         perf.log_elapsed("camera.probe", probe_started)
-        if usb_transfer_active:
+        if transient_mode == "mounting":
+            storage = StorageState(
+                capture_dir=str(self.capture_dir),
+                total_bytes=0,
+                used_bytes=0,
+                free_bytes=0,
+                recording_minutes_available=0,
+                device="Mounting",
+                device_kind="mounting",
+                mount_point=None,
+                filesystem_type=None,
+            )
+        elif usb_transfer_active:
             storage = StorageState(
                 capture_dir=str(self.capture_dir),
                 total_bytes=0,
@@ -883,7 +958,9 @@ class Equip1Daemon:
                 filesystem_type=snapshot.filesystem_type,
             )
         recording_active = self.recorder.state.active
-        if usb_transfer_active:
+        if transient_mode == "mounting":
+            mode = "mounting"
+        elif usb_transfer_active:
             mode = "usb_transfer"
         elif self.error:
             mode = "error"

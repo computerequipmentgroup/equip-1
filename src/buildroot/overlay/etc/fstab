@@ -4,4 +4,5 @@
 proc             /proc      proc    defaults               0      0
 sysfs            /sys       sysfs   defaults               0      0
 devtmpfs         /dev       devtmpfs defaults               0      0
+tmpfs            /run       tmpfs   mode=0755,nosuid,nodev,size=8M 0  0
 tmpfs            /tmp       tmpfs   size=16M               0      0

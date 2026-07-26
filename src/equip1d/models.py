@@ -14,6 +14,7 @@ RecorderMode = Literal[
     "stopping",
     "converting",
     "storage_full",
+    "mounting",
     "usb_transfer",
     "error",
 ]

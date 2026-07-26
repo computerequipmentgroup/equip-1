@@ -61,6 +61,8 @@ def _storage_device_label(storage: dict[str, Any]) -> str:
         return "NVME"
     if kind == "transfer":
         return "USB XFER"
+    if kind == "mounting":
+        return "MOUNTING"
     if kind == "rootfs":
         return "ROOTFS"
 
@@ -256,6 +258,9 @@ class RecordingScreen(Screen):
         elif mode == "error":
             _center(draw, width, CONTENT_Y, "ERROR", font_big)
             _center(draw, width, CONTENT_Y + 30, "press clear", font_medium)
+        elif mode == "mounting":
+            _center(draw, width, CONTENT_Y, "MOUNT", font_big)
+            _center(draw, width, CONTENT_Y + 30, "please wait", font_medium)
         elif mode == "usb_transfer":
             _center(draw, width, CONTENT_Y, "USB", font_big)
             _center(draw, width, CONTENT_Y + 30, "transfer mode", font_medium)
@@ -268,18 +273,24 @@ class StorageScreen(Screen):
 
     def on_select(self, app) -> None:
         state = app.state or {}
-        if state.get("mode") in {"recording", "usb_transfer", "offline"}:
+        if state.get("mode") in {"recording", "mounting", "usb_transfer", "offline"}:
             return
         app.command("storage-switch-usb")
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
         state = context.get("state") or {}
+        mode = state.get("mode", "offline")
         storage = state.get("storage") or {}
         font = _font(context, "font_medium")
         total = storage.get("total_bytes")
         used = storage.get("used_bytes")
         free = storage.get("free_bytes")
         draw.text((0, HEADER_Y), "STORAGE", font=font, fill=255)
+        if mode == "mounting":
+            draw.text((0, CONTENT_Y), "Mounting...", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "Please wait", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "Device: MOUNTING", font=font, fill=255)
+            return
         draw.text((0, CONTENT_Y), f"Free: {bytes_gb(free)}", font=font, fill=255)
         draw.text((0, CONTENT_Y + LINE_HEIGHT), f"Used: {percent(used, total)}%", font=font, fill=255)
         draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), f"Device: {_storage_device_label(storage)}", font=font, fill=255)
@@ -501,7 +512,7 @@ class UsbTransferScreen(Screen):
         state = app.state or {}
         if state.get("mode") == "usb_transfer":
             app.command("usb-storage-stop")
-        elif state.get("mode") != "recording":
+        elif state.get("mode") not in {"recording", "mounting"}:
             app.command("usb-storage-start")
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
@@ -513,6 +524,10 @@ class UsbTransferScreen(Screen):
             draw.text((0, CONTENT_Y), "Disk active", font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT), "Eject on PC", font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "Press stop", font=font, fill=255)
+        elif mode == "mounting":
+            draw.text((0, CONTENT_Y), "Mounting...", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "Please wait", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "Storage busy", font=font, fill=255)
         elif mode == "recording":
             draw.text((0, CONTENT_Y), "Stop recording", font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT), "before USB", font=font, fill=255)

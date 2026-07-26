@@ -323,6 +323,11 @@ button:disabled {
   background: var(--violet);
   box-shadow: 0 0 14px var(--violet);
 }
+.header-chip.mounting .chip-dot {
+  animation: pulse 1s infinite;
+  background: var(--amber);
+  box-shadow: 0 0 14px rgba(255, 191, 71, 0.75);
+}
 .header-chip.warning .chip-dot {
   background: var(--amber);
   box-shadow: 0 0 12px rgba(255, 191, 71, 0.65);
@@ -469,6 +474,14 @@ button:disabled {
   50% {
     opacity: 0.35;
     transform: scale(0.82);
+  }
+}
+@keyframes pending-bar {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(240%);
   }
 }
 
@@ -725,6 +738,28 @@ button:disabled {
   background: #fff;
   display: block;
   height: 100%;
+}
+.storage-bar.pending span {
+  animation: pending-bar 1.35s linear infinite;
+  background: var(--amber);
+  box-shadow: 0 0 18px rgba(255, 191, 71, 0.7);
+}
+.mounting-indicator {
+  align-items: center;
+  color: var(--amber);
+  display: flex;
+  font-size: 0.88rem;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+.spinner-dot {
+  animation: pulse 1s infinite;
+  background: var(--amber);
+  border-radius: var(--radius);
+  box-shadow: 0 0 14px rgba(255, 191, 71, 0.75);
+  display: inline-block;
+  height: 0.55rem;
+  width: 0.55rem;
 }
 .storage-legend {
   color: var(--muted);

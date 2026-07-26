@@ -203,6 +203,14 @@ const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureE
     current.mode = 'usb_transfer'
   } else if (name === 'usb-storage-stop') {
     current.mode = 'idle'
+  } else if (name === 'storage-switch-usb') {
+    current.mode = 'idle'
+    current.storage.device = '/dev/sda1'
+    current.storage.device_kind = 'usb'
+  } else if (name === 'storage-switch-sd') {
+    current.mode = 'idle'
+    current.storage.device = '/dev/mmcblk0p2'
+    current.storage.device_kind = 'sd'
   } else if (name === 'clear-error') {
     current.error = null
     current.mode = 'idle'

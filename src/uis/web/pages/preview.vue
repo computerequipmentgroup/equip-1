@@ -23,6 +23,7 @@ const previewStatus = computed(() => {
   if (previewing.value) return 'CONNECTING'
   if (mode.value === 'recording') return 'RECORDING'
   if (mode.value === 'usb_transfer') return 'USB MODE'
+  if (mode.value === 'mounting') return 'MOUNTING'
   if (mode.value === 'no_camera') return 'NO CAMERA'
   if (!connected.value) return 'OFFLINE'
   return 'WAITING'
@@ -35,6 +36,7 @@ const placeholderStatus = computed(() => {
   if (mode.value === 'recording') return 'Buffering capture stream…'
   if (mode.value === 'idle') return 'Acquiring DV signal…'
   if (mode.value === 'usb_transfer') return 'USB disk mode is active'
+  if (mode.value === 'mounting') return 'Mounting storage…'
   if (mode.value === 'no_camera') return 'No DV camera detected'
   return 'Camera offline'
 })

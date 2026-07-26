@@ -27,10 +27,11 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `no_camera` | No usable DV camera detected |
 | `recording` | A capture file is currently being written |
 | `storage_full` | Less than one minute of estimated DV capacity remains |
+| `mounting` | `/data` is being mounted, remounted, or switched |
 | `usb_transfer` | `/data` is exported over USB-C mass-storage mode |
 | `error` | A command, monitor, recorder, storage, or USB operation failed |
 
-`models.py` also reserves `booting`, `stopping`, and `converting` for UI/state compatibility, but the current daemon mostly emits the modes above.
+`models.py` also reserves `booting`, `stopping`, and `converting` for UI/state compatibility, but the current daemon mostly emits the modes above. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
 
 ## REST endpoints
 

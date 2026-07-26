@@ -53,7 +53,7 @@ Stop:
 curl -X POST http://127.0.0.1:8000/api/commands/usb-storage-stop
 ```
 
-Before exporting, the daemon stops recording if needed, stops preview, stops the shared DV source, runs `sync`, and calls `/usr/sbin/equip1-usb-storage start`. While active, `state.mode` is `usb_transfer`, captures are hidden, and live streaming is disabled.
+Before exporting, the daemon stops recording if needed, stops preview, stops the shared DV source, runs `sync`, and calls `/usr/sbin/equip1-usb-storage start`. During storage switches and USB-C start/stop remounts, `state.mode` is `mounting` so UIs can show a wait indicator. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
 
 ## Capture entries
 

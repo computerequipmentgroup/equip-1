@@ -40,6 +40,7 @@ STATUS_LEVEL = 255
 STATUS_READY = Rgb(0, STATUS_LEVEL, 0)
 STATUS_RECORDING = Rgb(STATUS_LEVEL, 0, 0)
 STATUS_NO_CAMERA = Rgb(0, 0, STATUS_LEVEL)
+STATUS_MOUNTING = Rgb(STATUS_LEVEL, 191, 0)
 
 # The user-configurable "standard" color arrives at full 0-255 brightness. The
 # OLED app applies only the runtime brightness multiplier so 100% preserves the

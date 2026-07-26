@@ -23,6 +23,7 @@ const captureNamingVariables = ['date', 'time', 'datetime', 'year', 'month', 'da
 const readyCaptures = computed(() => captures.value.filter((capture) => capture.thumbnail_url))
 
 const mode = computed(() => state.value?.mode || 'offline')
+const isMounting = computed(() => mode.value === 'mounting')
 const recording = computed(() => state.value?.recording || {})
 const storage = computed(() => state.value?.storage || {})
 const captureNaming = computed(() => state.value?.capture_naming || defaultCaptureNaming)
@@ -74,6 +75,7 @@ const storageDeviceLabel = computed(() => {
   if (kind === 'sd') return 'SD card'
   if (kind === 'nvme') return 'NVMe'
   if (kind === 'transfer') return 'USB transfer'
+  if (kind === 'mounting') return 'Mounting'
   if (kind === 'rootfs') return 'Rootfs'
 
   const device = String(storage.value.device || '')
@@ -114,6 +116,7 @@ const previewStatus = computed(() => {
   if (previewing.value) return 'Live'
   if (mode.value === 'recording') return 'Recording'
   if (mode.value === 'usb_transfer') return 'USB'
+  if (mode.value === 'mounting') return 'Mounting'
   if (mode.value === 'no_camera') return 'No cam'
   return 'Off'
 })
@@ -126,6 +129,7 @@ const placeholderStatus = computed(() => {
   if (mode.value === 'recording') return 'buffering capture stream…'
   if (mode.value === 'idle') return 'acquiring DV signal…'
   if (mode.value === 'usb_transfer') return 'usb disk mode'
+  if (mode.value === 'mounting') return 'mounting storage…'
   if (mode.value === 'no_camera') return 'no DV camera detected'
   return 'camera offline'
 })
@@ -377,12 +381,12 @@ onMounted(async () => {
         <!-- <span class="spec-chip">microSD</span> -->
       </div>
       <template v-if="cardOpen('storage')">
-        <div class="storage-bar" aria-label="Storage usage">
-          <span :style="{ width: `${storagePercent}%` }" />
+        <div class="storage-bar" :class="{ pending: isMounting }" aria-label="Storage usage">
+          <span :style="{ width: isMounting ? '45%' : `${storagePercent}%` }" />
         </div>
         <div class="storage-legend">
-          <span>{{ usedGb }} GB used</span>
-          <span>{{ freeGb }} GB free</span>
+          <span>{{ isMounting ? 'Please wait' : `${usedGb} GB used` }}</span>
+          <span>{{ isMounting ? 'Preparing /data' : `${freeGb} GB free` }}</span>
         </div>
         <div class="storage-summary hero-subtitle">
           <span>{{ storage.recording_minutes_available || 0 }} minutes available</span>
@@ -591,7 +595,7 @@ onMounted(async () => {
         <span class="card-title">Transfer</span>
       </div>
       <template v-if="cardOpen('transfer')">
-        <h2>{{ mode === 'usb_transfer' ? 'Exposed' : 'Inactive' }}</h2>
+        <h2>{{ isMounting ? 'Mounting…' : mode === 'usb_transfer' ? 'Exposed' : 'Inactive' }}</h2>
         <p class="hero-subtitle" v-if="mode === 'usb_transfer'">
           Eject EQUIP1 on your computer, then stop USB disk mode.
         </p>
@@ -604,7 +608,7 @@ onMounted(async () => {
           <button
             v-if="mode !== 'usb_transfer'"
             class="gloss-pill"
-            :disabled="mode === 'recording'"
+            :disabled="mode === 'recording' || isMounting"
             @click="runCommand('usb-storage-start')"
           >
             <span>Mount</span>
