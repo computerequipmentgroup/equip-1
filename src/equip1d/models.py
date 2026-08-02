@@ -115,6 +115,7 @@ class ConversionState:
     auto_mp4_enabled: bool = AUTO_CONVERT_MP4_DEFAULT
     mp4_quality: str = MP4_QUALITY_DEFAULT
     active: bool = False
+    progress_percent: int = 0
     source: str | None = None
     target: str | None = None
     last_error: str | None = None

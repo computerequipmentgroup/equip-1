@@ -208,7 +208,8 @@ class RecordingScreen(Screen):
         conversion = state.get("conversion") or {}
         minutes_available = int(storage.get("recording_minutes_available", 0) or 0)
         exporting = mode == "converting" or bool(conversion.get("active"))
-        minutes_label = "EXPORT" if exporting else f"{minutes_available:03d}m"
+        progress_percent = max(0, min(100, int(conversion.get("progress_percent", 0) or 0)))
+        minutes_label = f"{progress_percent:02d}% MP4" if exporting else f"{minutes_available:03d}m"
         font_medium = _font(context, "font_medium")
         font_big = _font(context, "font_big")
 
@@ -216,16 +217,7 @@ class RecordingScreen(Screen):
             if not exporting:
                 _right(draw, width, HEADER_Y, minutes_label, font_medium)
                 return
-            bbox = draw.textbbox((0, 0), minutes_label, font=font_medium)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            text_x = width - text_width
-            draw.text((text_x, HEADER_Y), minutes_label, font=font_medium, fill=255)
-            dot_size = max(6, text_height - 4)
-            dot_x = max(0, text_x - dot_size - 4)
-            dot_y = HEADER_Y + (text_height - dot_size) // 2
-            if int(time.time() * 2) % 2:
-                draw.ellipse((dot_x, dot_y, dot_x + dot_size - 1, dot_y + dot_size - 1), fill=255)
+            _right(draw, width, HEADER_Y, minutes_label, font_medium)
 
         if mode == "recording":
             rec_x = 0

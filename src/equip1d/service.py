@@ -227,6 +227,7 @@ class Equip1Daemon:
             "hdmi", "enabled", True, env="EQUIP1_HDMI_PREVIEW_ENABLED"
         )
         self._conversion_active = False
+        self._conversion_progress_percent = 0
         self._conversion_source: str | None = None
         self._conversion_target: str | None = None
         self._conversion_last_error: str | None = None
@@ -829,6 +830,9 @@ class Equip1Daemon:
             await self._generate_thumbnails(prefix)
             await self._maybe_convert_recording_to_mp4(prefix)
 
+    def _set_conversion_progress(self, percent: int) -> None:
+        self._conversion_progress_percent = max(0, min(100, int(percent)))
+
     async def _maybe_convert_recording_to_mp4(self, filename: str) -> None:
         if not self.auto_convert_mp4:
             return
@@ -839,6 +843,7 @@ class Equip1Daemon:
         target_path = source_path.with_suffix(".mp4")
         async with self._lock:
             self._conversion_active = True
+            self._conversion_progress_percent = 0
             self._conversion_source = source_path.name
             self._conversion_target = target_path.name
             self._conversion_last_error = None
@@ -850,8 +855,10 @@ class Equip1Daemon:
                 source_path,
                 self.ffmpeg_bin,
                 self.mp4_quality,
+                self._set_conversion_progress,
             )
             async with self._lock:
+                self._conversion_progress_percent = 100
                 self._conversion_target = converted.name if converted is not None else target_path.name
                 self._conversion_last_error = None
             self._debug_log(f"mp4 conversion finished source={source_path.name} target={target_path.name}")
@@ -1146,6 +1153,7 @@ class Equip1Daemon:
                 auto_mp4_enabled=self.auto_convert_mp4,
                 mp4_quality=self.mp4_quality,
                 active=self._conversion_active,
+                progress_percent=self._conversion_progress_percent,
                 source=self._conversion_source,
                 target=self._conversion_target,
                 last_error=self._conversion_last_error,

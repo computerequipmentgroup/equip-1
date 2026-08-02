@@ -43,7 +43,7 @@ Default:
 [18]
 ```
 
-While exporting, the OLED record screen replaces remaining minutes with `EXPORT` and shows a blinking dot indicator.
+While exporting, the OLED record screen replaces remaining minutes with `XX% MP4`, using the daemon's conversion progress estimate.
 
 ## Presets
 
@@ -128,6 +128,7 @@ Daemon state includes:
     "auto_mp4_enabled": true,
     "mp4_quality": "high",
     "active": false,
+    "progress_percent": 0,
     "source": null,
     "target": null,
     "last_error": null
@@ -135,7 +136,7 @@ Daemon state includes:
 }
 ```
 
-During export, `conversion.active` is `true` and `state.mode` becomes `converting` when the recorder is idle.
+During export, `conversion.active` is `true`, `conversion.progress_percent` reports `0` through `100`, and `state.mode` becomes `converting` when the recorder is idle.
 
 ## Notes and trade-offs
 

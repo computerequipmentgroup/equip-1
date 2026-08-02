@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from stat import S_ISREG
+from typing import Callable
 
 
 @dataclass(frozen=True)
@@ -253,7 +254,13 @@ class StorageManager:
             tmp_path.unlink(missing_ok=True)
         return None
 
-    def convert_capture_to_mp4(self, capture_path: Path, ffmpeg_bin: str = "ffmpeg", quality: str = "high") -> Path | None:
+    def convert_capture_to_mp4(
+        self,
+        capture_path: Path,
+        ffmpeg_bin: str = "ffmpeg",
+        quality: str = "high",
+        progress_callback: Callable[[int], None] | None = None,
+    ) -> Path | None:
         if not capture_path.is_file() or capture_path.suffix.lower() not in CAPTURE_EXTENSIONS:
             return None
         if capture_path.suffix.lower() == ".mp4":
@@ -261,6 +268,8 @@ class StorageManager:
 
         target_path = capture_path.with_suffix(".mp4")
         if target_path.exists() and target_path.stat().st_size > 0:
+            if progress_callback is not None:
+                progress_callback(100)
             return target_path
 
         tmp_path = target_path.with_name(f"{target_path.stem}.tmp{target_path.suffix}")
@@ -299,6 +308,9 @@ class StorageManager:
                 *preset["audio"],
                 "-movflags",
                 "+faststart",
+                "-progress",
+                "pipe:1",
+                "-nostats",
                 str(tmp_path),
             ],
             [
@@ -324,23 +336,80 @@ class StorageManager:
                 *preset["audio"],
                 "-movflags",
                 "+faststart",
+                "-progress",
+                "pipe:1",
+                "-nostats",
                 str(tmp_path),
             ],
         ]
 
+        duration_seconds = self._estimate_capture_duration_seconds(capture_path)
         last_error = "ffmpeg conversion failed"
+        if progress_callback is not None:
+            progress_callback(0)
         for command in command_variants:
             try:
-                result = subprocess.run(command, check=False, capture_output=True, text=True)
+                return_code, output = self._run_ffmpeg_progress(command, duration_seconds, progress_callback)
             except OSError as exc:
                 tmp_path.unlink(missing_ok=True)
                 raise RuntimeError(str(exc)) from exc
-            if result.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0:
+            if return_code == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0:
+                if progress_callback is not None:
+                    progress_callback(100)
                 tmp_path.replace(target_path)
                 return target_path
-            last_error = (result.stderr or result.stdout or last_error).strip()
+            last_error = output.strip() or last_error
             tmp_path.unlink(missing_ok=True)
         raise RuntimeError(last_error)
+
+    @staticmethod
+    def _estimate_capture_duration_seconds(capture_path: Path) -> float:
+        try:
+            size_bytes = capture_path.stat().st_size
+        except OSError:
+            return 0.0
+        return max(1.0, size_bytes / (DV_BYTES_PER_MINUTE / 60.0))
+
+    @staticmethod
+    def _run_ffmpeg_progress(
+        command: list[str],
+        duration_seconds: float,
+        progress_callback: Callable[[int], None] | None,
+    ) -> tuple[int, str]:
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        last_percent = -1
+        stdout_lines: list[str] = []
+        if proc.stdout is not None:
+            for raw_line in proc.stdout:
+                line = raw_line.strip()
+                stdout_lines.append(line)
+                seconds = StorageManager._progress_seconds(line)
+                if seconds is None or duration_seconds <= 0:
+                    continue
+                percent = max(0, min(99, int((seconds / duration_seconds) * 100)))
+                if progress_callback is not None and percent != last_percent:
+                    last_percent = percent
+                    progress_callback(percent)
+        stderr = proc.stderr.read() if proc.stderr is not None else ""
+        return proc.wait(), "\n".join(part for part in [stderr, "\n".join(stdout_lines)] if part)
+
+    @staticmethod
+    def _progress_seconds(line: str) -> float | None:
+        key, sep, value = line.partition("=")
+        if not sep:
+            return None
+        if key in {"out_time_us", "out_time_ms"}:
+            try:
+                return int(value) / 1_000_000.0
+            except ValueError:
+                return None
+        if key != "out_time":
+            return None
+        try:
+            hours, minutes, seconds = value.split(":")
+            return (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
+        except (ValueError, TypeError):
+            return None
 
     def _thumbnail_path_for_capture(self, capture_path: Path) -> Path:
         return capture_path.with_suffix(THUMBNAIL_EXTENSION)
