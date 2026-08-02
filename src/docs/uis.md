@@ -37,7 +37,6 @@ Current screen order in `OledApp`:
 2. `NetworkScreen` — AP/client/offline network details.
 3. `UsbTransferScreen` — USB-C mass-storage mode controls.
 4. `StorageScreen` — device kind, capacity, manual USB/SD switching.
-5. `GameScreen` — small built-in interaction screen.
 
 `BootScreen` is shown for the boot animation before normal navigation starts.
 

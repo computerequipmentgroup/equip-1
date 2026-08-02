@@ -4,10 +4,11 @@ This directory is the source-code documentation hub for Equip-1 / Firehat.
 
 ## Start here
 
-- [System architecture](architecture.md) — how the daemon, shared DV source, UIs, storage, and image overlay fit together.
+- [System architecture](architecture.md) — how the daemon, shared DV/HDV source, UIs, storage, and image overlay fit together.
 - [Daemon and HTTP API](daemon-api.md) — `src/equip1d/`, state model, commands, streaming endpoints, and WebSocket events.
-- [DV stream, recording, and preview](dv-stream-recording-preview.md) — the single shared FireWire capture path used by recording, browser preview, and HDMI/VLC output.
+- [DV/HDV stream, recording, and preview](dv-stream-recording-preview.md) — the single shared FireWire capture path used by recording, browser preview, and HDMI/VLC output.
 - [Storage, captures, and USB modes](storage-captures-usb.md) — `/data/captures`, removable storage switching, USB-C mass-storage mode, and capture metadata.
+- [MP4 export options](mp4-export.md) — post-recording sidecar export flow, OLED labels, quality presets, and settings/API values.
 - [User interfaces](uis.md) — OLED/buttons UI, browser dashboard, local designer, and static web build.
 - [Runtime settings](runtime-settings.md) — `/etc/equip1/equip-1.ini` sections and important environment overrides.
 - [Buildroot image](buildroot-image.md) — image build flow, rootfs overlay, init ordering, and package fragments.

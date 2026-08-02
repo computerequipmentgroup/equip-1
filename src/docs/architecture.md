@@ -1,13 +1,13 @@
 # System architecture
 
-Equip-1 is a small appliance around one central process: the `equip1d` daemon. The daemon owns camera discovery, the shared DV byte stream, recording state, storage state, preview streaming, and API events. The OLED UI and web dashboard are clients of that API.
+Equip-1 is a small appliance around one central process: the `equip1d` daemon. The daemon owns camera discovery, the shared DV/HDV byte stream, recording state, storage state, preview streaming, and API events. The OLED UI and web dashboard are clients of that API.
 
 ```text
-DV camera / FireWire
+DV/HDV camera / FireWire
         │
         ▼
   dvgrab shared source       /data/captures
-  src/equip1d/dvsource.py ───────┬── recording sink (.dv files)
+  src/equip1d/dvsource.py ───────┬── recording sink (.dv/.m2t files)
         │                        │
         ├── ffmpeg MJPEG ────────┼── GET /api/preview.mjpg
         └── ffmpeg MKV copy ─────┴── GET /api/stream.mkv
@@ -22,7 +22,7 @@ FastAPI daemon (src/equip1d/api.py, service.py)
 
 ## Core principles
 
-- **One FireWire owner:** `DvSource` starts one long-lived `dvgrab -format raw -` process when a camera is present. Recording and preview consume the same byte stream instead of fighting for the camera.
+- **One FireWire owner:** `DvSource` starts one long-lived `dvgrab -format raw -` process when a camera is present. dvgrab/AV-C and first-byte stream detection classify the stream as raw DV or native HDV/MPEG-TS, and recording/preview consume that same byte stream instead of fighting for the camera.
 - **Recording is priority:** preview subscribers use bounded drop-oldest queues. If a browser or HDMI stream stalls, preview glitches before recording is allowed to back up.
 - **State is centralized:** `Equip1Daemon.snapshot()` returns a single `DaemonState` object. UIs should render from this state rather than duplicating hardware probes.
 - **Device settings are INI-backed:** `/etc/equip1/equip-1.ini` is the persistent user-facing settings file. Environment variables still override it for development and debugging.
@@ -34,7 +34,7 @@ FastAPI daemon (src/equip1d/api.py, service.py)
 | --- | --- |
 | `src/equip1d/service.py` | High-level daemon orchestration: modes, commands, monitor loop, event publishing |
 | `src/equip1d/api.py` | FastAPI routes, WebSocket event stream, static web mount |
-| `src/equip1d/dvsource.py` | Long-lived `dvgrab` process, threaded pipe drain, recording sink, preview fan-out |
+| `src/equip1d/dvsource.py` | Long-lived `dvgrab` process, DV/HDV stream detection, threaded pipe drain, recording sink, preview fan-out |
 | `src/equip1d/preview.py` | `ffmpeg` MJPEG preview and Matroska live stream wrappers |
 | `src/equip1d/storage.py` | Capture listing, safe path lookup, storage capacity, thumbnails |
 | `src/uis/oled/` | On-device OLED/buttons/LED UI and browser-based OLED designer |

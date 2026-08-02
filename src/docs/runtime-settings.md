@@ -27,6 +27,10 @@ The default file is stored in the Buildroot overlay at `src/buildroot/overlay/et
 | `auto_storage_switch` | `EQUIP1_AUTO_STORAGE_SWITCH` | Enable idle USB/SD automatic switching |
 | `auto_storage_cooldown_seconds` | `EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS` | Minimum spacing between auto-switch attempts |
 | `normalize_dif_headers` | `EQUIP1_DV_NORMALIZE_DIF` | Enable DV DIF header normalization |
+| `auto_convert_mp4` | `EQUIP1_AUTO_CONVERT_MP4` | Convert completed `.dv` recordings to sidecar `.mp4` files |
+| `mp4_quality` | `EQUIP1_MP4_QUALITY` | MP4 preset: `small`, `balanced`, `high`, or `max`; default `high` |
+
+MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (`balanced`), `18` (`high`), and `14` (`max`). Lower CRF means higher quality and larger files. See [MP4 export options](mp4-export.md) for the full export flow and preset table.
 
 ### `[network]`
 
@@ -74,7 +78,9 @@ The default file is stored in the Buildroot overlay at `src/buildroot/overlay/et
 | `default_colors` | Semicolon-separated `r,g,b` triples for each LED |
 | `brightness` | Runtime brightness multiplier, `0.0` to `1.0` |
 
-The web UI changes these values over `WS /api/events`; the daemon writes them atomically.
+The web UI changes these values over `WS /api/events`; the daemon writes them atomically. The OLED settings screen can also toggle LEDs through the daemon REST API.
+
+The OLED settings screen exposes auto-MP4 conversion, MP4 quality, auto storage switch, HDMI preview, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original `.dv` capture and writes a same-stem `.mp4` file after recording finalization. Conversion runs in the background and publishes capture-list/state updates when it starts and finishes.
 
 ### `[hdmi]`
 
@@ -98,7 +104,7 @@ Debug logging also enables more verbose performance/debug output in several path
 
 Use these sparingly:
 
-- `EQUIP1_DV_BUFFERS`, `EQUIP1_DV_PIPE_BYTES`, `EQUIP1_DV_RECORD_QUEUE`, `EQUIP1_DV_PREVIEW_QUEUE` for shared DV source buffering.
+- `EQUIP1_DV_BUFFERS`, `EQUIP1_DV_PIPE_BYTES`, `EQUIP1_DV_RECORD_QUEUE`, `EQUIP1_DV_PREVIEW_QUEUE` for shared DV/HDV source buffering.
 - `EQUIP1_DVGRAB_BIN`, `EQUIP1_DVCONT_BIN`, `EQUIP1_FFMPEG_BIN` to run alternate binaries.
 - `EQUIP1_WEB_DIR` to serve a different static dashboard directory.
 - `EQUIP1_OLED_MOCK=1` to run OLED code without hardware.

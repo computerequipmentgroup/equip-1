@@ -35,7 +35,7 @@ curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-usb
 curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-sd
 ```
 
-The daemon stops preview and the shared DV source before switching so helper scripts can unmount `/data` safely. It refuses to switch while recording.
+The daemon stops preview and the shared DV/HDV source before switching so helper scripts can unmount `/data` safely. It refuses to switch while recording.
 
 ## USB-C mass-storage mode
 
@@ -53,7 +53,7 @@ Stop:
 curl -X POST http://127.0.0.1:8000/api/commands/usb-storage-stop
 ```
 
-Before exporting, the daemon stops recording if needed, stops preview, stops the shared DV source, runs `sync`, and calls `/usr/sbin/equip1-usb-storage start`. During storage switches and USB-C start/stop remounts, `state.mode` is `mounting` so UIs can show a wait indicator. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
+Before exporting, the daemon stops recording if needed, stops preview, stops the shared DV/HDV source, runs `sync`, and calls `/usr/sbin/equip1-usb-storage start`. During storage switches and USB-C start/stop remounts, `state.mode` is `mounting` so UIs can show a wait indicator. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
 
 ## Capture entries
 
@@ -70,18 +70,18 @@ Before exporting, the daemon stops recording if needed, stops preview, stops the
 }
 ```
 
-Only regular files with capture extensions are listed: `.dv`, `.avi`, `.mov`, `.mp4`, `.mkv`. Downloads and thumbnails are resolved by basename only to avoid path traversal.
+Only regular files with capture extensions are listed: `.dv`, `.dif`, `.m2t`, `.mts`, `.ts`, `.avi`, `.mov`, `.mp4`, `.mkv`. Downloads and thumbnails are resolved by basename only to avoid path traversal.
 
 ## Thumbnails
 
-After recording stops, the daemon immediately publishes the freshly closed capture list. Finalization then continues in the background: the daemon stamps the capture file mtime from embedded DV camera datecode when present, checks the common DV pack layouts (VAUX video date/time `0x62`/`0x63`, AAUX audio date/time `0x52`/`0x53`, and a subcode fallback), runs `sync`, and republishes captures. It then generates `capture_...jpg` beside the capture file using `ffmpeg`, trying a few seek points and writing through a temporary file before replacing the final JPG. The web UI only surfaces capture cards whose thumbnails are ready, so a fresh recording appears complete.
+After recording stops, the daemon immediately publishes the freshly closed capture list. Finalization then continues in the background: for raw DV captures, the daemon stamps the capture file mtime from embedded DV camera datecode when present, checking the common DV pack layouts (VAUX video date/time `0x62`/`0x63`, AAUX audio date/time `0x52`/`0x53`, and a subcode fallback). It then runs `sync`, republishes captures, generates `capture_...jpg` beside the capture file using `ffmpeg`, trying a few seek points and writing through a temporary file before replacing the final JPG, and republishes captures again. The web UI only surfaces capture cards whose thumbnails are ready, so a fresh recording appears complete.
 
 ## Capacity estimate
 
 `storage.recording_minutes_available` uses a fixed estimate:
 
 ```text
-216 MiB per minute of DV
+216 MiB per minute of DV/HDV
 ```
 
-This is conservative for DV25 and is used to block recording when less than one minute remains.
+This is conservative for DV25 and native HDV and is used to block recording when less than one minute remains.

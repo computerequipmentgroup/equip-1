@@ -24,14 +24,15 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | Mode | Meaning |
 | --- | --- |
 | `idle` | Camera detected, storage has room, ready to record |
-| `no_camera` | No usable DV camera detected |
+| `no_camera` | No usable DV/HDV camera detected |
 | `recording` | A capture file is currently being written |
-| `storage_full` | Less than one minute of estimated DV capacity remains |
+| `storage_full` | Less than one minute of estimated capture capacity remains |
 | `mounting` | `/data` is being mounted, remounted, or switched |
 | `usb_transfer` | `/data` is exported over USB-C mass-storage mode |
+| `converting` | A completed `.dv` capture is being converted to MP4 |
 | `error` | A command, monitor, recorder, storage, or USB operation failed |
 
-`models.py` also reserves `booting`, `stopping`, and `converting` for UI/state compatibility, but the current daemon mostly emits the modes above. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
+`models.py` also reserves `booting` and `stopping` for UI/state compatibility. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
 
 ## REST endpoints
 
@@ -44,8 +45,12 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `GET` | `/api/captures/{name}/download` | Download a capture file by safe basename |
 | `GET` | `/api/captures/{name}/thumbnail` | Download generated JPG thumbnail |
 | `GET` | `/api/preview.mjpg` | Browser MJPEG preview stream |
-| `GET` | `/api/stream.mkv` | Live DV copied into a Matroska stream for VLC/HDMI |
+| `GET` | `/api/stream.mkv` | Live DV or HDV copied into a Matroska stream for VLC/HDMI |
 | `POST` | `/api/time` | Set device clock from browser time only if clock is unset |
+| `POST` | `/api/settings/conversion` | Set automatic `.dv` to `.mp4` conversion and MP4 quality |
+| `POST` | `/api/settings/auto-storage-switch` | Enable/disable idle USB/SD automatic switching |
+| `POST` | `/api/settings/hdmi-preview` | Persist HDMI preview enabled/disabled for the preview watcher |
+| `POST` | `/api/settings/lights` | Set LED enabled/disabled state |
 | `POST` | `/api/commands/start-recording` | Start recording to `/data/captures` |
 | `POST` | `/api/commands/stop-recording` | Stop recording and schedule thumbnails |
 | `POST` | `/api/commands/rescan-camera` | Publish a fresh state snapshot |
@@ -61,6 +66,8 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 
 Command failures are returned as HTTP `409` with a text `detail`. User errors such as invalid time payloads are `400`; missing files are `404`.
 
+`state.camera.format` is `"unknown"`, `"dv"`, or `"hdv"`. It starts as `"unknown"` after a camera appears and changes once the shared `dvgrab` stream emits enough bytes to classify the source. Recordings use `.dv` for raw DV and `.m2t` for native HDV/MPEG-TS.
+
 ## WebSocket events
 
 `WS /api/events` sends an initial `state`, an initial `captures`, then future daemon events:
@@ -70,15 +77,16 @@ Command failures are returned as HTTP `409` with a text `detail`. User errors su
 { "type": "captures", "captures": [], "server_sent_at": 1783720001.0 }
 ```
 
-The WebSocket also accepts light-setting messages from the web UI:
+The WebSocket also accepts settings messages from the web UI:
 
 ```json
 { "type": "set-light-color", "colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]] }
 { "type": "set-lights-enabled", "enabled": true }
 { "type": "set-lights-brightness", "brightness": 0.25 }
+{ "type": "set-auto-convert-mp4", "enabled": true }
 ```
 
-Light settings are persisted through `Equip1Settings.save_lights()` into `/etc/equip1/equip-1.ini`.
+Light, conversion, storage, and HDMI settings are persisted through `Equip1Settings` into `/etc/equip1/equip-1.ini`. The OLED UI uses the REST settings endpoints.
 
 ## Static dashboard serving
 
