@@ -39,8 +39,8 @@ const isMockEnabled = () => {
 const mockThumbnail = (label: string, color = '#5500ff') =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#050505"/><rect y="54" width="160" height="36" fill="${color}" opacity=".82"/><circle cx="116" cy="34" r="22" fill="#fff" opacity=".18"/><text x="10" y="78" fill="#fff" font-family="monospace" font-size="13">${label}</text></svg>`)}`
 
-const formatCaptureName = (date = new Date(), naming: Record<string, any> = defaultCaptureNaming) =>
-  `${renderCaptureStem(naming, date)}.dv`
+const formatCaptureName = (date = new Date(), naming: Record<string, any> = defaultCaptureNaming, streamFormat = 'dv') =>
+  `${renderCaptureStem(naming, date)}.${streamFormat === 'hdv' ? 'm2t' : 'dv'}`
 
 const mockCaptureRows = (): CaptureEntry[] => [
   {
@@ -93,14 +93,16 @@ const mockState = (): Equip1State => ({
   camera: {
     connected: true,
     name: 'Sony DCR-TRV900',
-    device: '/dev/fw1'
+    device: '/dev/fw1',
+    format: 'dv'
   },
   recording: {
     active: false,
     filename: null,
     started_at: null,
     elapsed_seconds: 0,
-    pid: null
+    pid: null,
+    format: 'unknown'
   },
   storage: {
     capture_dir: '/data/captures',
@@ -169,7 +171,8 @@ const finishMockRecording = (state: Equip1State, captures: Ref<CaptureEntry[]>) 
     filename: null,
     started_at: null,
     elapsed_seconds: 0,
-    pid: null
+    pid: null,
+    format: 'unknown'
   }
   state.mode = 'idle'
   delete state.storage.base_used_bytes
@@ -187,10 +190,11 @@ const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureE
     current.storage.base_used_bytes = current.storage.used_bytes
     current.recording = {
       active: true,
-      filename: formatCaptureName(new Date(startedAt), current.capture_naming || defaultCaptureNaming),
+      filename: formatCaptureName(new Date(startedAt), current.capture_naming || defaultCaptureNaming, current.camera?.format || 'dv'),
       started_at: startedAt,
       elapsed_seconds: 0,
-      pid: 4242
+      pid: 4242,
+      format: current.camera?.format || 'dv'
     }
   } else if (name === 'stop-recording') {
     if (current.recording.active) finishMockRecording(current, captures)
@@ -198,6 +202,7 @@ const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureE
     current.camera.connected = true
     current.camera.name = 'Sony DCR-TRV900'
     current.camera.device = '/dev/fw1'
+    current.camera.format = current.camera.format || 'dv'
     if (current.mode === 'no_camera') current.mode = 'idle'
   } else if (name === 'usb-storage-start') {
     current.mode = 'usb_transfer'

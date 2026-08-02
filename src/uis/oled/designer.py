@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .display import OledFontSet, render_oled_image
-from .screens import BootScreen, DeckScreen, GameScreen, NetworkScreen, RecordingScreen, Screen, StorageScreen, UsbTransferScreen
+from .screens import BootScreen, DeckScreen, NetworkScreen, RecordingScreen, Screen, SettingsScreen, StorageScreen, UsbTransferScreen
 
 WIDTH = 128
 HEIGHT = 64
@@ -19,7 +19,7 @@ HEIGHT = 64
 def _base_state(mode: str) -> dict[str, Any]:
     return {
         "mode": mode,
-        "camera": {"connected": True, "name": "DV Cam", "device": "/dev/fw1"},
+        "camera": {"connected": True, "name": "DV/HDV Cam", "device": "/dev/fw1", "format": "dv"},
         "recording": {"active": False, "filename": None, "started_at": None, "elapsed_seconds": 0, "pid": None},
         "storage": {
             "capture_dir": "/var/lib/equip1/captures",
@@ -49,6 +49,9 @@ def _base_state(mode: str) -> dict[str, Any]:
             "last_command": None,
             "error": None,
         },
+        "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
+        "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "active": False, "source": None, "target": None, "last_error": None},
+        "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True},
         "error": None,
     }
 
@@ -75,7 +78,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
     no_network = _base_state("idle")
     no_network["network"] = {"ip": None, "hostname": "equip1", "url": None, "mode": "offline", "ssid": "Equip-1", "password": "firesecret", "ap_ip": None, "iface": "wlan0"}
     no_camera = _base_state("no_camera")
-    no_camera["camera"] = {"connected": False, "name": None, "device": None}
+    no_camera["camera"] = {"connected": False, "name": None, "device": None, "format": "unknown"}
     storage_full = _base_state("storage_full")
     storage_full["storage"].update({"used_bytes": 128 * 1024**3, "free_bytes": 0, "recording_minutes_available": 0})
     error = _base_state("error")
@@ -119,13 +122,16 @@ class DesignerAppAdapter:
     def command(self, name: str) -> None:
         self.session.command(name)
 
+    def set_setting(self, path: str, payload: dict) -> None:
+        self.session.set_setting(path, payload)
+
     def next_screen(self) -> None:
         self.session.change_screen(1)
 
 
 class DesignerSession:
     def __init__(self) -> None:
-        self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), UsbTransferScreen(), NetworkScreen(), GameScreen()]
+        self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), UsbTransferScreen(), NetworkScreen(), SettingsScreen()]
         self.boot_screen = BootScreen()
         self.boot_duration_seconds = 3.0
         self.boot_hold_seconds = 1.1
@@ -175,7 +181,7 @@ class DesignerSession:
         self.scenario_name = name
         self.custom_state = None
         self.scenario_started_at = time.monotonic()
-        if name == "boot":
+        if name in {"boot", "recording"}:
             self.screen_index = 0
 
     def set_custom_state(self, state: dict[str, Any]) -> None:
@@ -190,6 +196,8 @@ class DesignerSession:
         self._notify_enter()
 
     def change_screen(self, delta: int) -> None:
+        if self.state.get("mode") == "recording":
+            return
         self.screen_index = (self.screen_index + delta) % len(self.screens)
         self._notify_enter()
 
@@ -201,15 +209,37 @@ class DesignerSession:
     def button(self, name: str) -> None:
         app = DesignerAppAdapter(self)
         if name == "up":
-            if not self.current_screen.on_up(app) and self.current_screen.can_navigate(self.state):
+            if self.state.get("mode") != "recording" and not self.current_screen.on_up(app) and self.current_screen.can_navigate(self.state):
                 self.change_screen(-1)
         elif name == "down":
-            if not self.current_screen.on_down(app) and self.current_screen.can_navigate(self.state):
+            if self.state.get("mode") != "recording" and not self.current_screen.on_down(app) and self.current_screen.can_navigate(self.state):
                 self.change_screen(1)
         elif name == "select":
             self.current_screen.on_select(app)
         else:
             raise KeyError(name)
+
+    def set_setting(self, path: str, payload: dict) -> None:
+        self.command_log.insert(0, f"{time.strftime('%H:%M:%S')} {path} {payload}")
+        del self.command_log[20:]
+        if self.custom_state is None:
+            self.custom_state = copy.deepcopy(self.state)
+            self.scenario_name = "custom"
+        if path == "/settings/conversion":
+            conversion = self.custom_state.setdefault("conversion", {})
+            if "auto_mp4_enabled" in payload:
+                conversion["auto_mp4_enabled"] = bool(payload["auto_mp4_enabled"])
+            if "mp4_quality" in payload:
+                conversion["mp4_quality"] = str(payload["mp4_quality"])
+        elif path == "/settings/auto-storage-switch":
+            settings = self.custom_state.setdefault("settings", {})
+            settings["auto_storage_switch"] = bool(payload.get("enabled"))
+        elif path == "/settings/hdmi-preview":
+            settings = self.custom_state.setdefault("settings", {})
+            settings["hdmi_preview_enabled"] = bool(payload.get("enabled"))
+        elif path == "/settings/lights":
+            lights = self.custom_state.setdefault("lights", {})
+            lights["enabled"] = bool(payload.get("enabled"))
 
     def command(self, name: str) -> None:
         self.command_log.insert(0, f"{time.strftime('%H:%M:%S')} {name}")

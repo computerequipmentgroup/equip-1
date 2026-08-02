@@ -12,11 +12,15 @@ from .display import make_display
 from .input import (
     DEFAULT_BUTTON_DEBOUNCE_SECONDS,
     DEFAULT_BUZZER_BEEP_SECONDS,
+    ButtonEvents,
     make_buttons,
     make_buzzer,
 )
 from .leds import STANDARD_LED_SCALE, STATUS_MOUNTING, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
-from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, StorageScreen, UsbTransferScreen
+from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, SettingsScreen, StorageScreen, UsbTransferScreen
+
+
+GAME_SCREEN_HOLD_SECONDS = 4.0
 
 
 class OledApp:
@@ -48,7 +52,11 @@ class OledApp:
         self.buzzer = make_buzzer(self.board, beep_seconds=button_beep_ms / 1000.0)
         self.leds = make_boot_leds()
         log("OLED LEDs initialized")
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), GameScreen()]
+        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), SettingsScreen()]
+        self.game_screen = GameScreen()
+        self.game_screen_active = False
+        self._game_unlock_started_at: float | None = None
+        self._game_unlock_triggered = False
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
         self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="EQUIP1_BOOT_DURATION_SECONDS")
@@ -68,7 +76,7 @@ class OledApp:
 
     @property
     def current_screen(self):
-        return self.screens[self.current_screen_idx]
+        return self.game_screen if self.game_screen_active else self.screens[self.current_screen_idx]
 
     @property
     def is_booting(self) -> bool:
@@ -95,8 +103,14 @@ class OledApp:
 
     def _set_state(self, state: dict) -> None:
         self.state = state
-        if state.get("mode") != "recording":
+        if state.get("mode") == "recording":
+            self.game_screen_active = False
+            self.current_screen_idx = 0
+        else:
             self._stop_recording_requested_at = None
+
+    def _recording_active(self) -> bool:
+        return (self.state or {}).get("mode") == "recording"
 
     @property
     def stop_recording_pending(self) -> bool:
@@ -188,6 +202,23 @@ class OledApp:
                 "error": {"message": "Command failed", "detail": detail},
             })
 
+    def set_setting(self, path: str, payload: dict) -> None:
+        started = time.monotonic()
+        with self._api_lock:
+            result = self.api.post_json(path, payload)
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        if result.ok and isinstance(result.data, dict):
+            log(f"OLED setting {path} ok {elapsed_ms:.1f}ms", level="debug")
+            self._set_state(result.data)
+        else:
+            detail = result.error or path
+            log(f"OLED setting {path} failed: {detail}", level="warning")
+            self._set_state({
+                **(self.state or {}),
+                "mode": "error",
+                "error": {"message": "Setting failed", "detail": detail},
+            })
+
     def _recover_stop_command_failure(self, detail: str) -> bool:
         # Stop is safety/UX critical: a transient OLED HTTP timeout should not
         # leave the local UI stuck in error if the daemon has already left
@@ -204,19 +235,32 @@ class OledApp:
         self._log_api_transition(False, state_result.error or detail)
         return False
 
+    def _enter_game_screen(self) -> None:
+        if self.game_screen_active:
+            return
+        self.game_screen_active = True
+        self.game_screen.on_enter(self)
+
     def _change_screen(self, delta: int) -> None:
-        self.current_screen_idx = (self.current_screen_idx + delta) % len(self.screens)
+        if self.game_screen_active:
+            self.game_screen_active = False
+        else:
+            self.current_screen_idx = (self.current_screen_idx + delta) % len(self.screens)
         on_enter = getattr(self.current_screen, "on_enter", None)
         if on_enter is not None:
             on_enter(self)
 
     def navigate_up(self) -> None:
+        if self._recording_active():
+            return
         if self.current_screen.on_up(self):
             return
         if self.current_screen.can_navigate(self.state or {}):
             self._change_screen(-1)
 
     def navigate_down(self) -> None:
+        if self._recording_active():
+            return
         if self.current_screen.on_down(self):
             return
         if self.current_screen.can_navigate(self.state or {}):
@@ -225,11 +269,15 @@ class OledApp:
     def next_screen(self) -> None:
         """Advance to the next screen regardless of the up/down button handlers;
         used by screens (like the flipper game) that consume up/down themselves."""
+        if self._recording_active():
+            return
         if self.current_screen.can_navigate(self.state or {}):
             self._change_screen(1)
 
     def poll_buttons(self) -> None:
         events = self.buttons.poll()
+        if self._poll_game_unlock(events):
+            return
         if events.up:
             self.buzzer.beep()
             self.navigate_down()
@@ -239,6 +287,23 @@ class OledApp:
         if events.select:
             self.buzzer.beep()
             self.current_screen.on_select(self)
+
+    def _poll_game_unlock(self, events: ButtonEvents) -> bool:
+        if not events.all_held:
+            self._game_unlock_started_at = None
+            self._game_unlock_triggered = False
+            return False
+        if self._recording_active():
+            return True
+
+        now = time.monotonic()
+        if self._game_unlock_started_at is None:
+            self._game_unlock_started_at = now
+        if not self._game_unlock_triggered and now - self._game_unlock_started_at >= GAME_SCREEN_HOLD_SECONDS:
+            self._enter_game_screen()
+            self._game_unlock_triggered = True
+            self.buzzer.beep()
+        return True
 
     def _lights_enabled(self) -> bool:
         lights = (self.state or {}).get("lights") or {}

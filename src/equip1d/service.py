@@ -17,7 +17,18 @@ from .dvmetadata import stamp_file_from_dv_recording_date
 from .dvsource import DvSource
 from .events import EventBus
 from .logging import debug_enabled, log
-from .models import CameraState, CaptureNamingState, DaemonState, DeckState, ErrorState, LightsState, RecordingState, StorageState
+from .models import (
+    CameraState,
+    CaptureNamingState,
+    ConversionState,
+    DaemonState,
+    DeckState,
+    ErrorState,
+    LightsState,
+    RecordingState,
+    SettingsState,
+    StorageState,
+)
 from .network import get_network_state
 from .preview import MjpegPreview
 from .recorder import RecordingTracker
@@ -28,6 +39,7 @@ from .settings import (
     Equip1Settings,
     LEGACY_LIGHTS_CONFIG_DEFAULT,
     LIGHTS_BRIGHTNESS_DEFAULT,
+    normalize_mp4_quality,
 )
 
 
@@ -97,6 +109,12 @@ def _coerce_brightness(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, min(1.0, brightness))
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"0", "false", "no", "off"}
+    return bool(value)
 
 
 def _light_colors_from_env(count: int) -> list[list[int]]:
@@ -203,6 +221,15 @@ class Equip1Daemon:
         self._lights_count = _lights_count_from_env()
         self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
         self.capture_naming_prefix, self.capture_naming_template = self._load_capture_naming()
+        self.auto_convert_mp4 = self.settings.load_auto_convert_mp4()
+        self.mp4_quality = self.settings.load_mp4_quality()
+        self.hdmi_preview_enabled = self.settings.get_bool(
+            "hdmi", "enabled", True, env="EQUIP1_HDMI_PREVIEW_ENABLED"
+        )
+        self._conversion_active = False
+        self._conversion_source: str | None = None
+        self._conversion_target: str | None = None
+        self._conversion_last_error: str | None = None
         self._recording_date_hints: dict[str, datetime] = {}
         self.error: ErrorState | None = None
 
@@ -270,17 +297,18 @@ class Equip1Daemon:
                 raise CommandError("USB disk mode is active")
             probe = self.camera.probe()
             if not probe.connected:
-                raise CommandError("No DV camera detected")
+                raise CommandError("No DV/HDV camera detected")
             if not self.storage.has_recording_space(minimum_minutes=1):
-                self.error = ErrorState(message="Storage full", detail="Less than one minute of DV recording space remains")
+                self.error = ErrorState(message="Storage full", detail="Less than one minute of capture space remains")
                 raise CommandError("Storage full")
 
             now = datetime.now(timezone.utc)
             try:
-                # The FireWire device is already held by the shared DV source, so
+                # The FireWire device is already held by the shared DV/HDV source, so
                 # recording just opens a file on the live stream -- no preview
                 # hand-off, no device acquisition, effectively instant.
                 await self.dv.ensure_running(True)
+                await self.dv.wait_for_stream_format(timeout=2.0)
                 recorded_at = await self._recording_datetime(now)
                 filename_stem = self._render_capture_filename_stem(recorded_at)
                 self._debug_log(f"start-recording requested filename_stem={filename_stem}")
@@ -307,7 +335,7 @@ class Equip1Daemon:
                 self._debug_log(f"stop-recording requested filename={thumbnail_prefix} pid={self.recorder.state.pid}")
                 await asyncio.to_thread(self.recorder.stop)
                 self._debug_log(f"recorder stopped filename={thumbnail_prefix}")
-                # Preview keeps running on the shared DV source; nothing to release.
+                # Preview keeps running on the shared DV/HDV source; nothing to release.
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         if thumbnail_prefix:
@@ -325,7 +353,7 @@ class Equip1Daemon:
         async with self._lock:
             probe = self.camera.probe()
             if not probe.connected:
-                raise CommandError("No DV camera detected")
+                raise CommandError("No DV/HDV camera detected")
             try:
                 await asyncio.to_thread(self.deck.command, command)
                 self.error = None
@@ -514,6 +542,30 @@ class Equip1Daemon:
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
 
+    def _save_auto_convert_mp4(self) -> None:
+        try:
+            self.settings.save_auto_convert_mp4(self.auto_convert_mp4)
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    def _save_mp4_quality(self) -> None:
+        try:
+            self.settings.save_mp4_quality(self.mp4_quality)
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    def _save_auto_storage_switch(self) -> None:
+        try:
+            self.settings.save_value("recording", "auto_storage_switch", "true" if self.auto_storage_switch else "false")
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    def _save_hdmi_preview_enabled(self) -> None:
+        try:
+            self.settings.save_value("hdmi", "enabled", "true" if self.hdmi_preview_enabled else "false")
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
     async def set_capture_naming(self, prefix: Any, template: Any) -> dict[str, Any]:
         next_prefix = _clean_capture_naming_value(prefix, CAPTURE_FILENAME_PREFIX_DEFAULT, 48, allow_empty=True)
         next_template = _clean_capture_naming_value(template, CAPTURE_FILENAME_TEMPLATE_DEFAULT, 96)
@@ -522,6 +574,39 @@ class Equip1Daemon:
             self.capture_naming_template = next_template
             state = self._snapshot_unlocked().to_dict()
         await asyncio.to_thread(self._save_capture_naming)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_auto_convert_mp4(self, enabled: Any) -> dict[str, Any]:
+        async with self._lock:
+            self.auto_convert_mp4 = _coerce_bool(enabled)
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_auto_convert_mp4)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_mp4_quality(self, quality: Any) -> dict[str, Any]:
+        next_quality = normalize_mp4_quality(str(quality) if quality is not None else None)
+        async with self._lock:
+            self.mp4_quality = next_quality
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_mp4_quality)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_auto_storage_switch(self, enabled: Any) -> dict[str, Any]:
+        async with self._lock:
+            self.auto_storage_switch = _coerce_bool(enabled)
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_auto_storage_switch)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_hdmi_preview_enabled(self, enabled: Any) -> dict[str, Any]:
+        async with self._lock:
+            self.hdmi_preview_enabled = _coerce_bool(enabled)
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_hdmi_preview_enabled)
         await self.events.publish({"type": "state", "state": state})
         return state
 
@@ -538,7 +623,7 @@ class Equip1Daemon:
 
     async def set_lights_enabled(self, enabled: bool) -> dict[str, Any]:
         async with self._lock:
-            self.lights_enabled = bool(enabled)
+            self.lights_enabled = _coerce_bool(enabled)
             state = self._snapshot_unlocked().to_dict()
         await asyncio.to_thread(self._save_light_settings)
         await self.events.publish({"type": "state", "state": state})
@@ -678,7 +763,7 @@ class Equip1Daemon:
         if state["mode"] in {"mounting", "usb_transfer"}:
             raise CommandError("Live streaming is not available while storage is unavailable")
         if not state["camera"]["connected"]:
-            raise CommandError("No DV camera detected")
+            raise CommandError("No DV/HDV camera detected")
         try:
             if self.preview.active:
                 active_seconds = self.preview.active_seconds
@@ -692,7 +777,7 @@ class Equip1Daemon:
                     self._debug_log("stale stream stopped before new stream")
                 except asyncio.TimeoutError:
                     self._debug_log("stale stream stop timed out; starting new stream anyway")
-            # Both idle and recording preview read the same live DV stream; the
+            # Both idle and recording preview read the same live DV/HDV stream; the
             # only difference is a lighter filter while recording so the browser
             # feed yields CPU to the capture write.
             await self.dv.ensure_running(True)
@@ -738,9 +823,49 @@ class Equip1Daemon:
         finally:
             await self._sync_storage("recording finalization")
             # Re-publish after mtime stamping/global sync, then again after the
-            # thumbnail is rendered.
+            # thumbnail is rendered. If enabled, the raw DV capture is then
+            # converted to a laptop-friendly MP4 in the background.
             await self.publish_captures()
             await self._generate_thumbnails(prefix)
+            await self._maybe_convert_recording_to_mp4(prefix)
+
+    async def _maybe_convert_recording_to_mp4(self, filename: str) -> None:
+        if not self.auto_convert_mp4:
+            return
+        source_path = self.capture_dir / filename
+        if source_path.suffix.lower() != ".dv":
+            self._debug_log(f"mp4 conversion skipped for non-DV capture {filename}")
+            return
+        target_path = source_path.with_suffix(".mp4")
+        async with self._lock:
+            self._conversion_active = True
+            self._conversion_source = source_path.name
+            self._conversion_target = target_path.name
+            self._conversion_last_error = None
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        try:
+            converted = await asyncio.to_thread(
+                self.storage.convert_capture_to_mp4,
+                source_path,
+                self.ffmpeg_bin,
+                self.mp4_quality,
+            )
+            async with self._lock:
+                self._conversion_target = converted.name if converted is not None else target_path.name
+                self._conversion_last_error = None
+            self._debug_log(f"mp4 conversion finished source={source_path.name} target={target_path.name}")
+        except Exception as exc:
+            async with self._lock:
+                self._conversion_last_error = str(exc)
+            log(f"MP4 conversion failed for {source_path.name}: {exc}", level="warning")
+        finally:
+            await self._sync_storage("mp4 conversion")
+            await self.publish_captures()
+            async with self._lock:
+                self._conversion_active = False
+                state = self._snapshot_unlocked().to_dict()
+            await self.events.publish({"type": "state", "state": state})
 
     @staticmethod
     def _stamp_capture_mtime(path: Path, recorded_at: datetime) -> datetime | None:
@@ -774,7 +899,7 @@ class Equip1Daemon:
                 async with self._lock:
                     self._poll_recorder_unlocked()
                     state = self._snapshot_unlocked().to_dict()
-                # Keep the shared DV source claimed whenever a camera is present
+                # Keep the shared DV/HDV source claimed whenever a camera is present
                 # (and we are not handing the bus/disk to USB mode), so recording
                 # can start instantly on the already-flowing stream. Also stand
                 # down while a USB-storage start is still in flight: that flag
@@ -966,6 +1091,8 @@ class Equip1Daemon:
             mode = "error"
         elif recording_active:
             mode = "recording"
+        elif self._conversion_active:
+            mode = "converting"
         elif storage.recording_minutes_available < 1:
             mode = "storage_full"
         elif not probe.connected:
@@ -982,6 +1109,7 @@ class Equip1Daemon:
                 connected=probe.connected,
                 name=probe.name,
                 device=probe.device,
+                format=self.dv.stream_format if probe.connected else "unknown",
             ),
             recording=RecordingState(
                 active=recording_active,
@@ -989,13 +1117,14 @@ class Equip1Daemon:
                 started_at=self.recorder.state.started_at_iso,
                 elapsed_seconds=self.recorder.elapsed_seconds(),
                 pid=self.recorder.state.pid,
+                format=self.dv.stream_format if recording_active else "unknown",
             ),
             storage=storage,
             network=network,
             # Deck status is no longer polled: probing it ran dvcont (AV/C
             # transactions) on the FireWire bus every second, contending with
-            # the shared DV stream. Timecode is parsed passively from the live
-            # DV subcode stream instead; on-demand transport commands
+            # the shared DV/HDV stream. Timecode is parsed passively from raw DV
+            # subcode stream instead; on-demand transport commands
             # (deck_command) still use dvcont.
             deck=DeckState(
                 available=probe.connected,
@@ -1012,6 +1141,18 @@ class Equip1Daemon:
             capture_naming=CaptureNamingState(
                 prefix=self.capture_naming_prefix,
                 template=self.capture_naming_template,
+            ),
+            conversion=ConversionState(
+                auto_mp4_enabled=self.auto_convert_mp4,
+                mp4_quality=self.mp4_quality,
+                active=self._conversion_active,
+                source=self._conversion_source,
+                target=self._conversion_target,
+                last_error=self._conversion_last_error,
+            ),
+            settings=SettingsState(
+                auto_storage_switch=self.auto_storage_switch,
+                hdmi_preview_enabled=self.hdmi_preview_enabled,
             ),
             error=self.error,
         )

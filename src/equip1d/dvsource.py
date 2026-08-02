@@ -12,8 +12,14 @@ from .dvmetadata import DvRecordingDateScanner, DvTimecodeScanner
 from .logging import debug_enabled, log, should_log
 
 
+StreamFormat = str
+STREAM_FORMAT_DV: StreamFormat = "dv"
+STREAM_FORMAT_HDV: StreamFormat = "hdv"
+STREAM_FORMAT_UNKNOWN: StreamFormat = "unknown"
+
+
 class DvSubscription:
-    """A single preview consumer of the shared DV stream.
+    """A single preview consumer of the shared DV/HDV stream.
 
     Chunks are delivered through a bounded queue with drop-oldest semantics, so
     a slow or stalled preview can never apply backpressure to the source read
@@ -55,10 +61,12 @@ class DvSubscription:
 
 
 class DvSource:
-    """The single long-lived FireWire DV reader.
+    """The single long-lived FireWire DV/HDV reader.
 
     One ``dvgrab -format raw -`` process owns the FireWire claim for as long as
-    a camera is connected. A cheap read loop moves raw DV byte chunks to two
+    a camera is connected. dvgrab auto-switches to MPEG-2 TS output when AV/C
+    identifies an HDV source, so the first bytes from stdout are classified as
+    raw DV or native HDV/MPEG-TS. A cheap read loop moves those bytes to two
     kinds of consumers:
 
     * the recording sink -- an open file written on a dedicated thread, toggled
@@ -116,6 +124,8 @@ class DvSource:
         self._timecode_scanner = DvTimecodeScanner()
         self._latest_recording_datetime = None
         self._latest_timecode = None
+        self._stream_format: StreamFormat = STREAM_FORMAT_UNKNOWN
+        self._format_event: asyncio.Event | None = None
 
     # ---- lifecycle -----------------------------------------------------
 
@@ -134,6 +144,26 @@ class DvSource:
     @property
     def latest_timecode(self):
         return self._latest_timecode
+
+    @property
+    def stream_format(self) -> StreamFormat:
+        return self._stream_format
+
+    @property
+    def capture_extension(self) -> str:
+        return ".m2t" if self._stream_format == STREAM_FORMAT_HDV else ".dv"
+
+    async def wait_for_stream_format(self, timeout: float = 2.0) -> StreamFormat:
+        if self._stream_format != STREAM_FORMAT_UNKNOWN:
+            return self._stream_format
+        event = self._format_event
+        if event is None:
+            return STREAM_FORMAT_UNKNOWN
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            return self._stream_format
+        return self._stream_format
 
     async def ensure_running(self, want: bool) -> None:
         # Serialised so concurrent callers (monitor loop, record start, stream
@@ -155,7 +185,9 @@ class DvSource:
         self._timecode_scanner = DvTimecodeScanner()
         self._latest_recording_datetime = None
         self._latest_timecode = None
-        self._log("starting shared dvgrab DV source", always=True)
+        self._stream_format = STREAM_FORMAT_UNKNOWN
+        self._format_event = asyncio.Event()
+        self._log("starting shared dvgrab DV/HDV source", always=True)
         # Give dvgrab a private pipe we own the read end of, so a blocking thread
         # can drain it independently of the event loop.
         read_fd, write_fd = os.pipe()
@@ -222,10 +254,13 @@ class DvSource:
             await asyncio.to_thread(thread.join, 2.0)
         # A caller-initiated stop closes the recording sink cleanly without
         # flagging it as a failure. Clear live metadata so snapshots do not show
-        # stale tape position while the DV source is stopped.
+        # stale tape position while the DV/HDV source is stopped.
         self.stop_recording()
         self._latest_recording_datetime = None
         self._latest_timecode = None
+        self._stream_format = STREAM_FORMAT_UNKNOWN
+        if self._format_event is not None:
+            self._format_event.set()
         self._close_all_subscribers()
 
     async def _terminate_proc(self) -> None:
@@ -270,19 +305,17 @@ class DvSource:
                     break
                 if not chunk:
                     break
-                chunk = self._normalize_dif_chunk(chunk)
-                recorded_at = self._date_scanner.feed(chunk)
-                if recorded_at is not None:
-                    self._latest_recording_datetime = recorded_at
-                timecode = self._timecode_scanner.feed(chunk)
-                if timecode is not None:
-                    self._latest_timecode = str(timecode)
+                chunk = self._prepare_chunk(chunk, loop)
                 if first:
-                    loop.call_soon_threadsafe(self._log, "DV source emitted first bytes", True)
+                    loop.call_soon_threadsafe(
+                        self._log,
+                        f"{self._stream_format.upper()} source emitted first bytes",
+                        True,
+                    )
                     first = False
                 rec = self._rec_queue
                 if rec is not None and self.recording_error is None:
-                    # Recording is the priority path: never intentionally drop DV
+                    # Recording is the priority path: never intentionally drop DV/HDV
                     # bytes. If storage stalls, let the larger recording queue and
                     # dvgrab's buffers absorb it instead of creating silent gaps in
                     # the capture file.
@@ -295,6 +328,50 @@ class DvSource:
             except OSError:
                 pass
             loop.call_soon_threadsafe(self._on_reader_eof)
+
+    def _prepare_chunk(self, chunk: bytes, loop: asyncio.AbstractEventLoop) -> bytes:
+        if self._stream_format == STREAM_FORMAT_UNKNOWN:
+            self._set_stream_format(self._detect_stream_format(chunk), loop)
+        if self._stream_format == STREAM_FORMAT_HDV:
+            return chunk
+
+        chunk = self._normalize_dif_chunk(chunk)
+        recorded_at = self._date_scanner.feed(chunk)
+        if recorded_at is not None:
+            self._latest_recording_datetime = recorded_at
+        timecode = self._timecode_scanner.feed(chunk)
+        if timecode is not None:
+            self._latest_timecode = str(timecode)
+        return chunk
+
+    def _set_stream_format(self, stream_format: StreamFormat, loop: asyncio.AbstractEventLoop) -> None:
+        if stream_format == STREAM_FORMAT_UNKNOWN or self._stream_format != STREAM_FORMAT_UNKNOWN:
+            return
+        self._stream_format = stream_format
+        loop.call_soon_threadsafe(self._notify_stream_format, stream_format)
+
+    def _notify_stream_format(self, stream_format: StreamFormat) -> None:
+        self._log(f"detected {stream_format.upper()} stream", always=True)
+        if self._format_event is not None:
+            self._format_event.set()
+
+    @staticmethod
+    def _detect_stream_format(chunk: bytes) -> StreamFormat:
+        # Native HDV is MPEG-2 transport stream: 188-byte packets with 0x47 sync.
+        # Try every possible alignment because an os.read() may begin mid-packet.
+        if len(chunk) >= 188 * 3:
+            limit = min(188, len(chunk) - (188 * 3) + 1)
+            for start in range(limit):
+                packet_count = 0
+                for offset in range(start, len(chunk), 188):
+                    if chunk[offset] != 0x47:
+                        break
+                    packet_count += 1
+                    if packet_count >= 3:
+                        return STREAM_FORMAT_HDV
+        # dvgrab stdout otherwise contains raw DV DIF frames. Defaulting to DV
+        # preserves existing behaviour and lets the DV header normalizer run.
+        return STREAM_FORMAT_DV
 
     def _normalize_dif_chunk(self, chunk: bytes) -> bytes:
         if not self._normalize_dif_headers or not chunk:
@@ -336,10 +413,13 @@ class DvSource:
         # Source ended on its own (unplug / dvgrab crash) rather than via stop();
         # tear down consumers so they can reconnect and flag any live recording.
         if self.recording:
-            self.recording_error = "DV source stopped while recording"
+            self.recording_error = "DV/HDV source stopped while recording"
             self.stop_recording()
         self._latest_recording_datetime = None
         self._latest_timecode = None
+        self._stream_format = STREAM_FORMAT_UNKNOWN
+        if self._format_event is not None:
+            self._format_event.set()
         self._close_all_subscribers()
 
     # ---- preview subscribers ------------------------------------------
@@ -363,7 +443,7 @@ class DvSource:
     # ---- recording sink ------------------------------------------------
 
     def start_recording(self, path: Path) -> None:
-        """Open ``path`` and route the live DV stream into it. Fast + sync."""
+        """Open ``path`` and route the live DV/HDV stream into it. Fast + sync."""
         if self.recording:
             raise RuntimeError("Already recording")
         self.recording_error = None

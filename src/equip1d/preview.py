@@ -6,7 +6,7 @@ import signal
 import time
 from collections.abc import AsyncIterator
 
-from .dvsource import DvSource
+from .dvsource import DvSource, STREAM_FORMAT_HDV
 from .logging import debug_enabled, log, should_log
 from .settings import Equip1Settings
 
@@ -20,14 +20,14 @@ class PreviewSourceError(RuntimeError):
 
 
 class MjpegPreview:
-    """On-demand DV streaming to browsers and network players.
+    """On-demand DV/HDV streaming to browsers and network players.
 
     The browser preview is served as MJPEG; VLC and other network players are
-    served as remuxed Matroska (raw DV copied into an MKV container, no
-    transcode -- MPEG-TS cannot carry DV as a recognized codec). Both flavours
-    subscribe to the single shared FireWire DV stream (``DvSource``) and share a
-    busy-lock, so only one consumer is ever active at a time and preview never
-    contends with the recorder for the device.
+    served as remuxed Matroska (the native DV or HDV stream copied into an MKV
+    container, no transcode). Both flavours subscribe to the single shared
+    FireWire source (``DvSource``) and share a busy-lock, so only one consumer is
+    ever active at a time and preview never contends with the recorder for the
+    device.
     """
 
     boundary = "equip1frame"
@@ -37,7 +37,7 @@ class MjpegPreview:
         self.ffmpeg_bin = ffmpeg_bin
         settings = settings or Equip1Settings()
         # Idle preview defaults aim for VLC-like fidelity: full-rate, full-size
-        # MJPEG off the shared DV source. Every value stays env-overridable so
+        # MJPEG off the shared DV/HDV source. Every value stays env-overridable so
         # the feed can be dialed back on the device if CPU/bandwidth demands it.
         self.fps = settings.get("preview", "fps", "25", env="EQUIP1_PREVIEW_FPS") or "25"
         self.size = settings.get("preview", "size", "720:540", env="EQUIP1_PREVIEW_SIZE") or "720:540"
@@ -119,9 +119,13 @@ class MjpegPreview:
         label = "MKV stream" if mkv else "preview"
         unit = "chunk" if mkv else "frame"
         try:
-            self._log(f"starting {label} from shared DV source recording={recording}", always=True)
+            stream_format = await self.source.wait_for_stream_format(timeout=2.0)
+            self._log(
+                f"starting {label} from shared {stream_format.upper()} source recording={recording}",
+                always=True,
+            )
             ffmpeg_proc = await asyncio.create_subprocess_exec(
-                *self._ffmpeg_stdin_command(recording=recording, mkv=mkv),
+                *self._ffmpeg_stdin_command(recording=recording, mkv=mkv, stream_format=stream_format),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -167,13 +171,20 @@ class MjpegPreview:
         async for frame in self._jpeg_frames(stream):
             yield self._multipart_frame(frame)
 
-    def _ffmpeg_stdin_command(self, recording: bool = False, mkv: bool = False) -> list[str]:
-        # The shared DV source is inherently real-time, so no "-re" pacing is
+    def _ffmpeg_stdin_command(
+        self,
+        recording: bool = False,
+        mkv: bool = False,
+        stream_format: str | None = None,
+    ) -> list[str]:
+        # The shared source is inherently real-time, so no "-re" pacing is
         # needed on the input.
-        command = [self.ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-f", "dv", "-i", "pipe:0"]
+        stream_format = stream_format or self.source.stream_format
+        input_format = "mpegts" if stream_format == STREAM_FORMAT_HDV else "dv"
+        command = [self.ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-f", input_format, "-i", "pipe:0"]
         if mkv:
-            # Copy the DV stream straight into a live Matroska container (no
-            # transcode) -- cheap on the RK3528 and played natively by VLC.
+            # Copy the native DV/HDV stream straight into a live Matroska
+            # container (no transcode) -- cheap on the RK3528 and played natively by VLC.
             command.extend(["-c", "copy", "-f", "matroska", "pipe:1"])
         else:
             command.extend(self._output_args(recording=recording))

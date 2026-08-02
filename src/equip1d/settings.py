@@ -10,6 +10,9 @@ LEGACY_LIGHTS_CONFIG_DEFAULT = "/etc/equip1/lights.json"
 LIGHTS_BRIGHTNESS_DEFAULT = 0.25
 CAPTURE_FILENAME_PREFIX_DEFAULT = "capture_"
 CAPTURE_FILENAME_TEMPLATE_DEFAULT = "{date}_{time}"
+AUTO_CONVERT_MP4_DEFAULT = True
+MP4_QUALITY_DEFAULT = "high"
+MP4_QUALITY_OPTIONS = ("small", "balanced", "high", "max")
 
 
 class Equip1Settings:
@@ -117,6 +120,31 @@ class Equip1Settings:
         parser.set("recording", "filename_template", template)
         self._write(parser)
 
+    def load_auto_convert_mp4(self) -> bool:
+        return self.get_bool(
+            "recording",
+            "auto_convert_mp4",
+            AUTO_CONVERT_MP4_DEFAULT,
+            env="EQUIP1_AUTO_CONVERT_MP4",
+        )
+
+    def save_auto_convert_mp4(self, enabled: bool) -> None:
+        self.save_value("recording", "auto_convert_mp4", _format_bool(enabled))
+
+    def load_mp4_quality(self) -> str:
+        quality = self.get("recording", "mp4_quality", MP4_QUALITY_DEFAULT, env="EQUIP1_MP4_QUALITY")
+        return normalize_mp4_quality(quality)
+
+    def save_mp4_quality(self, quality: str) -> None:
+        self.save_value("recording", "mp4_quality", normalize_mp4_quality(quality))
+
+    def save_value(self, section: str, option: str, value: str) -> None:
+        parser = self._read()
+        if not parser.has_section(section):
+            parser.add_section(section)
+        parser.set(section, option, value)
+        self._write(parser)
+
     def _read(self) -> configparser.ConfigParser:
         parser = configparser.ConfigParser()
         try:
@@ -145,6 +173,21 @@ def _parse_bool(value: str | None, default: bool) -> bool:
 
 def _format_bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+def normalize_mp4_quality(value: str | None) -> str:
+    quality = (value or MP4_QUALITY_DEFAULT).strip().lower()
+    aliases = {
+        "low": "small",
+        "medium": "balanced",
+        "best": "max",
+        "archive": "max",
+        "archival": "max",
+        "maximum": "max",
+        "ultra": "max",
+    }
+    quality = aliases.get(quality, quality)
+    return quality if quality in MP4_QUALITY_OPTIONS else MP4_QUALITY_DEFAULT
 
 
 def _clamp_float(value: float, minimum: float, maximum: float) -> float:

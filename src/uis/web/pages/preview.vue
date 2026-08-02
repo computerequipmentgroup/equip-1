@@ -3,7 +3,7 @@ const { state, connected, error, refresh, connectEvents, mock } = useEquip1State
 const config = useRuntimeConfig()
 
 const mode = computed(() => state.value?.mode || 'offline')
-const cameraName = computed(() => state.value?.camera?.name || 'DV camera')
+const cameraName = computed(() => state.value?.camera?.name || 'DV/HDV camera')
 const previewing = ref(false)
 const previewLoaded = ref(false)
 const previewError = ref<string | null>(null)
@@ -37,7 +37,7 @@ const placeholderStatus = computed(() => {
   if (mode.value === 'idle') return 'Acquiring DV signal…'
   if (mode.value === 'usb_transfer') return 'USB disk mode is active'
   if (mode.value === 'mounting') return 'Mounting storage…'
-  if (mode.value === 'no_camera') return 'No DV camera detected'
+  if (mode.value === 'no_camera') return 'No DV/HDV camera detected'
   return 'Camera offline'
 })
 
@@ -115,7 +115,7 @@ onMounted(async () => {
       <img
         v-if="previewing"
         :src="previewSrc"
-        alt="Live DV preview"
+        alt="Live DV/HDV preview"
         :class="{ loaded: previewLoaded }"
         @load="handlePreviewLoad"
         @error="handlePreviewError"

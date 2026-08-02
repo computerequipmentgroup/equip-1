@@ -2,7 +2,7 @@
 # Equip-1 HDMI framebuffer preview.
 #
 # Polls the kernel DRM HDMI connector state and, while a screen is connected,
-# renders the daemon's low-cost live MKV/DV stream directly to /dev/fb0 with
+# renders the daemon's low-cost live MKV DV/HDV stream directly to /dev/fb0 with
 # ffmpeg's fbdev muxer. This avoids Chromium, HTTP MJPEG encoding, and
 # browser-side decode on the embedded HDMI output.
 

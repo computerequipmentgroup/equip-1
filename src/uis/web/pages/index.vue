@@ -130,7 +130,7 @@ const placeholderStatus = computed(() => {
   if (mode.value === 'idle') return 'acquiring DV signal…'
   if (mode.value === 'usb_transfer') return 'usb disk mode'
   if (mode.value === 'mounting') return 'mounting storage…'
-  if (mode.value === 'no_camera') return 'no DV camera detected'
+  if (mode.value === 'no_camera') return 'no DV/HDV camera detected'
   return 'camera offline'
 })
 
@@ -351,7 +351,7 @@ onMounted(async () => {
         <img
           v-if="previewing"
           :src="previewSrc"
-          alt="Live DV preview"
+          alt="Live DV/HDV preview"
           :class="{ loaded: previewLoaded }"
           @load="handlePreviewLoad"
           @error="handlePreviewError"

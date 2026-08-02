@@ -12,7 +12,7 @@ class CameraProbe:
 
 
 class FireWireCameraDetector:
-    """Detect a DV camera exposed by the Linux FireWire stack."""
+    """Detect a DV/HDV camera exposed by the Linux FireWire stack."""
 
     def __init__(self, device_glob: str = "/dev/fw*"):
         self.device_glob = device_glob
@@ -27,5 +27,5 @@ class FireWireCameraDetector:
         return CameraProbe(
             connected=True,
             device=camera_devices[0],
-            name="DV Camera",
+            name="FireWire Camera",
         )

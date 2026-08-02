@@ -36,8 +36,14 @@ class Equip1ApiClient:
     def command(self, name: str) -> ApiResult:
         return self._request("POST", f"/commands/{name}")
 
-    def _request(self, method: str, path: str) -> ApiResult:
-        req = urllib.request.Request(f"{self.base_url}{path}", method=method)
+    def post_json(self, path: str, payload: dict[str, Any]) -> ApiResult:
+        return self._request("POST", path, payload=payload)
+
+    def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> ApiResult:
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        req = urllib.request.Request(f"{self.base_url}{path}", data=body, method=method)
+        if body is not None:
+            req.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8")

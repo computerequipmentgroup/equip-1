@@ -16,7 +16,7 @@ class MountInfo:
 
 
 DV_BYTES_PER_MINUTE = 216 * 1024 * 1024
-CAPTURE_EXTENSIONS = {".dv", ".avi", ".mov", ".mp4", ".mkv"}
+CAPTURE_EXTENSIONS = {".dv", ".dif", ".m2t", ".mts", ".ts", ".avi", ".mov", ".mp4", ".mkv"}
 THUMBNAIL_EXTENSION = ".jpg"
 
 
@@ -252,6 +252,95 @@ class StorageManager:
                 return thumbnail_path
             tmp_path.unlink(missing_ok=True)
         return None
+
+    def convert_capture_to_mp4(self, capture_path: Path, ffmpeg_bin: str = "ffmpeg", quality: str = "high") -> Path | None:
+        if not capture_path.is_file() or capture_path.suffix.lower() not in CAPTURE_EXTENSIONS:
+            return None
+        if capture_path.suffix.lower() == ".mp4":
+            return capture_path
+
+        target_path = capture_path.with_suffix(".mp4")
+        if target_path.exists() and target_path.stat().st_size > 0:
+            return target_path
+
+        tmp_path = target_path.with_name(f"{target_path.stem}.tmp{target_path.suffix}")
+        tmp_path.unlink(missing_ok=True)
+        presets = {
+            "small": {"crf": "28", "qv": "7", "audio": ["-c:a", "aac", "-b:a", "128k"]},
+            "balanced": {"crf": "23", "qv": "5", "audio": ["-c:a", "aac", "-b:a", "128k"]},
+            "high": {"crf": "18", "qv": "3", "audio": ["-c:a", "aac", "-b:a", "128k"]},
+            "max": {"crf": "14", "qv": "1", "audio": ["-c:a", "aac", "-b:a", "192k"]},
+        }
+        quality_name = str(quality).lower()
+        preset = presets.get(quality_name, presets["high"])
+        command_variants = [
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(capture_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-vf",
+                "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                preset["crf"],
+                "-pix_fmt",
+                "yuv420p",
+                *preset["audio"],
+                "-movflags",
+                "+faststart",
+                str(tmp_path),
+            ],
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(capture_path),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-vf",
+                "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                "-c:v",
+                "mpeg4",
+                "-q:v",
+                preset["qv"],
+                "-pix_fmt",
+                "yuv420p",
+                *preset["audio"],
+                "-movflags",
+                "+faststart",
+                str(tmp_path),
+            ],
+        ]
+
+        last_error = "ffmpeg conversion failed"
+        for command in command_variants:
+            try:
+                result = subprocess.run(command, check=False, capture_output=True, text=True)
+            except OSError as exc:
+                tmp_path.unlink(missing_ok=True)
+                raise RuntimeError(str(exc)) from exc
+            if result.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 0:
+                tmp_path.replace(target_path)
+                return target_path
+            last_error = (result.stderr or result.stdout or last_error).strip()
+            tmp_path.unlink(missing_ok=True)
+        raise RuntimeError(last_error)
 
     def _thumbnail_path_for_capture(self, capture_path: Path) -> Path:
         return capture_path.with_suffix(THUMBNAIL_EXTENSION)

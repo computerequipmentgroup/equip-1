@@ -4,7 +4,13 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
-from .settings import CAPTURE_FILENAME_PREFIX_DEFAULT, CAPTURE_FILENAME_TEMPLATE_DEFAULT, LIGHTS_BRIGHTNESS_DEFAULT
+from .settings import (
+    AUTO_CONVERT_MP4_DEFAULT,
+    CAPTURE_FILENAME_PREFIX_DEFAULT,
+    CAPTURE_FILENAME_TEMPLATE_DEFAULT,
+    LIGHTS_BRIGHTNESS_DEFAULT,
+    MP4_QUALITY_DEFAULT,
+)
 
 RecorderMode = Literal[
     "booting",
@@ -29,6 +35,7 @@ class CameraState:
     connected: bool = False
     name: str | None = None
     device: str | None = None
+    format: str = "unknown"
 
 
 @dataclass
@@ -38,6 +45,7 @@ class RecordingState:
     started_at: str | None = None
     elapsed_seconds: int = 0
     pid: int | None = None
+    format: str = "unknown"
 
 
 @dataclass
@@ -103,6 +111,22 @@ class LightsState:
 
 
 @dataclass
+class ConversionState:
+    auto_mp4_enabled: bool = AUTO_CONVERT_MP4_DEFAULT
+    mp4_quality: str = MP4_QUALITY_DEFAULT
+    active: bool = False
+    source: str | None = None
+    target: str | None = None
+    last_error: str | None = None
+
+
+@dataclass
+class SettingsState:
+    auto_storage_switch: bool = True
+    hdmi_preview_enabled: bool = True
+
+
+@dataclass
 class DaemonState:
     mode: RecorderMode
     camera: CameraState
@@ -112,6 +136,8 @@ class DaemonState:
     deck: DeckState
     lights: LightsState = field(default_factory=LightsState)
     capture_naming: CaptureNamingState = field(default_factory=CaptureNamingState)
+    conversion: ConversionState = field(default_factory=ConversionState)
+    settings: SettingsState = field(default_factory=SettingsState)
     error: ErrorState | None = None
     updated_at: str = field(default_factory=utc_now_iso)
 

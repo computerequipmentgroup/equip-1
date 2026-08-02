@@ -205,10 +205,27 @@ class RecordingScreen(Screen):
         mode = state.get("mode", "offline")
         recording = state.get("recording") or {}
         storage = state.get("storage") or {}
+        conversion = state.get("conversion") or {}
         minutes_available = int(storage.get("recording_minutes_available", 0) or 0)
-        minutes_label = f"{minutes_available:03d}m"
+        exporting = mode == "converting" or bool(conversion.get("active"))
+        minutes_label = "EXPORT" if exporting else f"{minutes_available:03d}m"
         font_medium = _font(context, "font_medium")
         font_big = _font(context, "font_big")
+
+        def draw_minutes_status() -> None:
+            if not exporting:
+                _right(draw, width, HEADER_Y, minutes_label, font_medium)
+                return
+            bbox = draw.textbbox((0, 0), minutes_label, font=font_medium)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            text_x = width - text_width
+            draw.text((text_x, HEADER_Y), minutes_label, font=font_medium, fill=255)
+            dot_size = max(6, text_height - 4)
+            dot_x = max(0, text_x - dot_size - 4)
+            dot_y = HEADER_Y + (text_height - dot_size) // 2
+            if int(time.time() * 2) % 2:
+                draw.ellipse((dot_x, dot_y, dot_x + dot_size - 1, dot_y + dot_size - 1), fill=255)
 
         if mode == "recording":
             rec_x = 0
@@ -220,7 +237,7 @@ class RecordingScreen(Screen):
             dot_y = rec_bbox[1] + ((rec_bbox[3] - rec_bbox[1]) - dot_size) // 2
             if int(time.time() * 2) % 2:
                 draw.ellipse((dot_x, dot_y, dot_x + dot_size - 1, dot_y + dot_size - 1), fill=255)
-            _right(draw, width, HEADER_Y, minutes_label, font_medium)
+            draw_minutes_status()
             time_text = hhmmss(recording.get("elapsed_seconds"))
             blink_time = bool(context.get("stop_recording_pending")) and int(time.monotonic() * 4) % 2 == 0
             if blink_time:
@@ -245,7 +262,7 @@ class RecordingScreen(Screen):
             return
 
         draw.text((0, HEADER_Y), "RECORD", font=font_medium, fill=255)
-        _right(draw, width, HEADER_Y, minutes_label, font_medium)
+        draw_minutes_status()
 
         if mode == "offline":
             _center(draw, width, CONTENT_Y, "DAEMON", font_big)
@@ -503,6 +520,109 @@ class ErrorScreen(Screen):
         detail = str(error.get("detail") or "Press to clear")
         draw.text((0, CONTENT_Y + LINE_HEIGHT), detail[:20], font=font, fill=255)
         draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), "Press to clear", font=font, fill=255)
+
+
+class SettingsScreen(Screen):
+    title = "SETTINGS"
+
+    QUALITY_OPTIONS = ("small", "balanced", "high", "max")
+    QUALITY_LABELS = {"small": "28", "balanced": "23", "high": "18", "max": "14"}
+
+    def __init__(self) -> None:
+        self.controlling = False
+        self.selected = 0
+        self.options = ["LEDs", "MP4 export", "STORAGE auto", "HDMI preview", "Back"]
+
+    def on_select(self, app) -> None:
+        if not self.controlling:
+            self.controlling = True
+            self.selected = 0
+            return
+        if self.selected == len(self.options) - 1:
+            self.controlling = False
+            self.selected = 0
+            return
+        state = app.state or {}
+        conversion = state.get("conversion") or {}
+        settings = state.get("settings") or {}
+        lights = state.get("lights") or {}
+        if self.selected == 0:
+            app.set_setting("/settings/lights", {"enabled": not bool(lights.get("enabled", True))})
+        elif self.selected == 1:
+            app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
+        elif self.selected == 2:
+            app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
+        elif self.selected == 3:
+            app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
+
+    def on_up(self, app) -> bool:
+        if not self.controlling:
+            return False
+        self.selected = (self.selected - 1) % len(self.options)
+        return True
+
+    def on_down(self, app) -> bool:
+        if not self.controlling:
+            return False
+        self.selected = (self.selected + 1) % len(self.options)
+        return True
+
+    @staticmethod
+    def _on_off(value: Any, default: bool = True) -> str:
+        return "ON" if bool(value if value is not None else default) else "OFF"
+
+    def _mp4_export_value(self, conversion: dict[str, Any]) -> str:
+        if not bool(conversion.get("auto_mp4_enabled", True)):
+            return "OFF"
+        quality = str(conversion.get("mp4_quality") or "high").lower()
+        return self.QUALITY_LABELS.get(quality, "18")
+
+    def _next_mp4_export_payload(self, conversion: dict[str, Any]) -> dict[str, Any]:
+        enabled = bool(conversion.get("auto_mp4_enabled", True))
+        quality = str(conversion.get("mp4_quality") or "high").lower()
+        if not enabled:
+            return {"auto_mp4_enabled": True, "mp4_quality": "small"}
+        try:
+            idx = self.QUALITY_OPTIONS.index(quality)
+        except ValueError:
+            idx = 2
+        if idx >= len(self.QUALITY_OPTIONS) - 1:
+            return {"auto_mp4_enabled": False}
+        return {"auto_mp4_enabled": True, "mp4_quality": self.QUALITY_OPTIONS[idx + 1]}
+
+    def _option_label(self, state: dict[str, Any], index: int) -> str:
+        conversion = state.get("conversion") or {}
+        settings = state.get("settings") or {}
+        lights = state.get("lights") or {}
+        if index == 0:
+            return f"LEDs [{self._on_off(lights.get('enabled'), True)}]"
+        if index == 1:
+            return f"MP4 export [{self._mp4_export_value(conversion)}]"
+        if index == 2:
+            return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
+        if index == 3:
+            return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
+        if index == 4:
+            return "Back"
+        return self.options[index]
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        state = context.get("state") or {}
+        font = _font(context, "font_medium")
+        draw.text((0, HEADER_Y), "SETTINGS", font=font, fill=255)
+        if state.get("mode") == "offline":
+            draw.text((0, CONTENT_Y), "Daemon offline", font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), "Settings unavailable", font=font, fill=255)
+            return
+        if not self.controlling:
+            draw.text((0, CONTENT_Y), self._option_label(state, 0), font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), self._option_label(state, 1), font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), self._option_label(state, 2), font=font, fill=255)
+            return
+        start = max(0, min(self.selected - 1, len(self.options) - 3))
+        for row, option_index in enumerate(range(start, min(start + 3, len(self.options)))):
+            prefix = "> " if option_index == self.selected else "  "
+            draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + self._option_label(state, option_index), font=font, fill=255)
 
 
 class UsbTransferScreen(Screen):
@@ -938,7 +1058,10 @@ class GameScreen(Screen):
         return self._game.can_navigate(state)
 
     def led_override(self, app) -> "Rgb | None":
-        return self._game.led_override(app)
+        override = self._game.led_override(app)
+        if override is not None:
+            return override
+        return app._dim_led(Rgb(255, 0, 128))
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
         self._game.render(draw, width, height, context)

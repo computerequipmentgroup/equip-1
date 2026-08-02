@@ -18,6 +18,13 @@ class ButtonEvents:
     up: bool = False
     select: bool = False
     down: bool = False
+    up_held: bool = False
+    select_held: bool = False
+    down_held: bool = False
+
+    @property
+    def all_held(self) -> bool:
+        return self.up_held and self.select_held and self.down_held
 
 
 class Button:
@@ -29,15 +36,19 @@ class Button:
         self.last_state = True
         self.last_press = 0.0
 
-    def pressed(self) -> bool:
+    def poll(self) -> tuple[bool, bool]:
         current = self.gpio.read()
         now = time.monotonic()
-        if self.last_state and not current and (now - self.last_press) > self.debounce_seconds:
+        held = not current
+        pressed = False
+        if self.last_state and held and (now - self.last_press) > self.debounce_seconds:
             self.last_press = now
-            self.last_state = current
-            return True
+            pressed = True
         self.last_state = current
-        return False
+        return pressed, held
+
+    def pressed(self) -> bool:
+        return self.poll()[0]
 
     def close(self) -> None:
         self.gpio.close()
@@ -50,10 +61,16 @@ class HardwareButtons:
         self.down = Button(board.gpiochip, board.btn_down, debounce_seconds)
 
     def poll(self) -> ButtonEvents:
+        up, up_held = self.up.poll()
+        select, select_held = self.select.poll()
+        down, down_held = self.down.poll()
         return ButtonEvents(
-            up=self.up.pressed(),
-            select=self.select.pressed(),
-            down=self.down.pressed(),
+            up=up,
+            select=select,
+            down=down,
+            up_held=up_held,
+            select_held=select_held,
+            down_held=down_held,
         )
 
     def close(self) -> None:

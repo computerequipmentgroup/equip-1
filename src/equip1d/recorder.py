@@ -19,7 +19,7 @@ class RecorderProcessState:
 
 
 class RecordingTracker:
-    """Toggles the recording sink on the shared DV source and owns metadata.
+    """Toggles the recording sink on the shared DV/HDV source and owns metadata.
 
     Recording no longer spawns its own dvgrab: the FireWire device is held
     continuously by the shared ``DvSource``, so starting a capture is just
@@ -37,15 +37,18 @@ class RecordingTracker:
     def capture_prefix(self, timestamp: str) -> Path:
         return self.capture_dir / f"capture_{timestamp}"
 
-    def capture_path(self, stem: str) -> Path:
-        return self.capture_dir / f"{stem}.dv"
+    def capture_path(self, stem: str, extension: str | None = None) -> Path:
+        extension = extension or self.source.capture_extension
+        if not extension.startswith("."):
+            extension = f".{extension}"
+        return self.capture_dir / f"{stem}{extension}"
 
-    def unique_capture_path(self, stem: str) -> Path:
-        path = self.capture_path(stem)
+    def unique_capture_path(self, stem: str, extension: str | None = None) -> Path:
+        path = self.capture_path(stem, extension=extension)
         if not path.exists() and not path.with_suffix(".jpg").exists():
             return path
         for index in range(1, 1000):
-            candidate = self.capture_path(f"{stem}-{index:03d}")
+            candidate = self.capture_path(f"{stem}-{index:03d}", extension=extension)
             if not candidate.exists() and not candidate.with_suffix(".jpg").exists():
                 return candidate
         raise RuntimeError("Could not find an available capture filename")

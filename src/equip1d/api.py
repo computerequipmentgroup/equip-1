@@ -88,6 +88,33 @@ async def set_capture_naming(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/settings/conversion")
+async def set_conversion_settings(payload: dict) -> dict:
+    state: dict | None = None
+    if "auto_mp4_enabled" in payload:
+        state = await daemon.set_auto_convert_mp4(payload.get("auto_mp4_enabled"))
+    if "mp4_quality" in payload:
+        state = await daemon.set_mp4_quality(payload.get("mp4_quality"))
+    return state or await daemon.snapshot()
+
+
+@app.post("/api/settings/auto-storage-switch")
+async def set_auto_storage_switch(payload: dict) -> dict:
+    return await daemon.set_auto_storage_switch(payload.get("enabled"))
+
+
+@app.post("/api/settings/hdmi-preview")
+async def set_hdmi_preview(payload: dict) -> dict:
+    return await daemon.set_hdmi_preview_enabled(payload.get("enabled"))
+
+
+@app.post("/api/settings/lights")
+async def set_lights_settings(payload: dict) -> dict:
+    if "enabled" in payload:
+        return await daemon.set_lights_enabled(payload.get("enabled"))
+    return await daemon.snapshot()
+
+
 @app.get("/api/captures/{capture_name}/download")
 async def download_capture(capture_name: str) -> FileResponse:
     path = await daemon.capture_path(capture_name)
@@ -115,7 +142,7 @@ async def live_preview() -> StreamingResponse:
 
 @app.get("/api/stream.mkv")
 async def live_mkv_stream(takeover: bool = False) -> StreamingResponse:
-    # Raw DV remuxed into Matroska for VLC and other network players. Open
+    # Raw DV or native HDV remuxed into Matroska for VLC and other network players. Open
     # http://<device-ip>:8000/api/stream.mkv in VLC's "Open Network Stream".
     # The HDMI framebuffer watcher passes takeover=1 so plugging in a monitor
     # preempts a browser MJPEG preview that may already be holding the stream.
@@ -232,6 +259,12 @@ async def _handle_ws_command(message: object) -> None:
     elif message.get("type") == "set-capture-naming":
         with contextlib.suppress(CommandError):
             await daemon.set_capture_naming(message.get("prefix"), message.get("template"))
+    elif message.get("type") == "set-auto-convert-mp4":
+        with contextlib.suppress(CommandError):
+            await daemon.set_auto_convert_mp4(message.get("enabled"))
+    elif message.get("type") == "set-mp4-quality":
+        with contextlib.suppress(CommandError):
+            await daemon.set_mp4_quality(message.get("quality"))
 
 
 @app.websocket("/api/events")
