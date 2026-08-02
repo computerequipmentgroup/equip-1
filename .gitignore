@@ -58,6 +58,7 @@ node_modules/
 !.env.example
 
 # Hardware/local test artifacts
+artifacts/
 *.sqlite
 *.sqlite3
 
