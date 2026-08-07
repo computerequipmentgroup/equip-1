@@ -9,6 +9,7 @@ from .settings import (
     CAPTURE_FILENAME_PREFIX_DEFAULT,
     CAPTURE_FILENAME_TEMPLATE_DEFAULT,
     LIGHTS_BRIGHTNESS_DEFAULT,
+    MP4_DEINTERLACE_DEFAULT,
     MP4_QUALITY_DEFAULT,
 )
 
@@ -114,6 +115,7 @@ class LightsState:
 class ConversionState:
     auto_mp4_enabled: bool = AUTO_CONVERT_MP4_DEFAULT
     mp4_quality: str = MP4_QUALITY_DEFAULT
+    mp4_deinterlace_enabled: bool = MP4_DEINTERLACE_DEFAULT
     active: bool = False
     progress_percent: int = 0
     source: str | None = None

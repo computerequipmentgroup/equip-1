@@ -95,6 +95,10 @@ async def set_conversion_settings(payload: dict) -> dict:
         state = await daemon.set_auto_convert_mp4(payload.get("auto_mp4_enabled"))
     if "mp4_quality" in payload:
         state = await daemon.set_mp4_quality(payload.get("mp4_quality"))
+    if "mp4_deinterlace_enabled" in payload:
+        state = await daemon.set_mp4_deinterlace(payload.get("mp4_deinterlace_enabled"))
+    elif "mp4_deinterlace" in payload:
+        state = await daemon.set_mp4_deinterlace(payload.get("mp4_deinterlace"))
     return state or await daemon.snapshot()
 
 
@@ -265,6 +269,9 @@ async def _handle_ws_command(message: object) -> None:
     elif message.get("type") == "set-mp4-quality":
         with contextlib.suppress(CommandError):
             await daemon.set_mp4_quality(message.get("quality"))
+    elif message.get("type") == "set-mp4-deinterlace":
+        with contextlib.suppress(CommandError):
+            await daemon.set_mp4_deinterlace(message.get("enabled"))
 
 
 @app.websocket("/api/events")

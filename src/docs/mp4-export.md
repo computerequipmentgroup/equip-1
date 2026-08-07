@@ -73,7 +73,11 @@ Both variants scale to even dimensions with:
 -vf scale=trunc(iw/2)*2:trunc(ih/2)*2
 ```
 
-This avoids encoders rejecting odd-sized input.
+This avoids encoders rejecting odd-sized input. When MP4 deinterlacing is enabled, the daemon prepends FFmpeg's `yadif` filter before scaling:
+
+```text
+-vf yadif=mode=send_frame:parity=auto:deint=all,scale=trunc(iw/2)*2:trunc(ih/2)*2
+```
 
 ## Runtime settings
 
@@ -83,6 +87,7 @@ In `/etc/equip1/equip-1.ini`:
 [recording]
 auto_convert_mp4 = true
 mp4_quality = high
+mp4_deinterlace = false
 ```
 
 Environment overrides:
@@ -91,6 +96,7 @@ Environment overrides:
 | --- | --- |
 | `EQUIP1_AUTO_CONVERT_MP4` | `true`/`false`, `1`/`0`, `on`/`off` |
 | `EQUIP1_MP4_QUALITY` | `small`, `balanced`, `high`, `max` |
+| `EQUIP1_MP4_DEINTERLACE` | `true`/`false`, `1`/`0`, `on`/`off` |
 
 Aliases accepted by the daemon include:
 
@@ -117,6 +123,10 @@ Example payloads:
 ```
 
 ```json
+{ "mp4_deinterlace_enabled": true }
+```
+
+```json
 { "auto_mp4_enabled": false }
 ```
 
@@ -127,6 +137,7 @@ Daemon state includes:
   "conversion": {
     "auto_mp4_enabled": true,
     "mp4_quality": "high",
+    "mp4_deinterlace_enabled": false,
     "active": false,
     "progress_percent": 0,
     "source": null,
@@ -144,4 +155,5 @@ During export, `conversion.active` is `true`, `conversion.progress_percent` repo
 - Existing non-empty `.mp4` sidecars are not regenerated.
 - Higher quality settings take longer and produce larger files.
 - `[14]` can be significantly slower than `[18]`; use it when size and conversion time are less important.
-- MP4 export quality does not change live preview, HDMI preview, or the source recording quality.
+- Deinterlacing is off by default to preserve the source look; enable it for interlaced DV tapes when the sidecar MP4 will mostly be watched on progressive displays.
+- MP4 export quality and deinterlacing do not change live preview, HDMI preview, or the source recording quality.

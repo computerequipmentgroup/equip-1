@@ -260,6 +260,7 @@ class StorageManager:
         ffmpeg_bin: str = "ffmpeg",
         quality: str = "high",
         progress_callback: Callable[[int], None] | None = None,
+        deinterlace: bool = False,
     ) -> Path | None:
         if not capture_path.is_file() or capture_path.suffix.lower() not in CAPTURE_EXTENSIONS:
             return None
@@ -282,6 +283,10 @@ class StorageManager:
         }
         quality_name = str(quality).lower()
         preset = presets.get(quality_name, presets["high"])
+        video_filters = ["scale=trunc(iw/2)*2:trunc(ih/2)*2"]
+        if deinterlace:
+            video_filters.insert(0, "yadif=mode=send_frame:parity=auto:deint=all")
+        video_filter = ",".join(video_filters)
         command_variants = [
             [
                 ffmpeg_bin,
@@ -296,7 +301,7 @@ class StorageManager:
                 "-map",
                 "0:a?",
                 "-vf",
-                "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                video_filter,
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -326,7 +331,7 @@ class StorageManager:
                 "-map",
                 "0:a?",
                 "-vf",
-                "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+                video_filter,
                 "-c:v",
                 "mpeg4",
                 "-q:v",

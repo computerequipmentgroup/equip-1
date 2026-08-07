@@ -50,7 +50,7 @@ def _base_state(mode: str) -> dict[str, Any]:
             "error": None,
         },
         "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
-        "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "active": False, "source": None, "target": None, "last_error": None},
+        "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "mp4_deinterlace_enabled": False, "active": False, "source": None, "target": None, "last_error": None},
         "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True},
         "error": None,
     }
@@ -231,6 +231,8 @@ class DesignerSession:
                 conversion["auto_mp4_enabled"] = bool(payload["auto_mp4_enabled"])
             if "mp4_quality" in payload:
                 conversion["mp4_quality"] = str(payload["mp4_quality"])
+            if "mp4_deinterlace_enabled" in payload:
+                conversion["mp4_deinterlace_enabled"] = bool(payload["mp4_deinterlace_enabled"])
         elif path == "/settings/auto-storage-switch":
             settings = self.custom_state.setdefault("settings", {})
             settings["auto_storage_switch"] = bool(payload.get("enabled"))

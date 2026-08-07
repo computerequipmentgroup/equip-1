@@ -138,6 +138,16 @@ const mockState = (): Equip1State => ({
     brightness: 0.25
   },
   capture_naming: { ...defaultCaptureNaming },
+  conversion: {
+    auto_mp4_enabled: true,
+    mp4_quality: 'high',
+    mp4_deinterlace_enabled: false,
+    active: false,
+    progress_percent: 0,
+    source: null,
+    target: null,
+    last_error: null
+  },
   error: null
 })
 

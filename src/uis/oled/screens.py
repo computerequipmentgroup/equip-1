@@ -523,7 +523,7 @@ class SettingsScreen(Screen):
     def __init__(self) -> None:
         self.controlling = False
         self.selected = 0
-        self.options = ["LEDs", "MP4 export", "STORAGE auto", "HDMI preview", "Back"]
+        self.options = ["LEDs", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview", "Back"]
 
     def on_select(self, app) -> None:
         if not self.controlling:
@@ -543,8 +543,13 @@ class SettingsScreen(Screen):
         elif self.selected == 1:
             app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
         elif self.selected == 2:
-            app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
+            app.set_setting(
+                "/settings/conversion",
+                {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", False))},
+            )
         elif self.selected == 3:
+            app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
+        elif self.selected == 4:
             app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
 
     def on_up(self, app) -> bool:
@@ -591,10 +596,12 @@ class SettingsScreen(Screen):
         if index == 1:
             return f"MP4 export [{self._mp4_export_value(conversion)}]"
         if index == 2:
-            return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
+            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), False)}]"
         if index == 3:
-            return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
+            return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
         if index == 4:
+            return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
+        if index == 5:
             return "Back"
         return self.options[index]
 

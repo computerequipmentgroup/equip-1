@@ -47,7 +47,7 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `GET` | `/api/preview.mjpg` | Browser MJPEG preview stream |
 | `GET` | `/api/stream.mkv` | Live DV or HDV copied into a Matroska stream for VLC/HDMI |
 | `POST` | `/api/time` | Set device clock from browser time only if clock is unset |
-| `POST` | `/api/settings/conversion` | Set automatic `.dv` to `.mp4` conversion and MP4 quality |
+| `POST` | `/api/settings/conversion` | Set automatic `.dv` to `.mp4` conversion, MP4 quality, and MP4 deinterlacing |
 | `POST` | `/api/settings/auto-storage-switch` | Enable/disable idle USB/SD automatic switching |
 | `POST` | `/api/settings/hdmi-preview` | Persist HDMI preview enabled/disabled for the preview watcher |
 | `POST` | `/api/settings/lights` | Set LED enabled/disabled state |
@@ -84,6 +84,8 @@ The WebSocket also accepts settings messages from the web UI:
 { "type": "set-lights-enabled", "enabled": true }
 { "type": "set-lights-brightness", "brightness": 0.25 }
 { "type": "set-auto-convert-mp4", "enabled": true }
+{ "type": "set-mp4-quality", "quality": "high" }
+{ "type": "set-mp4-deinterlace", "enabled": true }
 ```
 
 Light, conversion, storage, and HDMI settings are persisted through `Equip1Settings` into `/etc/equip1/equip-1.ini`. The OLED UI uses the REST settings endpoints.

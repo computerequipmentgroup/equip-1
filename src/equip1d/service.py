@@ -223,6 +223,7 @@ class Equip1Daemon:
         self.capture_naming_prefix, self.capture_naming_template = self._load_capture_naming()
         self.auto_convert_mp4 = self.settings.load_auto_convert_mp4()
         self.mp4_quality = self.settings.load_mp4_quality()
+        self.mp4_deinterlace = self.settings.load_mp4_deinterlace()
         self.hdmi_preview_enabled = self.settings.get_bool(
             "hdmi", "enabled", True, env="EQUIP1_HDMI_PREVIEW_ENABLED"
         )
@@ -555,6 +556,12 @@ class Equip1Daemon:
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
 
+    def _save_mp4_deinterlace(self) -> None:
+        try:
+            self.settings.save_mp4_deinterlace(self.mp4_deinterlace)
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
     def _save_auto_storage_switch(self) -> None:
         try:
             self.settings.save_value("recording", "auto_storage_switch", "true" if self.auto_storage_switch else "false")
@@ -592,6 +599,14 @@ class Equip1Daemon:
             self.mp4_quality = next_quality
             state = self._snapshot_unlocked().to_dict()
         await asyncio.to_thread(self._save_mp4_quality)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_mp4_deinterlace(self, enabled: Any) -> dict[str, Any]:
+        async with self._lock:
+            self.mp4_deinterlace = _coerce_bool(enabled)
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_mp4_deinterlace)
         await self.events.publish({"type": "state", "state": state})
         return state
 
@@ -856,6 +871,7 @@ class Equip1Daemon:
                 self.ffmpeg_bin,
                 self.mp4_quality,
                 self._set_conversion_progress,
+                self.mp4_deinterlace,
             )
             async with self._lock:
                 self._conversion_progress_percent = 100
@@ -1152,6 +1168,7 @@ class Equip1Daemon:
             conversion=ConversionState(
                 auto_mp4_enabled=self.auto_convert_mp4,
                 mp4_quality=self.mp4_quality,
+                mp4_deinterlace_enabled=self.mp4_deinterlace,
                 active=self._conversion_active,
                 progress_percent=self._conversion_progress_percent,
                 source=self._conversion_source,

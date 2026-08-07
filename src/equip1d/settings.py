@@ -12,6 +12,7 @@ CAPTURE_FILENAME_PREFIX_DEFAULT = "capture_"
 CAPTURE_FILENAME_TEMPLATE_DEFAULT = "{date}_{time}"
 AUTO_CONVERT_MP4_DEFAULT = True
 MP4_QUALITY_DEFAULT = "high"
+MP4_DEINTERLACE_DEFAULT = False
 MP4_QUALITY_OPTIONS = ("small", "balanced", "high", "max")
 
 
@@ -137,6 +138,17 @@ class Equip1Settings:
 
     def save_mp4_quality(self, quality: str) -> None:
         self.save_value("recording", "mp4_quality", normalize_mp4_quality(quality))
+
+    def load_mp4_deinterlace(self) -> bool:
+        return self.get_bool(
+            "recording",
+            "mp4_deinterlace",
+            MP4_DEINTERLACE_DEFAULT,
+            env="EQUIP1_MP4_DEINTERLACE",
+        )
+
+    def save_mp4_deinterlace(self, enabled: bool) -> None:
+        self.save_value("recording", "mp4_deinterlace", _format_bool(enabled))
 
     def save_value(self, section: str, option: str, value: str) -> None:
         parser = self._read()
