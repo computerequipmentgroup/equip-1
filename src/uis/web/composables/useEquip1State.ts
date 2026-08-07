@@ -141,7 +141,7 @@ const mockState = (): Equip1State => ({
   conversion: {
     auto_mp4_enabled: true,
     mp4_quality: 'high',
-    mp4_deinterlace_enabled: false,
+    mp4_deinterlace_enabled: true,
     active: false,
     progress_percent: 0,
     source: null,

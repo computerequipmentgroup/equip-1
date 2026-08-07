@@ -348,7 +348,8 @@ class OledApp:
         mode = (self.state or {}).get("mode")
         if mode == "recording":
             return self._dim_led(STATUS_RECORDING)
-        if mode == "mounting":
+        conversion = (self.state or {}).get("conversion") or {}
+        if mode == "mounting" or mode == "converting" or conversion.get("active"):
             return self._dim_led(STATUS_MOUNTING)
         # On the record screen, show ready-green whenever a camera is attached;
         # otherwise fall back to the standard colors. Every other screen shows

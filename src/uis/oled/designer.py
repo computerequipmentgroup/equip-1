@@ -50,7 +50,7 @@ def _base_state(mode: str) -> dict[str, Any]:
             "error": None,
         },
         "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
-        "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "mp4_deinterlace_enabled": False, "active": False, "source": None, "target": None, "last_error": None},
+        "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "mp4_deinterlace_enabled": True, "active": False, "source": None, "target": None, "last_error": None},
         "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True},
         "error": None,
     }

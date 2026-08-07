@@ -545,7 +545,7 @@ class SettingsScreen(Screen):
         elif self.selected == 2:
             app.set_setting(
                 "/settings/conversion",
-                {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", False))},
+                {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", True))},
             )
         elif self.selected == 3:
             app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
@@ -596,7 +596,7 @@ class SettingsScreen(Screen):
         if index == 1:
             return f"MP4 export [{self._mp4_export_value(conversion)}]"
         if index == 2:
-            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), False)}]"
+            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), True)}]"
         if index == 3:
             return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
         if index == 4:

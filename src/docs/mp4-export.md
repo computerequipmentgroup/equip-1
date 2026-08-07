@@ -87,7 +87,7 @@ In `/etc/equip1/equip-1.ini`:
 [recording]
 auto_convert_mp4 = true
 mp4_quality = high
-mp4_deinterlace = false
+mp4_deinterlace = true
 ```
 
 Environment overrides:
@@ -137,7 +137,7 @@ Daemon state includes:
   "conversion": {
     "auto_mp4_enabled": true,
     "mp4_quality": "high",
-    "mp4_deinterlace_enabled": false,
+    "mp4_deinterlace_enabled": true,
     "active": false,
     "progress_percent": 0,
     "source": null,
@@ -155,5 +155,5 @@ During export, `conversion.active` is `true`, `conversion.progress_percent` repo
 - Existing non-empty `.mp4` sidecars are not regenerated.
 - Higher quality settings take longer and produce larger files.
 - `[14]` can be significantly slower than `[18]`; use it when size and conversion time are less important.
-- Deinterlacing is off by default to preserve the source look; enable it for interlaced DV tapes when the sidecar MP4 will mostly be watched on progressive displays.
+- Deinterlacing is on by default for interlaced DV tapes and progressive playback; disable it if you want the MP4 sidecar to preserve the source interlaced look.
 - MP4 export quality and deinterlacing do not change live preview, HDMI preview, or the source recording quality.

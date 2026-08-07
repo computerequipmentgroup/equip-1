@@ -260,7 +260,7 @@ class StorageManager:
         ffmpeg_bin: str = "ffmpeg",
         quality: str = "high",
         progress_callback: Callable[[int], None] | None = None,
-        deinterlace: bool = False,
+        deinterlace: bool = True,
     ) -> Path | None:
         if not capture_path.is_file() or capture_path.suffix.lower() not in CAPTURE_EXTENSIONS:
             return None
