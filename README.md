@@ -83,7 +83,27 @@ See [`src/docs/mp4-export.md`](src/docs/mp4-export.md) for the full export flow.
 
 User-facing device settings live at `/etc/equip1/equip-1.ini`. The default file is staged from `src/buildroot/overlay/etc/equip1/equip-1.ini`, and matching `EQUIP1_*` environment variables can override INI values for development or one-off debugging.
 
-Rather than duplicating every option here, use the docs in `src/docs/` as the source of truth:
+Example:
+
+```ini
+[network]
+ap_ssid = Equip-1
+ap_password = firesecret
+
+[recording]
+capture_dir = /data/captures
+storage_label = EQUIP1
+auto_convert_mp4 = true
+mp4_quality = high
+mp4_deinterlace = true
+auto_storage_switch = true
+
+[hdmi]
+enabled = true
+
+[logging]
+log_level = info
+```
 
 - [`src/docs/runtime-settings.md`](src/docs/runtime-settings.md) — `/etc/equip1/equip-1.ini` sections, common keys, and environment overrides.
 - [`src/docs/mp4-export.md`](src/docs/mp4-export.md) — MP4 sidecar export flow, OLED labels, and quality presets.
@@ -94,7 +114,6 @@ Rather than duplicating every option here, use the docs in `src/docs/` as the so
 - [`src/docs/uis.md`](src/docs/uis.md) — OLED/buttons UI, browser dashboard, local designer, and static web build.
 - [`src/docs/development-and-services.md`](src/docs/development-and-services.md) — local development workflows and Debian/Radxa service templates.
 - [`src/docs/architecture.md`](src/docs/architecture.md) — how the daemon, shared stream, UIs, storage, and image overlay fit together.
-- [`src/docs/README.md`](src/docs/README.md) — documentation index, including Buildroot hardware notes under `src/docs/buildroot/`.
 
 ## Hardware
 
