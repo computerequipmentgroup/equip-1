@@ -113,17 +113,3 @@ sudo install -m 0644 src/systemd/equip1-hdmi-preview.service /etc/systemd/system
 sudo systemctl daemon-reload
 sudo systemctl enable --now equip1-ap.service equip1d.service equip1-oled.service equip1-hdmi-preview.service
 ```
-
-## API
-
-- `GET /api/state`
-- `GET /api/storage`
-- `GET /api/system`
-- `GET /api/captures`
-- `GET /api/captures/{capture_name}/download`
-- `POST /api/time`
-- `POST /api/commands/start-recording`
-- `POST /api/commands/stop-recording`
-- `POST /api/commands/rescan-camera`
-- `POST /api/commands/clear-error`
-- `WS /api/events`
