@@ -17,6 +17,7 @@ from .input import (
     make_buzzer,
 )
 from .leds import STANDARD_LED_SCALE, STATUS_MOUNTING, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
+from .power import draw_battery_indicator
 from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, SettingsScreen, StorageScreen, UsbTransferScreen
 
 
@@ -383,8 +384,14 @@ class OledApp:
                         self.leds.set_status_colors(self._standard_led_colors())
         screen = self.boot_screen if self.is_booting else self.current_screen
         fallback_state = {"mode": "boot"} if self.is_booting else {"mode": "offline"}
+
+        def render_screen(draw, width: int, height: int, context: dict) -> None:
+            screen.render(draw, width, height, context)
+            if not self.is_booting:
+                draw_battery_indicator(draw, width, height, context)
+
         self.display.render(
-            screen.render,
+            render_screen,
             {
                 "state": self.state or fallback_state,
                 "boot_elapsed": boot_elapsed,

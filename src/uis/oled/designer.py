@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .display import OledFontSet, render_oled_image
+from .power import draw_battery_indicator
 from .screens import BootScreen, DeckScreen, NetworkScreen, RecordingScreen, Screen, SettingsScreen, StorageScreen, UsbTransferScreen
 
 WIDTH = 128
@@ -49,6 +50,7 @@ def _base_state(mode: str) -> dict[str, Any]:
             "last_command": None,
             "error": None,
         },
+        "power": {"source": "pisugar", "available": True, "battery_percent": 87, "external_power": False, "charging": False},
         "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
         "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "mp4_deinterlace_enabled": True, "active": False, "source": None, "target": None, "last_error": None},
         "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True},
@@ -88,6 +90,7 @@ def _scenario_states() -> dict[str, dict[str, Any]]:
         "recording": {"active": False, "elapsed_seconds": 0},
         "storage": {"recording_minutes_available": 0, "device_kind": "unknown"},
         "network": {},
+        "power": {"source": "pisugar", "available": False, "battery_percent": None, "external_power": None, "charging": None},
         "error": {"message": "Daemon offline", "detail": "Connection refused"},
     }
     mounting = _base_state("mounting")
@@ -488,8 +491,15 @@ async def set_custom_state(request: Request) -> dict[str, Any]:
 def preview_png() -> Response:
     from PIL import ImageOps
 
+    screen = session.render_screen
+
+    def render_screen(draw, width: int, height: int, context: dict[str, Any]) -> None:
+        screen.render(draw, width, height, context)
+        if screen is not session.boot_screen:
+            draw_battery_indicator(draw, width, height, context)
+
     image = render_oled_image(
-        session.render_screen.render,
+        render_screen,
         {
             "state": session.state,
             "boot_elapsed": session.boot_elapsed,

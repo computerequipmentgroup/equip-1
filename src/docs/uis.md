@@ -27,7 +27,7 @@ Important files:
 | `leds.py` | RGB LED SPI backend, boot marquee, status colors |
 | `designer.py` | Browser-based OLED screen designer |
 
-The OLED app polls `/api/state` at `ui.state_fetch_interval` and keeps a fallback offline state if the daemon is unreachable.
+The OLED app polls `/api/state` at `ui.state_fetch_interval` and keeps a fallback offline state if the daemon is unreachable. If `state.power.available` is true, it also overlays a centered PiSugar battery percentage/icon in the header; otherwise the header is unchanged.
 
 ### OLED screens
 
@@ -109,5 +109,9 @@ Common settings live in `/etc/equip1/equip-1.ini` under `[ui]`, with environment
 | `boot_duration_seconds` | `EQUIP1_BOOT_DURATION_SECONDS` | `3.0` |
 | `boot_hold_seconds` | `EQUIP1_BOOT_HOLD_SECONDS` | `1.1` |
 | `oled_fps` | `EQUIP1_OLED_FPS` | `8` |
+| `pisugar_enabled` (`[power]`) | `EQUIP1_PISUGAR_ENABLED` | `true` |
+| `pisugar_socket` (`[power]`) | `EQUIP1_PISUGAR_SOCKET` | `/tmp/pisugar-server.sock` |
+| `pisugar_poll_interval` (`[power]`) | `EQUIP1_PISUGAR_POLL_INTERVAL` | `5` |
+| `pisugar_timeout` (`[power]`) | `EQUIP1_PISUGAR_TIMEOUT` | `0.075` |
 
 The web app uses Nuxt public runtime variables (`NUXT_PUBLIC_*`) for client-side API base, WebSocket base, mock mode, and performance logging.

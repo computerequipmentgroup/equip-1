@@ -13,6 +13,7 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 - `src/equip1d/main.py` — entrypoint, Uvicorn startup, optional captive portal redirect server.
 - `src/equip1d/api.py` — FastAPI routes, streaming responses, WebSocket endpoint, static web dashboard mount.
 - `src/equip1d/service.py` — `Equip1Daemon`, command validation, monitor loop, state snapshots, event publishing.
+- `src/equip1d/power.py` — optional PiSugar power-manager socket reader for battery status.
 - `src/equip1d/models.py` — dataclass state model returned by `/api/state`.
 - `src/equip1d/camera.py` and `deck.py` — FireWire camera detection and on-demand AV/C deck commands.
 - `src/equip1d/settings.py` — shared INI settings loader/saver.
@@ -67,6 +68,8 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 Command failures are returned as HTTP `409` with a text `detail`. User errors such as invalid time payloads are `400`; missing files are `404`.
 
 `state.camera.format` is `"unknown"`, `"dv"`, or `"hdv"`. It starts as `"unknown"` after a camera appears and changes once the shared `dvgrab` stream emits enough bytes to classify the source. Recordings use `.dv` for raw DV and `.m2t` for native HDV/MPEG-TS.
+
+`state.power` is optional PiSugar battery status. When `pisugar-server` is reachable at `/tmp/pisugar-server.sock`, `state.power.available` is `true` and `battery_percent` is populated for the OLED header indicator. Non-PiSugar builds or missing batteries report `available=false`.
 
 ## WebSocket events
 

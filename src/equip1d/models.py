@@ -97,6 +97,15 @@ class CaptureNamingState:
 
 
 @dataclass
+class PowerState:
+    source: str = "none"
+    available: bool = False
+    battery_percent: int | None = None
+    external_power: bool | None = None
+    charging: bool | None = None
+
+
+@dataclass
 class LightsState:
     # Per-LED "standard" colors, one [r, g, b] per physical LED, authored at
     # full 0-255 brightness. Clients (OLED) dim each to the same level as the
@@ -137,6 +146,7 @@ class DaemonState:
     storage: StorageState
     network: NetworkState
     deck: DeckState
+    power: PowerState = field(default_factory=PowerState)
     lights: LightsState = field(default_factory=LightsState)
     capture_naming: CaptureNamingState = field(default_factory=CaptureNamingState)
     conversion: ConversionState = field(default_factory=ConversionState)

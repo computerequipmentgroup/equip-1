@@ -31,6 +31,7 @@ from .models import (
 )
 from .network import get_network_state
 from .preview import MjpegPreview
+from .power import PiSugarPowerMonitor
 from .recorder import RecordingTracker
 from .storage import StorageManager
 from .settings import (
@@ -191,6 +192,7 @@ class Equip1Daemon:
         self.recorder = RecordingTracker(self.capture_dir, source=self.dv)
         self.ffmpeg_bin = ffmpeg_bin
         self.preview = MjpegPreview(self.dv, ffmpeg_bin=ffmpeg_bin, settings=self.settings)
+        self.power = PiSugarPowerMonitor(self.settings)
         self.events = EventBus()
         self.host_url_port = host_url_port
         self._lock = asyncio.Lock()
@@ -1156,6 +1158,7 @@ class Equip1Daemon:
                 last_command=self.deck.last_command,
                 error=self.deck.last_error,
             ),
+            power=self.power.snapshot(),
             lights=LightsState(
                 default_colors=[list(color) for color in self.lights_default_colors],
                 enabled=self.lights_enabled,
