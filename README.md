@@ -176,21 +176,6 @@ npm run generate
 
 The daemon serves `src/uis/web/.output/public` when it exists.
 
-## Debian/Radxa service install
-
-These instructions are for development on an already-running Debian/Radxa OS, not the Buildroot appliance image.
-
-```bash
-sudo mkdir -p /opt/equip1/scripts
-sudo install -m 0755 src/scripts/equip1-ap-nm.sh /opt/equip1/scripts/equip1-ap-nm.sh
-sudo install -m 0755 src/scripts/equip1-hdmi-preview-fb.sh /opt/equip1/scripts/equip1-hdmi-preview-fb.sh
-sudo install -m 0644 src/systemd/equip1-ap.service /etc/systemd/system/equip1-ap.service
-sudo install -m 0644 src/systemd/equip1d.service /etc/systemd/system/equip1d.service
-sudo install -m 0644 src/systemd/equip1-oled.service /etc/systemd/system/equip1-oled.service
-sudo install -m 0644 src/systemd/equip1-hdmi-preview.service /etc/systemd/system/equip1-hdmi-preview.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now equip1-ap.service equip1d.service equip1-oled.service equip1-hdmi-preview.service
-```
 
 
 ## Open source
