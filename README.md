@@ -79,151 +79,22 @@ MP4 quality presets:
 
 See [`src/docs/mp4-export.md`](src/docs/mp4-export.md) for the full export flow.
 
-## `/etc/equip1/equip-1.ini` options
+## Runtime settings and docs
 
-Environment variables with matching `EQUIP1_*` names override INI values, which is useful for local development and one-off device debugging. The OLED/web settings UI may also persist some values back into this file.
+User-facing device settings live at `/etc/equip1/equip-1.ini`. The default file is staged from `src/buildroot/overlay/etc/equip1/equip-1.ini`, and matching `EQUIP1_*` environment variables can override INI values for development or one-off debugging.
 
-Example:
+Rather than duplicating every option here, use the docs in `src/docs/` as the source of truth:
 
-```ini
-[network]
-ap_ssid = Equip-1
-ap_password = firesecret
-
-[recording]
-capture_dir = /data/captures
-storage_label = EQUIP1
-auto_convert_mp4 = true
-mp4_quality = high
-mp4_deinterlace = true
-auto_storage_switch = true
-
-[hdmi]
-enabled = true
-
-[logging]
-log_level = info
-```
-
-### `[recording]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `capture_dir` | `/data/captures` | Directory for `.dv` recordings and `.mp4` sidecars |
-| `storage_label` | `EQUIP1` | Preferred USB-A exFAT volume label |
-| `data_mount` | `/data` | Mount point used by the boot storage script |
-| `data_mount_options` | `noatime` | exFAT mount options |
-| `data_mount_timeout` | `15` | Seconds before a mount attempt is timed out |
-| `usb_data_wait_seconds` | `0` | Seconds to wait at boot for USB storage to appear |
-| `data_boot_diagnostics` | `0` | Emit extra USB/storage boot diagnostics |
-| `normalize_dif_headers` | `1` | Normalize DV DIF headers while recording |
-| `auto_storage_switch` | `true` | Switch between USB and SD storage automatically while idle |
-| `auto_storage_cooldown_seconds` | `5` | Minimum seconds between automatic storage switch attempts |
-| `capture_prefix` | `capture_` | Filename prefix for new captures |
-| `filename_template` | `{date}_{time}` | Filename template; common tags include `{date}`, `{time}`, `{datetime}` |
-| `auto_convert_mp4` | `true` | Create `.mp4` sidecars after recording |
-| `mp4_quality` | `high` | `small`, `balanced`, `high`, or `max` |
-| `mp4_deinterlace` | `true` | Apply FFmpeg `yadif` deinterlacing during MP4 export |
-
-### `[network]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `wifi_mode` | `ap` | `ap`, `client`, or `off` |
-| `host` | `0.0.0.0` | Daemon bind host |
-| `port` | `8000` | Dashboard/API port |
-| `ap_enabled` | `1` | Include AP details in daemon state |
-| `ap_iface` | `wlan0` | Wi-Fi interface |
-| `ap_ssid` | `Equip-1` | Access-point SSID |
-| `ap_password` | `firesecret` | WPA2 password; must be 8-63 characters |
-| `ap_ip` | `10.42.0.1` | Access-point IP address |
-| `ap_cidr` | `24` | Access-point subnet prefix length |
-| `ap_channel` | `6` | Wi-Fi AP channel |
-| `ap_dhcp_start` | `10.42.0.10` | DHCP range start |
-| `ap_dhcp_end` | `10.42.0.100` | DHCP range end |
-| `ap_dhcp_lease` | `12h` | DHCP lease duration |
-| `ap_country` | empty | Optional regulatory country code |
-| `startup_background` | `1` | Continue boot while Wi-Fi starts |
-| `captive_enabled` | `true` | Enable captive redirect in AP mode |
-| `captive_host` | `0.0.0.0` | Captive redirect bind host |
-| `captive_port` | `80` | Captive redirect port |
-| `captive_dashboard_url` | derived | Optional explicit captive redirect target |
-
-For `wifi_mode = client`, configure `/etc/wpa_supplicant.conf` in the image/device.
-
-### `[preview]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `fps` | `25` | Browser MJPEG preview FPS while idle |
-| `size` | `720:540` | Browser MJPEG preview size while idle |
-| `quality` | `4` | MJPEG quality while idle |
-| `recording_fps` | `2` | Lower preview FPS while recording |
-| `recording_size` | `480:360` | Lower preview size while recording |
-| `recording_quality` | `5` | MJPEG quality while recording |
-| `filter` | generated | Full custom idle FFmpeg video filter |
-| `recording_filter` | generated | Full custom recording FFmpeg video filter |
-
-### `[hdmi]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `enabled` | `true` | Start the HDMI framebuffer preview watcher |
-| `stream_url` | `http://127.0.0.1:8000/api/stream.mkv?takeover=1` | MKV stream consumed by HDMI preview |
-| `fbdev` | `/dev/fb0` | Framebuffer device |
-| `poll_seconds` | `1` | HDMI status polling interval |
-| `assume_connected_without_drm` | `0` | Treat HDMI as connected when DRM status is unavailable |
-| `pix_fmt` | empty | Optional framebuffer pixel-format override |
-| `ffmpeg_loglevel` | `info` | FFmpeg log level for HDMI preview |
-| `ffmpeg_progress` | `0` | Enable FFmpeg progress output |
-| `ffmpeg_stats_period` | `5` | FFmpeg stats interval |
-| `clear_on_connect` | `1` | Clear framebuffer when HDMI connects |
-
-### `[ui]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `board_type` | `rock2f` | OLED/buttons hardware profile |
-| `api_base` | `http://127.0.0.1:8000/api` | OLED API base URL |
-| `api_timeout` | `5.0` | OLED HTTP timeout |
-| `state_fetch_interval` | `1.0` | OLED state polling interval |
-| `oled_fps` | `8` | OLED render-loop FPS |
-| `boot_duration_seconds` | `3.0` | Boot animation duration |
-| `boot_hold_seconds` | `1.1` | Boot logo hold time |
-| `button_debounce_ms` | `25` | Button debounce window |
-| `button_beep_ms` | `20` | Button beep duration |
-
-### `[lights]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `enabled` | `true` | Enable status RGB LEDs |
-| `default_colors` | `0,0,255;0,0,255;0,0,255` | Semicolon-separated `r,g,b` triples |
-| `brightness` | `0.25` | Brightness multiplier, `0.0` to `1.0` |
-
-### `[power]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `pisugar_enabled` | `true` | Enable optional PiSugar battery monitor |
-| `pisugar_socket` | `/tmp/pisugar-server.sock` | PiSugar server Unix socket |
-| `pisugar_poll_interval` | `5` | Battery poll interval in seconds |
-| `pisugar_timeout` | `0.075` | PiSugar socket timeout in seconds |
-
-### `[performance]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `storage_snapshot_ttl` | `0.75` | Seconds to cache storage status snapshots |
-| `captures_cache_ttl` | `2.0` | Seconds to cache capture-list results |
-
-### `[logging]`
-
-| Key | Default | Purpose |
-| --- | --- | --- |
-| `log_level` | `info` | `quiet`, `error`, `warning`, `info`, or `debug` |
-
-For deeper runtime details and development-only environment knobs, see [`src/docs/runtime-settings.md`](src/docs/runtime-settings.md).
+- [`src/docs/runtime-settings.md`](src/docs/runtime-settings.md) — `/etc/equip1/equip-1.ini` sections, common keys, and environment overrides.
+- [`src/docs/mp4-export.md`](src/docs/mp4-export.md) — MP4 sidecar export flow, OLED labels, and quality presets.
+- [`src/docs/storage-captures-usb.md`](src/docs/storage-captures-usb.md) — capture storage, `/data/captures`, USB switching, and USB-C mass-storage mode.
+- [`src/docs/buildroot-image.md`](src/docs/buildroot-image.md) — image build flow, rootfs overlay, init ordering, and runtime logs.
+- [`src/docs/daemon-api.md`](src/docs/daemon-api.md) — daemon state model, commands, HTTP endpoints, streams, and WebSocket events.
+- [`src/docs/dv-stream-recording-preview.md`](src/docs/dv-stream-recording-preview.md) — FireWire capture path, recording, browser preview, and HDMI/VLC output.
+- [`src/docs/uis.md`](src/docs/uis.md) — OLED/buttons UI, browser dashboard, local designer, and static web build.
+- [`src/docs/development-and-services.md`](src/docs/development-and-services.md) — local development workflows and Debian/Radxa service templates.
+- [`src/docs/architecture.md`](src/docs/architecture.md) — how the daemon, shared stream, UIs, storage, and image overlay fit together.
+- [`src/docs/README.md`](src/docs/README.md) — documentation index, including Buildroot hardware notes under `src/docs/buildroot/`.
 
 ## Hardware
 
