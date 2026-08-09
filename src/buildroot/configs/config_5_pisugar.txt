@@ -1,0 +1,16 @@
+# Equip-1 Raspberry Pi 5 boot config for Firehat + PiSugar 3 Plus.
+
+kernel=Image
+disable_overscan=1
+
+# Firehat on Raspberry Pi 5 uses the PCIe FFC path. Gen 2 is the Pi 5 default
+# and is more conservative than forcing uncertified Gen 3 operation.
+dtparam=pciex1
+
+# PiSugar 3 Plus uses I2C on header pins 3/5 (GPIO2/GPIO3), with devices at
+# 0x57 and 0x68. On Pi 5 the explicit i2c1-pi5 overlay is more reliable than
+# the older dtparam=i2c_arm=on spelling.
+dtoverlay=i2c1-pi5,pins_2_3,baudrate=100000
+
+# RGB LEDs use SPI0 MOSI on header pin 19 when present.
+dtparam=spi=on

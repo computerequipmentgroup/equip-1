@@ -9,6 +9,13 @@ Equip-1 is Buildroot-first. The image build combines Buildroot configs, a rootfs
 ./src/buildroot/scripts/flash.sh
 ```
 
+Raspberry Pi 5 + PiSugar 3 Plus image:
+
+```sh
+./src/buildroot/scripts/build.sh equip1_pi5_pisugar3plus_defconfig
+xz -T0 -9 -c src/buildroot/output/sdcard.img > src/buildroot/output/equip-1-v0.1.0-pi5-pisugar3plus.img.xz
+```
+
 `build.sh` expects the `equip1-builder` VM workflow used by this repository. It builds the Nuxt dashboard on the host, stages app sources into the overlay, syncs Buildroot inputs to the VM, runs Buildroot, and writes artifacts under `src/buildroot/output/`.
 
 ## Important paths
@@ -16,9 +23,11 @@ Equip-1 is Buildroot-first. The image build combines Buildroot configs, a rootfs
 | Path | Purpose |
 | --- | --- |
 | `src/buildroot/configs/equip1_defconfig` | Buildroot defconfig |
-| `src/buildroot/configs/linux.config` | Kernel config fragment |
-| `src/buildroot/configs/u-boot.config` | U-Boot config fragment |
-| `src/buildroot/configs/genimage.cfg` | Disk image partition layout |
+| `src/buildroot/configs/linux.config` | ROCK 2F kernel config fragment |
+| `src/buildroot/configs/linux-pi5.config` | Raspberry Pi 5 kernel config fragment |
+| `src/buildroot/configs/u-boot.config` | ROCK 2F U-Boot config fragment |
+| `src/buildroot/configs/genimage.cfg` | ROCK 2F disk image partition layout |
+| `src/buildroot/configs/genimage-pi5.cfg` | Raspberry Pi 5 disk image partition layout |
 | `src/buildroot/dts/` | DTS overlays compiled into `/boot/overlay-user/*.dtbo` |
 | `src/buildroot/external/` | Buildroot external tree for `dvgrab` and FireWire libraries |
 | `src/buildroot/overlay/` | Root filesystem overlay copied into the target image |

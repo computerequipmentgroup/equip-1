@@ -9,6 +9,7 @@ APPDIR=/opt/equip1
 export PYTHONPATH="$APPDIR/lib:$APPDIR"
 if [ -r /etc/equip1/settings-env.sh ]; then
     . /etc/equip1/settings-env.sh
+    equip1_ini_default EQUIP_1_BOARD_TYPE ui board_type rock2f
     equip1_ini_default EQUIP1_API_BASE ui api_base http://127.0.0.1:8000/api
     equip1_ini_default EQUIP1_API_TIMEOUT ui api_timeout 5.0
     equip1_ini_default EQUIP1_STATE_FETCH_INTERVAL ui state_fetch_interval 1.0

@@ -1,0 +1,48 @@
+#!/bin/sh
+# PiSugar power-manager server for BusyBox init.
+
+PIDFILE=/var/run/pisugar-server.pid
+LOG_DIR=/var/log/equip1
+LOGFILE=$LOG_DIR/pisugar-server.log
+DEFAULTS=/etc/default/pisugar-server
+WORKDIR=/etc/pisugar-server
+
+OPTS="--model 'PiSugar 3' --syslog --config config.json --uds /tmp/pisugar-server.sock --tcp 0.0.0.0:8423 --ws 0.0.0.0:8422 --web /usr/share/pisugar-server/web --http 0.0.0.0:8421"
+[ -r "$DEFAULTS" ] && . "$DEFAULTS"
+
+case "$1" in
+    start)
+        if [ ! -x /usr/bin/pisugar-server ]; then
+            echo "pisugar-server not installed; skipping"
+            exit 0
+        fi
+        mkdir -p /var/run "$LOG_DIR" "$WORKDIR"
+        echo "Starting pisugar-server..."
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "pisugar-server already running"
+            exit 0
+        fi
+        cd "$WORKDIR" || exit 1
+        # OPTS intentionally comes from /etc/default/pisugar-server and contains
+        # quoted model text, so use eval to preserve the upstream argument form.
+        eval "/usr/bin/pisugar-server $OPTS" >>"$LOGFILE" 2>&1 &
+        echo $! > "$PIDFILE"
+        ;;
+    stop)
+        echo "Stopping pisugar-server..."
+        if [ -f "$PIDFILE" ]; then
+            kill "$(cat "$PIDFILE")" 2>/dev/null || true
+            rm -f "$PIDFILE"
+        fi
+        rm -f /tmp/pisugar-server.sock
+        ;;
+    restart)
+        "$0" stop
+        sleep 1
+        "$0" start
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart}"
+        exit 1
+        ;;
+esac

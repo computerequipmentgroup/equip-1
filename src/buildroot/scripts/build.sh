@@ -13,6 +13,20 @@ LOG="$BUILDROOT_DIR/build.log"
 
 DEFCONFIG="${1:-equip1_defconfig}"
 DEFCONFIG_BASENAME="$(basename "$DEFCONFIG")"
+case "$DEFCONFIG_BASENAME" in
+    *pi5*)
+        TARGET_BOARD="pi5"
+        KERNEL_HEADERS_LINE="BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_6=y"
+        POST_BUILD_SCRIPT="post-build-pi5.sh"
+        GENIMAGE_CFG="genimage-pi5.cfg"
+        ;;
+    *)
+        TARGET_BOARD="rock2f"
+        KERNEL_HEADERS_LINE="BR2_KERNEL_HEADERS_6_1=y"
+        POST_BUILD_SCRIPT="post-build.sh"
+        GENIMAGE_CFG="genimage.cfg"
+        ;;
+esac
 MAX_HEAL_ATTEMPTS="${MAX_HEAL_ATTEMPTS:-3}"
 BUILD_JOBS="${BUILD_JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
@@ -33,15 +47,17 @@ sedi() {
 
 ensure_glibc_defconfig() {
     local defconfig_path="$1"
+    local kernel_headers_line="${2:-BR2_KERNEL_HEADERS_6_1=y}"
 
     sedi \
         -e '/^BR2_TOOLCHAIN_BUILDROOT_UCLIBC=y$/d' \
         -e '/^# BR2_TOOLCHAIN_BUILDROOT_GLIBC is not set$/d' \
         -e '/^BR2_KERNEL_HEADERS_6_1=y$/d' \
+        -e '/^BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_6=y$/d' \
         -e '/^BR2_TOOLCHAIN_BUILDROOT_GLIBC=y$/d' \
         "$defconfig_path"
 
-    awk '
+    awk -v kernel_headers_line="$kernel_headers_line" '
         BEGIN {
             printed_glibc = 0
             printed_headers = 0
@@ -49,7 +65,7 @@ ensure_glibc_defconfig() {
         /^# Toolchain$/ {
             print
             print "BR2_TOOLCHAIN_BUILDROOT_GLIBC=y"
-            print "BR2_KERNEL_HEADERS_6_1=y"
+            print kernel_headers_line
             printed_glibc = 1
             printed_headers = 1
             next
@@ -60,7 +76,7 @@ ensure_glibc_defconfig() {
                 print "BR2_TOOLCHAIN_BUILDROOT_GLIBC=y"
             }
             if (!printed_headers) {
-                print "BR2_KERNEL_HEADERS_6_1=y"
+                print kernel_headers_line
             }
         }
     ' "$defconfig_path" > "$defconfig_path.tmp"
@@ -83,7 +99,7 @@ apply_self_heal() {
     local healed=false
 
     if grep -q 'defconfig resolved to uclibc instead of glibc' "$attempt_log"; then
-        ensure_glibc_defconfig "$BUILDROOT_DIR/configs/$DEFCONFIG_BASENAME"
+        ensure_glibc_defconfig "$BUILDROOT_DIR/configs/$DEFCONFIG_BASENAME" "$KERNEL_HEADERS_LINE"
         echo "==> Self-heal: reasserted glibc toolchain settings in $DEFCONFIG_BASENAME"
         healed=true
     fi
@@ -98,12 +114,13 @@ apply_self_heal() {
     $healed
 }
 
-ensure_glibc_defconfig "$BUILDROOT_DIR/configs/$DEFCONFIG_BASENAME"
+ensure_glibc_defconfig "$BUILDROOT_DIR/configs/$DEFCONFIG_BASENAME" "$KERNEL_HEADERS_LINE"
 
 # Tee all output to log file
 exec > >(tee -a "$LOG") 2>&1
 echo ""
 echo "========== Build started: $(date) =========="
+echo "==> Target board: $TARGET_BOARD ($DEFCONFIG_BASENAME)"
 
 # Build the web UI into a static bundle on the host before staging it.
 # equip1d serves the captured files and dashboard from src/uis/web/.output/public,
@@ -146,6 +163,33 @@ rsync -a --delete \
     "$ROOT_DIR/uis" "$OVERLAY_DIR/opt/equip1/"
 rsync -a --delete "$ROOT_DIR/fonts" "$OVERLAY_DIR/opt/equip1/"
 cp "$ROOT_DIR/requirements.txt" "$OVERLAY_DIR/opt/equip1/requirements.txt"
+
+stage_pisugar_manager() {
+    local version="${PISUGAR_VERSION:-v2.3.2}"
+    local url="https://github.com/PiSugar/pisugar-power-manager-rs/releases/download/${version}/pisugar_aarch64-unknown-linux-musl.tar.gz"
+    local tmp
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' RETURN
+
+    echo "==> Staging PiSugar power manager (${version})..."
+    curl -L --fail -sS -o "$tmp/pisugar.tar.gz" "$url"
+    tar -xzf "$tmp/pisugar.tar.gz" -C "$tmp"
+    local src="$tmp/aarch64-unknown-linux-musl"
+
+    mkdir -p "$OVERLAY_DIR/usr/bin" "$OVERLAY_DIR/etc/pisugar-server" "$OVERLAY_DIR/etc/default"
+    cp "$src/pisugar-server" "$OVERLAY_DIR/usr/bin/pisugar-server"
+    chmod 0755 "$OVERLAY_DIR/usr/bin/pisugar-server"
+    cp "$src/pisugar-server-conf/config.json" "$OVERLAY_DIR/etc/pisugar-server/config.json"
+    chmod 0644 "$OVERLAY_DIR/etc/pisugar-server/config.json"
+    cp "$src/pisugar-server-conf/pisugar-server.default" "$OVERLAY_DIR/etc/default/pisugar-server"
+    chmod 0644 "$OVERLAY_DIR/etc/default/pisugar-server"
+    rsync -a --delete "$src/web-ui/" "$OVERLAY_DIR/usr/share/pisugar-server/web/"
+    # The upstream default still names a PiSugar 2 variant; force the model used
+    # by PiSugar 3 Plus boards. The server model name is "PiSugar 3".
+    sedi "s|'PiSugar 2 (2-LEDs)'|'PiSugar 3'|g" "$OVERLAY_DIR/etc/default/pisugar-server"
+}
+
+stage_pisugar_manager
 
 # Start VM if not running
 echo "==> Starting VM..."
@@ -205,11 +249,13 @@ run_build_attempt() {
     rsync -avz --delete -e "ssh $SSH_OPTS" \
         "$BUILDROOT_DIR/external/" admin@"$VM_IP":~/external/
 
-    scp $SSH_OPTS "$BUILDROOT_DIR/scripts/post-build.sh" admin@"$VM_IP":~/staging/post-build.sh
+    scp $SSH_OPTS "$BUILDROOT_DIR/scripts/$POST_BUILD_SCRIPT" admin@"$VM_IP":~/staging/post-build.sh
 
     echo "==> Building on VM (attempt $attempt/$MAX_HEAL_ATTEMPTS)..."
     $SSH \
         DEFCONFIG_BASENAME="$DEFCONFIG_BASENAME" \
+        TARGET_BOARD="$TARGET_BOARD" \
+        GENIMAGE_CFG="$GENIMAGE_CFG" \
         BUILD_JOBS="$BUILD_JOBS" \
         FORCE_KERNEL_CLEAN="$attempt_force_kernel_clean" \
         FORCE_PYTHON_CLEAN="$attempt_force_python_clean" \
@@ -220,6 +266,8 @@ run_build_attempt() {
 set -euo pipefail
 
 DEFCONFIG_BASENAME="${DEFCONFIG_BASENAME:-equip1_defconfig}"
+TARGET_BOARD="${TARGET_BOARD:-rock2f}"
+GENIMAGE_CFG="${GENIMAGE_CFG:-genimage.cfg}"
 BUILD_JOBS="${BUILD_JOBS:-4}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
 FORCE_PYTHON_CLEAN="${FORCE_PYTHON_CLEAN:-0}"
@@ -231,15 +279,18 @@ hash_file() {
     sha256sum "$1" | awk '{print $1}'
 }
 
-# Compile DTS overlays
-mkdir -p ~/overlay/boot/overlay-user
-for dts in ~/staging/*.dts; do
-    [ -f "$dts" ] || continue
-    name=$(basename "$dts" .dts)
-    echo "  Compiling $name.dtbo..."
-    dtc -I dts -O dtb -o ~/overlay/boot/overlay-user/"$name".dtbo "$dts"
-done
-echo "==> DTS overlays compiled."
+# Compile Rockchip DTS overlays. Raspberry Pi boot uses firmware overlays from
+# rpi-firmware instead.
+if [ "$TARGET_BOARD" = "rock2f" ]; then
+    mkdir -p ~/overlay/boot/overlay-user
+    for dts in ~/staging/*.dts; do
+        [ -f "$dts" ] || continue
+        name=$(basename "$dts" .dts)
+        echo "  Compiling $name.dtbo..."
+        dtc -I dts -O dtb -o ~/overlay/boot/overlay-user/"$name".dtbo "$dts"
+    done
+    echo "==> DTS overlays compiled."
+fi
 
 # Install Python dependencies into overlay
 if [ -f ~/overlay/opt/equip1/requirements.txt ]; then
@@ -262,11 +313,17 @@ fi
 
 # Copy configs into buildroot source tree
 cp ~/staging/"$DEFCONFIG_BASENAME" ~/buildroot/configs/
-cp ~/staging/linux.config ~/buildroot/
-if [ -f ~/staging/u-boot.config ]; then
-    cp ~/staging/u-boot.config ~/buildroot/
+if [ "$TARGET_BOARD" = "pi5" ]; then
+    cp ~/staging/linux-pi5.config ~/buildroot/
+    cp ~/staging/config_5_pisugar.txt ~/buildroot/
+    cp ~/staging/cmdline_5.txt ~/buildroot/
+else
+    cp ~/staging/linux.config ~/buildroot/
+    if [ -f ~/staging/u-boot.config ]; then
+        cp ~/staging/u-boot.config ~/buildroot/
+    fi
 fi
-cp ~/staging/genimage.cfg ~/buildroot/
+cp ~/staging/"$GENIMAGE_CFG" ~/buildroot/genimage.cfg
 cp ~/staging/post-build.sh ~/buildroot/
 chmod +x ~/buildroot/post-build.sh
 
