@@ -79,7 +79,7 @@ MP4 quality presets:
 
 See [`src/docs/mp4-export.md`](src/docs/mp4-export.md) for the full export flow.
 
-## Runtime settings and docs
+## Runtime settings
 
 User-facing device settings live at `/etc/equip1/equip-1.ini`. The default file is staged from `src/buildroot/overlay/etc/equip1/equip-1.ini`, and matching `EQUIP1_*` environment variables can override INI values for development or one-off debugging.
 
@@ -104,6 +104,10 @@ enabled = true
 [logging]
 log_level = info
 ```
+
+## Docs
+
+The full source documentation lives in `src/docs/` and covers the runtime settings, capture pipeline, storage behavior, user interfaces, and Buildroot image. Start with the topic that matches what you are changing, then follow the linked references for lower-level implementation details.
 
 - [`src/docs/runtime-settings.md`](src/docs/runtime-settings.md) — `/etc/equip1/equip-1.ini` sections, common keys, and environment overrides.
 - [`src/docs/mp4-export.md`](src/docs/mp4-export.md) — MP4 sidecar export flow, OLED labels, and quality presets.
