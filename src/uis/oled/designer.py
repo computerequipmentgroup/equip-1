@@ -298,7 +298,7 @@ HTML = """
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Equip-1 ◯ DESIGNER</title>
+  <title>Equip-1 ⚹ DESIGNER</title>
   <style>
     :root { color-scheme: light; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { min-height: 100vh; margin: 0; background: #000; color: #213040; display: grid; place-items: center; }
