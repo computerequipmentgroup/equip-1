@@ -1,0 +1,75 @@
+name: Camera not working
+description: Report a camera that does not work with Equip-1
+title: "Camera not working: <make/model>"
+labels: ["camera compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a camera compatibility issue. Basic camera info and logs are the most useful things.
+
+        Equip-1 writes live logs to `/var/log/equip1/` and automatically copies them to the user-visible Equip-1 data volume at `/data/logs/` when logging is enabled. Debug logging is enabled by default, so the `/logs` folder on the Equip-1 volume should usually have what we need.
+
+  - type: input
+    id: camera_make_model
+    attributes:
+      label: Camera make and model
+      description: Include the exact model printed on the camera.
+      placeholder: "Sony DCR-TRV900"
+    validations:
+      required: true
+
+  - type: input
+    id: equip1_version
+    attributes:
+      label: Equip-1 hardware / software
+      description: Board, Firehat/HAT revision if known, and image/release version if known.
+      placeholder: "ROCK 2F + Firehat, equip-1-v0.1.0"
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Briefly describe what does not work and what you expected to happen.
+      placeholder: |
+        Example: The camera is detected, but preview stays black and recording creates an empty file.
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Add any details you know. It is OK to leave unknown items blank.
+      placeholder: |
+        - Tape/output format: DV / DVCAM / HDV / Digital8 / unknown
+        - Region: NTSC / PAL / unknown
+        - Camera mode: VTR/Playback / Camera / unknown
+        - FireWire cable/adapters used:
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Please attach the `/logs` folder from the Equip-1 data volume, or paste the most relevant files here.
+      placeholder: |
+        Preferred: attach the whole logs folder from the Equip-1 volume.
+
+        Useful files include:
+        - logs/daemon.log
+        - logs/daemon-debug.log
+        - logs/dvsource-debug.log
+        - logs/preview-debug.log
+        - logs/boot-crumb.log
+        - logs/messages.log
+
+        On the device, the live copies are in /var/log/equip1/ and mirrored to /data/logs/.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Photos of the camera label/connection, screenshots, sample captures, or workarounds are helpful but optional.
