@@ -29,7 +29,8 @@ The default file is stored in the Buildroot overlay at `src/buildroot/overlay/et
 | `normalize_dif_headers` | `EQUIP1_DV_NORMALIZE_DIF` | Enable DV DIF header normalization |
 | `auto_convert_mp4` | `EQUIP1_AUTO_CONVERT_MP4` | Convert completed `.dv` recordings to sidecar `.mp4` files |
 | `mp4_quality` | `EQUIP1_MP4_QUALITY` | MP4 preset: `small`, `balanced`, `high`, or `max`; default `high` |
-| `mp4_deinterlace` | `EQUIP1_MP4_DEINTERLACE` | Apply FFmpeg `yadif` deinterlacing during MP4 export; default `true` |
+| `mp4_deinterlace` | `EQUIP1_MP4_DEINTERLACE` | Apply FFmpeg `nnedi` deinterlacing during MP4 export; default `true` |
+| `nnedi_weights` | `EQUIP1_NNEDI_WEIGHTS` | NNEDI weights file for MP4 deinterlacing, default `/opt/equip1/share/nnedi3_weights.bin` |
 
 MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (`balanced`), `18` (`high`), and `14` (`max`). Lower CRF means higher quality and larger files. The OLED settings screen also exposes `MP4 deint [ON/OFF]` for export deinterlacing. See [MP4 export options](mp4-export.md) for the full export flow and preset table.
 

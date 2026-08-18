@@ -19,6 +19,34 @@ class MountInfo:
 DV_BYTES_PER_MINUTE = 216 * 1024 * 1024
 CAPTURE_EXTENSIONS = {".dv", ".dif", ".m2t", ".mts", ".ts", ".avi", ".mov", ".mp4", ".mkv"}
 THUMBNAIL_EXTENSION = ".jpg"
+NNEDI_WEIGHTS_DEFAULT = "/opt/equip1/share/nnedi3_weights.bin"
+MP4_SCALE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
+MP4_YADIF_FILTER = "yadif=mode=send_frame:parity=auto:deint=all"
+
+
+def _mp4_video_filter_candidates(deinterlace: bool, nnedi_weights: str | os.PathLike[str] | None) -> list[str]:
+    if not deinterlace:
+        return [MP4_SCALE_FILTER]
+
+    filters: list[str] = []
+    weights_path = Path(nnedi_weights).expanduser() if nnedi_weights else None
+    if weights_path and weights_path.is_file():
+        # DV is normally bottom-field-first, but using frame flags lets FFmpeg
+        # honor metadata if a source declares a different field order. ``af``
+        # emits both fields, so interlaced 25/29.97 fps DV exports as smooth
+        # 50/59.94 fps progressive video.
+        nnedi = f"nnedi=weights='{_ffmpeg_filter_escape(str(weights_path))}':deint=interlaced:field=af:qual=fast"
+        filters.append(f"{nnedi},{MP4_SCALE_FILTER}")
+
+    # Keep the existing FFmpeg deinterlacer as a compatibility fallback for
+    # builds without the nnedi filter or devices missing the weights file.
+    filters.append(f"{MP4_YADIF_FILTER},{MP4_SCALE_FILTER}")
+    filters.append(MP4_SCALE_FILTER)
+    return filters
+
+
+def _ffmpeg_filter_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:")
 
 
 @dataclass(frozen=True)
@@ -261,6 +289,7 @@ class StorageManager:
         quality: str = "high",
         progress_callback: Callable[[int], None] | None = None,
         deinterlace: bool = True,
+        nnedi_weights: str | os.PathLike[str] | None = NNEDI_WEIGHTS_DEFAULT,
     ) -> Path | None:
         if not capture_path.is_file() or capture_path.suffix.lower() not in CAPTURE_EXTENSIONS:
             return None
@@ -283,69 +312,69 @@ class StorageManager:
         }
         quality_name = str(quality).lower()
         preset = presets.get(quality_name, presets["high"])
-        video_filters = ["scale=trunc(iw/2)*2:trunc(ih/2)*2"]
-        if deinterlace:
-            video_filters.insert(0, "yadif=mode=send_frame:parity=auto:deint=all")
-        video_filter = ",".join(video_filters)
         command_variants = [
-            [
-                ffmpeg_bin,
-                "-y",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                str(capture_path),
-                "-map",
-                "0:v:0",
-                "-map",
-                "0:a?",
-                "-vf",
-                video_filter,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                preset["crf"],
-                "-pix_fmt",
-                "yuv420p",
-                *preset["audio"],
-                "-movflags",
-                "+faststart",
-                "-progress",
-                "pipe:1",
-                "-nostats",
-                str(tmp_path),
-            ],
-            [
-                ffmpeg_bin,
-                "-y",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                str(capture_path),
-                "-map",
-                "0:v:0",
-                "-map",
-                "0:a?",
-                "-vf",
-                video_filter,
-                "-c:v",
-                "mpeg4",
-                "-q:v",
-                preset["qv"],
-                "-pix_fmt",
-                "yuv420p",
-                *preset["audio"],
-                "-movflags",
-                "+faststart",
-                "-progress",
-                "pipe:1",
-                "-nostats",
-                str(tmp_path),
-            ],
+            command
+            for video_filter in _mp4_video_filter_candidates(deinterlace, nnedi_weights)
+            for command in (
+                [
+                    ffmpeg_bin,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(capture_path),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-vf",
+                    video_filter,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    preset["crf"],
+                    "-pix_fmt",
+                    "yuv420p",
+                    *preset["audio"],
+                    "-movflags",
+                    "+faststart",
+                    "-progress",
+                    "pipe:1",
+                    "-nostats",
+                    str(tmp_path),
+                ],
+                [
+                    ffmpeg_bin,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(capture_path),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-vf",
+                    video_filter,
+                    "-c:v",
+                    "mpeg4",
+                    "-q:v",
+                    preset["qv"],
+                    "-pix_fmt",
+                    "yuv420p",
+                    *preset["audio"],
+                    "-movflags",
+                    "+faststart",
+                    "-progress",
+                    "pipe:1",
+                    "-nostats",
+                    str(tmp_path),
+                ],
+            )
         ]
 
         duration_seconds = self._estimate_capture_duration_seconds(capture_path)

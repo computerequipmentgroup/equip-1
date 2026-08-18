@@ -73,7 +73,13 @@ Both variants scale to even dimensions with:
 -vf scale=trunc(iw/2)*2:trunc(ih/2)*2
 ```
 
-This avoids encoders rejecting odd-sized input. When MP4 deinterlacing is enabled, the daemon prepends FFmpeg's `yadif` filter before scaling:
+This avoids encoders rejecting odd-sized input. When MP4 deinterlacing is enabled, the daemon first tries FFmpeg's `nnedi` filter before scaling:
+
+```text
+-vf nnedi=weights=/opt/equip1/share/nnedi3_weights.bin:deint=interlaced:field=af:qual=fast,scale=trunc(iw/2)*2:trunc(ih/2)*2
+```
+
+NNEDI is FFmpeg's neural-network edge-directed interpolation deinterlacer. It needs the `nnedi3_weights.bin` file shipped in the image. If the weights file is missing or the target FFmpeg build does not include `nnedi`, export falls back to the existing `yadif` deinterlacer:
 
 ```text
 -vf yadif=mode=send_frame:parity=auto:deint=all,scale=trunc(iw/2)*2:trunc(ih/2)*2
@@ -88,6 +94,7 @@ In `/etc/equip1/equip-1.ini`:
 auto_convert_mp4 = true
 mp4_quality = high
 mp4_deinterlace = true
+nnedi_weights = /opt/equip1/share/nnedi3_weights.bin
 ```
 
 Environment overrides:
@@ -97,6 +104,7 @@ Environment overrides:
 | `EQUIP1_AUTO_CONVERT_MP4` | `true`/`false`, `1`/`0`, `on`/`off` |
 | `EQUIP1_MP4_QUALITY` | `small`, `balanced`, `high`, `max` |
 | `EQUIP1_MP4_DEINTERLACE` | `true`/`false`, `1`/`0`, `on`/`off` |
+| `EQUIP1_NNEDI_WEIGHTS` | Path to `nnedi3_weights.bin`; default `/opt/equip1/share/nnedi3_weights.bin` |
 
 Aliases accepted by the daemon include:
 

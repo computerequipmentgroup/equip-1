@@ -33,7 +33,7 @@ from .network import get_network_state
 from .preview import MjpegPreview
 from .power import PiSugarPowerMonitor
 from .recorder import RecordingTracker
-from .storage import StorageManager
+from .storage import NNEDI_WEIGHTS_DEFAULT, StorageManager
 from .settings import (
     CAPTURE_FILENAME_PREFIX_DEFAULT,
     CAPTURE_FILENAME_TEMPLATE_DEFAULT,
@@ -226,6 +226,9 @@ class Equip1Daemon:
         self.auto_convert_mp4 = self.settings.load_auto_convert_mp4()
         self.mp4_quality = self.settings.load_mp4_quality()
         self.mp4_deinterlace = self.settings.load_mp4_deinterlace()
+        self.nnedi_weights = self.settings.get(
+            "recording", "nnedi_weights", NNEDI_WEIGHTS_DEFAULT, env="EQUIP1_NNEDI_WEIGHTS"
+        )
         self.hdmi_preview_enabled = self.settings.get_bool(
             "hdmi", "enabled", True, env="EQUIP1_HDMI_PREVIEW_ENABLED"
         )
@@ -874,6 +877,7 @@ class Equip1Daemon:
                 self.mp4_quality,
                 self._set_conversion_progress,
                 self.mp4_deinterlace,
+                self.nnedi_weights,
             )
             async with self._lock:
                 self._conversion_progress_percent = 100
