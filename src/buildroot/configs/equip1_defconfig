@@ -70,7 +70,7 @@ BR2_PACKAGE_ZLIB=y
 # I2C tools (for OLED display)
 BR2_PACKAGE_I2C_TOOLS=y
 
-# Recordings partition tooling: sgdisk (create), mkfs.exfat (format), partprobe
+# Recordings partition tooling: parted/partprobe (create), mkfs.exfat (format), sgdisk (host flash helper)
 BR2_PACKAGE_GPTFDISK=y
 BR2_PACKAGE_EXFATPROGS=y
 BR2_PACKAGE_PARTED=y

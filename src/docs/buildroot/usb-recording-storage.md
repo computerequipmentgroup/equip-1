@@ -7,8 +7,9 @@ Boot behavior:
 1. `/etc/init.d/S15data` waits briefly for USB storage.
 2. If it finds an exFAT partition labelled `EQUIP1` on a non-root disk, it mounts that partition at `/data`.
 3. If no `EQUIP1` USB partition exists but exactly one non-root exFAT partition exists, it mounts that partition.
-4. If there is no unambiguous USB exFAT partition, it falls back to partition 2 of the SD/rootfs disk.
-5. It creates `/data/captures` before `equip1d` starts.
+4. If there is no unambiguous USB exFAT partition, it falls back to the SD/rootfs disk's recordings partition: the partition immediately after the rootfs partition.
+5. If that SD recordings partition is missing on first boot, `S15data` creates it in the remaining free space, formats it as exFAT with label `EQUIP1`, and mounts it.
+6. It creates `/data/captures` before `equip1d` starts.
 
 This means the app does not need to change: recordings still go to `/data/captures`.
 
@@ -51,10 +52,19 @@ Expected log when a single unlabelled USB exFAT drive is used:
 S15data: using USB data partition /dev/sda1 without label
 ```
 
-Expected fallback log without USB:
+Expected fallback log without USB after provisioning exists:
 
 ```txt
 S15data: no USB data partition found; falling back to SD /dev/mmcblk0p2
+```
+
+Expected first-boot provisioning log on an oversized ROCK 2F card flashed from a compressed image:
+
+```txt
+S15data: no USB data partition found and SD fallback partition is missing; attempting first-boot provisioning
+S15data: creating SD recordings partition on /dev/mmcblk0 from sector ...s to end
+S15data: formatting SD recordings partition /dev/mmcblk0p2 as exFAT label EQUIP1
+S15data: using SD fallback data partition /dev/mmcblk0p2 label EQUIP1
 ```
 
 ## Runtime switching

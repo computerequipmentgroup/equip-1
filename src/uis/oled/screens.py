@@ -523,7 +523,7 @@ class SettingsScreen(Screen):
     def __init__(self) -> None:
         self.controlling = False
         self.selected = 0
-        self.options = ["LEDs", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview", "Back"]
+        self.options = ["LEDs", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview", "OLED rotate", "Back"]
 
     def on_select(self, app) -> None:
         if not self.controlling:
@@ -551,6 +551,8 @@ class SettingsScreen(Screen):
             app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
         elif self.selected == 4:
             app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
+        elif self.selected == 5:
+            app.set_setting("/settings/oled-rotation", {"rotate_180": not bool(settings.get("oled_rotate_180", False))})
 
     def on_up(self, app) -> bool:
         if not self.controlling:
@@ -602,6 +604,8 @@ class SettingsScreen(Screen):
         if index == 4:
             return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
         if index == 5:
+            return f"OLED rotate [{self._on_off(settings.get('oled_rotate_180'), False)}]"
+        if index == 6:
             return "Back"
         return self.options[index]
 

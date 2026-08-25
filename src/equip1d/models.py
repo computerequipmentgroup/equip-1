@@ -136,6 +136,7 @@ class ConversionState:
 class SettingsState:
     auto_storage_switch: bool = True
     hdmi_preview_enabled: bool = True
+    oled_rotate_180: bool = False
 
 
 @dataclass

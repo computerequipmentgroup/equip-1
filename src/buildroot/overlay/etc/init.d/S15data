@@ -6,9 +6,9 @@
 #   - USB-A drive/SSD: exFAT partition for captures
 #
 # Prefer a non-root-disk exFAT partition labelled EQUIP1. If none exists, use a
-# single unambiguous non-root exFAT partition. Otherwise fall back to partition 2
-# of the rootfs disk, which is the SD-card recordings partition created by
-# flash.sh.
+# single unambiguous non-root exFAT partition. Otherwise fall back to the next
+# partition after rootfs, creating and formatting that SD-card recordings partition
+# on first boot when a compressed-image flash left the rest of the card free.
 
 if [ -r /etc/equip1/settings-env.sh ]; then
     . /etc/equip1/settings-env.sh
@@ -76,20 +76,133 @@ partition_disk() {
     esac
 }
 
+root_part_from_rootfs() {
+    blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1
+}
+
 root_disk_from_rootfs() {
-    rootdev="$(blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1)"
+    rootdev="$(root_part_from_rootfs)"
     [ -n "$rootdev" ] || return 1
     partition_disk "$rootdev"
 }
 
+partition_number() {
+    part="$1"
+    case "$part" in
+        *mmcblk*p[0-9]*|*nvme*n[0-9]*p[0-9]*) echo "${part##*p}" ;;
+        /dev/*[0-9])                              echo "${part##*[!0-9]}" ;;
+        *)                                        return 1 ;;
+    esac
+}
+
 sd_data_part_from_rootfs_disk() {
-    disk="$(root_disk_from_rootfs 2>/dev/null || true)"
-    [ -n "$disk" ] || return 1
+    rootdev="$(root_part_from_rootfs)"
+    [ -n "$rootdev" ] || return 1
+    disk="$(partition_disk "$rootdev")"
+    num="$(partition_number "$rootdev")"
+    case "$num" in ''|*[!0-9]*) return 1 ;; esac
+    data_num=$((num + 1))
     case "$disk" in
-        *mmcblk*|*nvme*) echo "${disk}p2" ;;
-        /dev/?*)         echo "${disk}2" ;;
+        *mmcblk*|*nvme*) echo "${disk}p${data_num}" ;;
+        /dev/?*)         echo "${disk}${data_num}" ;;
         *)               return 1 ;;
     esac
+}
+
+reread_partitions() {
+    disk="$1"
+    partprobe "$disk" >/dev/null 2>&1 || true
+    blockdev --rereadpt "$disk" >/dev/null 2>&1 || true
+    mdev -s >/dev/null 2>&1 || true
+    sleep 1
+}
+
+last_free_region_sectors() {
+    disk="$1"
+    # parted -m prints lines like: "1048576s:1000214527s:999165952s:free;".
+    # Use the last free region so existing boot/rootfs partitions remain intact.
+    parted -m -s "$disk" unit s print free 2>/dev/null \
+        | awk -F: '/:free;$/ { start=$1; size=$3 } END { if (start != "" && size != "") { sub(/s$/, "", start); sub(/s$/, "", size); print start " " size } }'
+}
+
+partition_table_type() {
+    disk="$1"
+    parted -m -s "$disk" print 2>/dev/null | awk -F: 'NR == 2 { print $6; exit }'
+}
+
+provision_sd_data_part() {
+    disk="$(root_disk_from_rootfs 2>/dev/null || true)"
+    [ -n "$disk" ] || { log "cannot provision SD data partition: rootfs disk not found"; return 1; }
+
+    part="$(sd_data_part_from_rootfs_disk 2>/dev/null || true)"
+    [ -n "$part" ] || { log "cannot provision SD data partition: unsupported rootfs disk $disk"; return 1; }
+
+    if [ -b "$part" ]; then
+        log "SD data partition $part already exists; provisioning not needed"
+        return 0
+    fi
+
+    if ! command -v parted >/dev/null 2>&1; then
+        log "cannot provision SD data partition: parted is not installed"
+        return 1
+    fi
+    if ! command -v mkfs.exfat >/dev/null 2>&1; then
+        log "cannot provision SD data partition: mkfs.exfat is not installed"
+        return 1
+    fi
+
+    table="$(partition_table_type "$disk")"
+    if [ -n "$table" ] && [ "$table" != "gpt" ] && [ "$table" != "msdos" ]; then
+        log "cannot provision SD data partition on $disk: unsupported partition table $table"
+        return 1
+    fi
+
+    set -- $(last_free_region_sectors "$disk")
+    start="${1:-}"
+    size="${2:-}"
+    case "$start$size" in
+        ''|*[!0-9]*) log "cannot provision SD data partition on $disk: no usable free region found"; return 1 ;;
+    esac
+    if [ "$start" -lt 2048 ]; then
+        log "cannot provision SD data partition on $disk: suspicious free-region start ${start}s"
+        return 1
+    fi
+    min_sectors="${EQUIP1_DATA_MIN_FREE_SECTORS:-262144}"
+    case "$min_sectors" in ''|*[!0-9]*) min_sectors=262144 ;; esac
+    if [ "$size" -lt "$min_sectors" ]; then
+        log "cannot provision SD data partition on $disk: free region is only ${size}s"
+        return 1
+    fi
+
+    data_num="$(partition_number "$part")"
+    case "$data_num" in ''|*[!0-9]*) log "cannot provision SD data partition: could not infer partition number from $part"; return 1 ;; esac
+
+    log "creating SD recordings partition on $disk from sector ${start}s to end"
+    if ! parted -s "$disk" mkpart recordings "${start}s" 100%; then
+        log "could not create SD recordings partition on $disk"
+        return 1
+    fi
+    if [ "$table" = "gpt" ]; then
+        parted -s "$disk" name "$data_num" recordings >/dev/null 2>&1 || true
+        parted -s "$disk" set "$data_num" msftdata on >/dev/null 2>&1 || true
+    fi
+
+    reread_partitions "$disk"
+    tries=0
+    while [ ! -b "$part" ] && [ "$tries" -lt 10 ]; do
+        reread_partitions "$disk"
+        tries=$((tries + 1))
+    done
+    [ -b "$part" ] || { log "created partition but $part did not appear"; return 1; }
+
+    log "formatting SD recordings partition $part as exFAT label $DATA_LABEL"
+    if ! mkfs.exfat -n "$DATA_LABEL" "$part" >/run/S15data.mkfs.out 2>&1; then
+        while IFS= read -r line; do
+            log "mkfs.exfat error for $part: $line"
+        done </run/S15data.mkfs.out
+        return 1
+    fi
+    return 0
 }
 
 blkid_field() {
@@ -318,9 +431,16 @@ case "$1" in
                 mount_data_part "$SD_PART" "SD fallback" || true
             else
                 if [ -n "$USB_PART" ]; then
-                    log "USB data partition $USB_PART was not mounted and SD fallback partition is missing; using rootfs-backed $DATA_MNT"
+                    log "USB data partition $USB_PART was not mounted and SD fallback partition is missing; attempting first-boot provisioning"
                 else
-                    log "no USB data partition found and SD fallback partition is missing; using rootfs-backed $DATA_MNT"
+                    log "no USB data partition found and SD fallback partition is missing; attempting first-boot provisioning"
+                fi
+                if provision_sd_data_part; then
+                    SD_PART="$(sd_data_part_from_rootfs_disk 2>/dev/null || true)"
+                    mount_data_part "$SD_PART" "SD fallback" || true
+                fi
+                if ! mounted_at_data; then
+                    log "SD fallback provisioning did not mount; using rootfs-backed $DATA_MNT"
                 fi
             fi
         fi

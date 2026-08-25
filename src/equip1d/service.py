@@ -232,6 +232,7 @@ class Equip1Daemon:
         self.hdmi_preview_enabled = self.settings.get_bool(
             "hdmi", "enabled", True, env="EQUIP1_HDMI_PREVIEW_ENABLED"
         )
+        self.oled_rotate_180 = self.settings.get_bool("ui", "oled_rotate_180", False, env="EQUIP1_OLED_ROTATE_180")
         self._conversion_active = False
         self._conversion_progress_percent = 0
         self._conversion_source: str | None = None
@@ -579,6 +580,12 @@ class Equip1Daemon:
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
 
+    def _save_oled_rotate_180(self) -> None:
+        try:
+            self.settings.save_value("ui", "oled_rotate_180", "true" if self.oled_rotate_180 else "false")
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
     async def set_capture_naming(self, prefix: Any, template: Any) -> dict[str, Any]:
         next_prefix = _clean_capture_naming_value(prefix, CAPTURE_FILENAME_PREFIX_DEFAULT, 48, allow_empty=True)
         next_template = _clean_capture_naming_value(template, CAPTURE_FILENAME_TEMPLATE_DEFAULT, 96)
@@ -628,6 +635,14 @@ class Equip1Daemon:
             self.hdmi_preview_enabled = _coerce_bool(enabled)
             state = self._snapshot_unlocked().to_dict()
         await asyncio.to_thread(self._save_hdmi_preview_enabled)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    async def set_oled_rotate_180(self, enabled: Any) -> dict[str, Any]:
+        async with self._lock:
+            self.oled_rotate_180 = _coerce_bool(enabled)
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_oled_rotate_180)
         await self.events.publish({"type": "state", "state": state})
         return state
 
@@ -1185,6 +1200,7 @@ class Equip1Daemon:
             settings=SettingsState(
                 auto_storage_switch=self.auto_storage_switch,
                 hdmi_preview_enabled=self.hdmi_preview_enabled,
+                oled_rotate_180=self.oled_rotate_180,
             ),
             error=self.error,
         )

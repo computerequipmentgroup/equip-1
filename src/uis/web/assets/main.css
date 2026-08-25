@@ -786,6 +786,18 @@ button:disabled {
 .system-row .storage-legend {
   margin: 0 0 0.35rem;
 }
+.setting-row {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+.setting-row h2 {
+  margin-bottom: 0.25rem;
+}
+.setting-row .gloss-pill {
+  flex: 0 0 auto;
+}
 .preview-section {
   background: #000;
   border-bottom: 1px solid var(--line-soft);

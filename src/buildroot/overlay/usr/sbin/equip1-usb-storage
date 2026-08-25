@@ -55,18 +55,35 @@ partition_disk() {
     esac
 }
 
+root_part_from_rootfs() {
+    blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1
+}
+
 root_disk_from_rootfs() {
-    rootdev="$(blkid 2>/dev/null | grep 'LABEL="rootfs"' | head -1 | cut -d: -f1)"
+    rootdev="$(root_part_from_rootfs)"
     [ -n "$rootdev" ] || return 1
     partition_disk "$rootdev"
 }
 
+partition_number() {
+    part="$1"
+    case "$part" in
+        *mmcblk*p[0-9]*|*nvme*n[0-9]*p[0-9]*) echo "${part##*p}" ;;
+        /dev/*[0-9])                              echo "${part##*[!0-9]}" ;;
+        *)                                        return 1 ;;
+    esac
+}
+
 data_part_from_rootfs_disk() {
-    disk="$(root_disk_from_rootfs)"
-    [ -n "$disk" ] || return 1
+    rootdev="$(root_part_from_rootfs)"
+    [ -n "$rootdev" ] || return 1
+    disk="$(partition_disk "$rootdev")"
+    num="$(partition_number "$rootdev")"
+    case "$num" in ''|*[!0-9]*) return 1 ;; esac
+    data_num=$((num + 1))
     case "$disk" in
-        *mmcblk*|*nvme*) echo "${disk}p2" ;;
-        /dev/?*)         echo "${disk}2" ;;
+        *mmcblk*|*nvme*) echo "${disk}p${data_num}" ;;
+        /dev/?*)         echo "${disk}${data_num}" ;;
         *)               return 1 ;;
     esac
 }

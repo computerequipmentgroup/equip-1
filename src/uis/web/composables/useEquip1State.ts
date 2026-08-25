@@ -148,6 +148,11 @@ const mockState = (): Equip1State => ({
     target: null,
     last_error: null
   },
+  settings: {
+    auto_storage_switch: true,
+    hdmi_preview_enabled: true,
+    oled_rotate_180: false
+  },
   error: null
 })
 
@@ -356,6 +361,20 @@ export const useEquip1State = () => {
     }
   }
 
+  const setOledRotate180 = async (rotate_180: boolean) => {
+    const enabled = Boolean(rotate_180)
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, settings: { ...(state.value.settings || {}), oled_rotate_180: enabled } }
+      return state.value
+    }
+    state.value = await timedFetch<Equip1State>('settings.oled_rotation', `${apiBase}/settings/oled-rotation`, {
+      method: 'POST',
+      body: { rotate_180: enabled }
+    })
+    return state.value
+  }
+
   const setCaptureNaming = async (prefix: string, template: string) => {
     const clean = {
       prefix: String(prefix ?? defaultCaptureNaming.prefix).slice(0, 48),
@@ -424,7 +443,7 @@ export const useEquip1State = () => {
     }
   }
 
-  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setCaptureNaming, connectEvents, syncTime, mock }
+  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setOledRotate180, setCaptureNaming, connectEvents, syncTime, mock }
 }
 
 export const useEquip1System = () => {

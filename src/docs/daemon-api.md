@@ -51,6 +51,7 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `POST` | `/api/settings/conversion` | Set automatic `.dv` to `.mp4` conversion, MP4 quality, and MP4 deinterlacing |
 | `POST` | `/api/settings/auto-storage-switch` | Enable/disable idle USB/SD automatic switching |
 | `POST` | `/api/settings/hdmi-preview` | Persist HDMI preview enabled/disabled for the preview watcher |
+| `POST` | `/api/settings/oled-rotation` | Persist built-in OLED 180-degree rotation (`rotate_180` or `enabled`) |
 | `POST` | `/api/settings/lights` | Set LED enabled/disabled state |
 | `POST` | `/api/commands/start-recording` | Start recording to `/data/captures` |
 | `POST` | `/api/commands/stop-recording` | Stop recording and schedule thumbnails |
@@ -91,7 +92,7 @@ The WebSocket also accepts settings messages from the web UI:
 { "type": "set-mp4-deinterlace", "enabled": true }
 ```
 
-Light, conversion, storage, and HDMI settings are persisted through `Equip1Settings` into `/etc/equip1/equip-1.ini`. The OLED UI uses the REST settings endpoints.
+Light, conversion, storage, HDMI, and OLED rotation settings are persisted through `Equip1Settings` into `/etc/equip1/equip-1.ini`. The OLED UI uses the REST settings endpoints.
 
 ## Static dashboard serving
 

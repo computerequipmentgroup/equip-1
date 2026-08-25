@@ -53,7 +53,7 @@ def _base_state(mode: str) -> dict[str, Any]:
         "power": {"source": "pisugar", "available": True, "battery_percent": 87, "external_power": False, "charging": False},
         "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
         "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "mp4_deinterlace_enabled": True, "active": False, "source": None, "target": None, "last_error": None},
-        "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True},
+        "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True, "oled_rotate_180": False},
         "error": None,
     }
 
@@ -242,6 +242,9 @@ class DesignerSession:
         elif path == "/settings/hdmi-preview":
             settings = self.custom_state.setdefault("settings", {})
             settings["hdmi_preview_enabled"] = bool(payload.get("enabled"))
+        elif path == "/settings/oled-rotation":
+            settings = self.custom_state.setdefault("settings", {})
+            settings["oled_rotate_180"] = bool(payload.get("rotate_180", payload.get("enabled")))
         elif path == "/settings/lights":
             lights = self.custom_state.setdefault("lights", {})
             lights["enabled"] = bool(payload.get("enabled"))

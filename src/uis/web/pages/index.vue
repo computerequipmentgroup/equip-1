@@ -8,6 +8,7 @@ const {
   setLightColors,
   setLightsEnabled,
   setLightsBrightness,
+  setOledRotate180,
   setCaptureNaming,
   connectEvents,
   mock
@@ -26,6 +27,8 @@ const mode = computed(() => state.value?.mode || 'offline')
 const isMounting = computed(() => mode.value === 'mounting')
 const recording = computed(() => state.value?.recording || {})
 const storage = computed(() => state.value?.storage || {})
+const deviceSettings = computed(() => state.value?.settings || {})
+const oledRotate180 = computed(() => Boolean(deviceSettings.value.oled_rotate_180))
 const captureNaming = computed(() => state.value?.capture_naming || defaultCaptureNaming)
 const captureNamingPatternFromState = computed(
   () =>
@@ -171,6 +174,7 @@ const onLightInput = (index: number, event: Event) => {
   setLightColors(next)
 }
 const toggleLightsEnabled = () => setLightsEnabled(!lightsEnabled.value)
+const toggleOledRotate180 = () => setOledRotate180(!oledRotate180.value)
 const onLightsBrightnessInput = (event: Event) => {
   const percent = Number((event.target as HTMLInputElement).value)
   if (!Number.isFinite(percent)) return
@@ -549,6 +553,29 @@ onMounted(async () => {
               @input="onLightsBrightnessInput"
             />
           </label>
+        </div>
+      </template>
+    </article>
+
+    <article class="card full-span">
+      <div class="card-top" @click="toggleCard('display')">
+        <span class="card-title">Display</span>
+      </div>
+      <template v-if="cardOpen('display')">
+        <div class="setting-row">
+          <div>
+            <h2>OLED rotation</h2>
+            <p class="hero-subtitle">Flip the built-in OLED 180° for inverted mounting.</p>
+          </div>
+          <button
+            type="button"
+            class="gloss-pill"
+            :class="{ 'gloss-green': oledRotate180 }"
+            :aria-pressed="oledRotate180"
+            @click="toggleOledRotate180"
+          >
+            <span>{{ oledRotate180 ? '180°' : 'Normal' }}</span>
+          </button>
         </div>
       </template>
     </article>

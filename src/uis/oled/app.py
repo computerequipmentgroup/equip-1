@@ -64,6 +64,7 @@ class OledApp:
         self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="EQUIP1_BOOT_HOLD_SECONDS")
         oled_fps = settings.get_float("ui", "oled_fps", 8.0, env="EQUIP1_OLED_FPS")
         self.frame_interval = 1.0 / oled_fps if oled_fps > 0 else 0.0
+        self.oled_rotate_180 = settings.get_bool("ui", "oled_rotate_180", False, env="EQUIP1_OLED_ROTATE_180")
         self.current_screen_idx = 0
         self.state: dict | None = None
         self._last_state_fetch = 0.0
@@ -390,14 +391,18 @@ class OledApp:
             if not self.is_booting:
                 draw_battery_indicator(draw, width, height, context)
 
+        state = self.state or fallback_state
+        settings = state.get("settings") or {}
+        oled_rotate_180 = bool(settings.get("oled_rotate_180", self.oled_rotate_180))
         self.display.render(
             render_screen,
             {
-                "state": self.state or fallback_state,
+                "state": state,
                 "boot_elapsed": boot_elapsed,
                 "boot_duration_seconds": self.boot_duration_seconds,
                 "boot_hold_seconds": self.boot_hold_seconds,
                 "stop_recording_pending": self.stop_recording_pending,
+                "oled_rotate_180": oled_rotate_180,
             },
         )
         self._perf_log("oled.render_total", started)

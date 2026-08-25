@@ -112,6 +112,11 @@ async def set_hdmi_preview(payload: dict) -> dict:
     return await daemon.set_hdmi_preview_enabled(payload.get("enabled"))
 
 
+@app.post("/api/settings/oled-rotation")
+async def set_oled_rotation(payload: dict) -> dict:
+    return await daemon.set_oled_rotate_180(payload.get("rotate_180", payload.get("enabled")))
+
+
 @app.post("/api/settings/lights")
 async def set_lights_settings(payload: dict) -> dict:
     if "enabled" in payload:

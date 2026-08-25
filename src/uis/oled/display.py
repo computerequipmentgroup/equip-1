@@ -116,6 +116,8 @@ def render_oled_image(
     draw = OledDraw(img, ImageDraw.Draw(img))
     context = {**context, "fonts": fonts or OledFontSet()}
     draw_func(draw, width, height, context)
+    if context.get("oled_rotate_180"):
+        img = img.rotate(180)
     return img
 
 

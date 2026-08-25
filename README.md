@@ -55,14 +55,16 @@ Connect a phone or laptop to the Equip-1 Wi-Fi network, open the dashboard, atta
 
 ### 3. Prepare capture storage
 
-Equip-1 records to `/data/captures` by default. At boot it prefers a non-root exFAT USB-A drive labelled `EQUIP1`; otherwise it falls back to the SD-card data partition when available.
+Equip-1 records to `/data/captures` by default. At boot it prefers a non-root exFAT USB-A drive labelled `EQUIP1`; otherwise it falls back to the SD-card data partition. On a freshly flashed compressed image, first boot creates the missing SD-card recordings partition in the remaining free space, formats it as exFAT, labels it `EQUIP1`, and mounts it at `/data`.
 
-Recommended USB storage format:
+Recommended capture storage format:
 
 - filesystem: exFAT
 - label: `EQUIP1`
 - mount point on device: `/data`
 - captures path: `/data/captures`
+
+If automatic provisioning fails and the UI shows only rootfs-sized free space, create one exFAT partition labelled `EQUIP1` in the unallocated space after the flashed image partitions. Do not modify the boot/rootfs partitions and do not create two exFAT data partitions.
 
 ### 4. Record and export
 

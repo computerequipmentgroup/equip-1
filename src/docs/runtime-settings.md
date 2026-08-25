@@ -69,6 +69,7 @@ MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (
 | `api_timeout` | `EQUIP1_API_TIMEOUT` | OLED HTTP timeout |
 | `state_fetch_interval` | `EQUIP1_STATE_FETCH_INTERVAL` | OLED polling interval |
 | `oled_fps` | `EQUIP1_OLED_FPS` | OLED render loop FPS |
+| `oled_rotate_180` | `EQUIP1_OLED_ROTATE_180` | Rotate the built-in OLED output 180 degrees |
 | `boot_duration_seconds` | `EQUIP1_BOOT_DURATION_SECONDS` | Boot animation duration |
 | `boot_hold_seconds` | `EQUIP1_BOOT_HOLD_SECONDS` | Boot logo hold time |
 
@@ -82,7 +83,7 @@ MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (
 
 The web UI changes these values over `WS /api/events`; the daemon writes them atomically. The OLED settings screen can also toggle LEDs through the daemon REST API.
 
-The OLED settings screen exposes auto-MP4 conversion, MP4 quality, MP4 deinterlacing, auto storage switch, HDMI preview, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original `.dv` capture and writes a same-stem `.mp4` file after recording finalization. Conversion runs in the background and publishes capture-list/state updates when it starts and finishes.
+The OLED settings screen exposes auto-MP4 conversion, MP4 quality, MP4 deinterlacing, auto storage switch, HDMI preview, OLED 180-degree rotation, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original `.dv` capture and writes a same-stem `.mp4` file after recording finalization. Conversion runs in the background and publishes capture-list/state updates when it starts and finishes.
 
 ### `[hdmi]`
 
