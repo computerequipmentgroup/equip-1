@@ -276,16 +276,32 @@ class OledApp:
         if self.current_screen.can_navigate(self.state or {}):
             self._change_screen(1)
 
+    def _oled_rotate_180_enabled(self) -> bool:
+        settings = (self.state or {}).get("settings") or {}
+        return bool(settings.get("oled_rotate_180", self.oled_rotate_180))
+
     def poll_buttons(self) -> None:
         events = self.buttons.poll()
         if self._poll_game_unlock(events):
             return
-        if events.up:
-            self.buzzer.beep()
-            self.navigate_down()
-        if events.down:
+
+        # The default PCB/case orientation has the physical up/down lines
+        # opposite to the displayed vertical axis.  When the framebuffer is
+        # rotated 180 degrees, flip the mapping too so navigation still follows
+        # the visible screen orientation.
+        if self._oled_rotate_180_enabled():
+            logical_up = events.up
+            logical_down = events.down
+        else:
+            logical_up = events.down
+            logical_down = events.up
+
+        if logical_up:
             self.buzzer.beep()
             self.navigate_up()
+        if logical_down:
+            self.buzzer.beep()
+            self.navigate_down()
         if events.select:
             self.buzzer.beep()
             self.current_screen.on_select(self)
@@ -392,8 +408,7 @@ class OledApp:
                 draw_battery_indicator(draw, width, height, context)
 
         state = self.state or fallback_state
-        settings = state.get("settings") or {}
-        oled_rotate_180 = bool(settings.get("oled_rotate_180", self.oled_rotate_180))
+        oled_rotate_180 = self._oled_rotate_180_enabled()
         self.display.render(
             render_screen,
             {

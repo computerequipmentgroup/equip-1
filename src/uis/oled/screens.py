@@ -523,7 +523,7 @@ class SettingsScreen(Screen):
     def __init__(self) -> None:
         self.controlling = False
         self.selected = 0
-        self.options = ["LEDs", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview", "OLED rotate", "Back"]
+        self.options = ["LEDs", "Record fmt", "MP4 export", "MP4 deint", "CONVERT all", "STORAGE auto", "HDMI preview", "OLED rotate", "Back"]
 
     def on_select(self, app) -> None:
         if not self.controlling:
@@ -541,17 +541,26 @@ class SettingsScreen(Screen):
         if self.selected == 0:
             app.set_setting("/settings/lights", {"enabled": not bool(lights.get("enabled", True))})
         elif self.selected == 1:
-            app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
+            if state.get("mode") != "recording":
+                app.set_setting("/settings/recording-format", {"format": self._next_recording_format(settings)})
         elif self.selected == 2:
+            app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
+        elif self.selected == 3:
             app.set_setting(
                 "/settings/conversion",
                 {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", True))},
             )
-        elif self.selected == 3:
-            app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
         elif self.selected == 4:
-            app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
+            if state.get("mode") not in {"recording", "mounting", "usb_transfer", "offline", "converting"} and not bool(conversion.get("active")):
+                if hasattr(app, "command_async"):
+                    app.command_async("convert-all-mp4")
+                else:
+                    app.command("convert-all-mp4")
         elif self.selected == 5:
+            app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
+        elif self.selected == 6:
+            app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
+        elif self.selected == 7:
             app.set_setting("/settings/oled-rotation", {"rotate_180": not bool(settings.get("oled_rotate_180", False))})
 
     def on_up(self, app) -> bool:
@@ -571,13 +580,13 @@ class SettingsScreen(Screen):
         return "ON" if bool(value if value is not None else default) else "OFF"
 
     def _mp4_export_value(self, conversion: dict[str, Any]) -> str:
-        if not bool(conversion.get("auto_mp4_enabled", True)):
+        if not bool(conversion.get("auto_mp4_enabled", False)):
             return "OFF"
         quality = str(conversion.get("mp4_quality") or "high").lower()
         return self.QUALITY_LABELS.get(quality, "18")
 
     def _next_mp4_export_payload(self, conversion: dict[str, Any]) -> dict[str, Any]:
-        enabled = bool(conversion.get("auto_mp4_enabled", True))
+        enabled = bool(conversion.get("auto_mp4_enabled", False))
         quality = str(conversion.get("mp4_quality") or "high").lower()
         if not enabled:
             return {"auto_mp4_enabled": True, "mp4_quality": "small"}
@@ -589,6 +598,19 @@ class SettingsScreen(Screen):
             return {"auto_mp4_enabled": False}
         return {"auto_mp4_enabled": True, "mp4_quality": self.QUALITY_OPTIONS[idx + 1]}
 
+    def _recording_format_value(self, settings: dict[str, Any]) -> str:
+        value = str(settings.get("recording_format") or "mov").lower().lstrip(".")
+        return value.upper() if value in {"dv", "mov", "avi"} else "MOV"
+
+    def _next_recording_format(self, settings: dict[str, Any]) -> str:
+        options = ("mov", "dv", "avi")
+        current = str(settings.get("recording_format") or "mov").lower().lstrip(".")
+        try:
+            idx = options.index(current)
+        except ValueError:
+            idx = 0
+        return options[(idx + 1) % len(options)]
+
     def _option_label(self, state: dict[str, Any], index: int) -> str:
         conversion = state.get("conversion") or {}
         settings = state.get("settings") or {}
@@ -596,16 +618,20 @@ class SettingsScreen(Screen):
         if index == 0:
             return f"LEDs [{self._on_off(lights.get('enabled'), True)}]"
         if index == 1:
-            return f"MP4 export [{self._mp4_export_value(conversion)}]"
+            return f"Record fmt [{self._recording_format_value(settings)}]"
         if index == 2:
-            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), True)}]"
+            return f"MP4 export [{self._mp4_export_value(conversion)}]"
         if index == 3:
-            return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
+            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), True)}]"
         if index == 4:
-            return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
+            return "CONVERT all [RUN]" if bool(conversion.get("active")) else "CONVERT all"
         if index == 5:
-            return f"OLED rotate [{self._on_off(settings.get('oled_rotate_180'), False)}]"
+            return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
         if index == 6:
+            return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
+        if index == 7:
+            return f"OLED rotate [{self._on_off(settings.get('oled_rotate_180'), False)}]"
+        if index == 8:
             return "Back"
         return self.options[index]
 
@@ -904,11 +930,11 @@ class PadGame(Screen):
         # Up/down steer the paddle, so leaving happens on select.
         app.next_screen()
 
-    def on_down(self, app) -> bool:  # physical up button -> move left
+    def on_down(self, app) -> bool:
         self._move(-self.PADDLE_STEP)
         return True
 
-    def on_up(self, app) -> bool:  # physical down button -> move right
+    def on_up(self, app) -> bool:
         self._move(self.PADDLE_STEP)
         return True
 

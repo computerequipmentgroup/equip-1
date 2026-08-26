@@ -41,6 +41,7 @@ from .settings import (
     LEGACY_LIGHTS_CONFIG_DEFAULT,
     LIGHTS_BRIGHTNESS_DEFAULT,
     normalize_mp4_quality,
+    normalize_recording_format,
 )
 
 
@@ -223,6 +224,7 @@ class Equip1Daemon:
         self._lights_count = _lights_count_from_env()
         self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
         self.capture_naming_prefix, self.capture_naming_template = self._load_capture_naming()
+        self.recording_format = self.settings.load_recording_format()
         self.auto_convert_mp4 = self.settings.load_auto_convert_mp4()
         self.mp4_quality = self.settings.load_mp4_quality()
         self.mp4_deinterlace = self.settings.load_mp4_deinterlace()
@@ -238,6 +240,7 @@ class Equip1Daemon:
         self._conversion_source: str | None = None
         self._conversion_target: str | None = None
         self._conversion_last_error: str | None = None
+        self._conversion_task: asyncio.Task | None = None
         self._recording_date_hints: dict[str, datetime] = {}
         self.error: ErrorState | None = None
 
@@ -319,8 +322,14 @@ class Equip1Daemon:
                 await self.dv.wait_for_stream_format(timeout=2.0)
                 recorded_at = await self._recording_datetime(now)
                 filename_stem = self._render_capture_filename_stem(recorded_at)
-                self._debug_log(f"start-recording requested filename_stem={filename_stem}")
-                await asyncio.to_thread(self.recorder.start, filename_stem=filename_stem)
+                extension = self._recording_extension()
+                self._debug_log(f"start-recording requested filename_stem={filename_stem} extension={extension}")
+                await asyncio.to_thread(
+                    self.recorder.start,
+                    filename_stem=filename_stem,
+                    extension=extension,
+                    ffmpeg_bin=self.ffmpeg_bin,
+                )
                 if self.recorder.state.filename:
                     self._recording_date_hints[self.recorder.state.filename] = recorded_at
                 self._debug_log(f"recorder started filename={self.recorder.state.filename} pid={self.recorder.state.pid}")
@@ -387,6 +396,11 @@ class Equip1Daemon:
             self.capture_naming_template,
             recorded_at,
         )
+
+    def _recording_extension(self) -> str:
+        if self.dv.stream_format == "hdv":
+            return ".m2t"
+        return f".{normalize_recording_format(self.recording_format)}"
 
     async def _wait_for_dv_recording_datetime(self, timeout: float = 1.5) -> datetime | None:
         deadline = time.monotonic() + timeout
@@ -550,6 +564,12 @@ class Equip1Daemon:
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
 
+    def _save_recording_format(self) -> None:
+        try:
+            self.settings.save_recording_format(self.recording_format)
+        except OSError as exc:
+            self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
     def _save_auto_convert_mp4(self) -> None:
         try:
             self.settings.save_auto_convert_mp4(self.auto_convert_mp4)
@@ -597,6 +617,18 @@ class Equip1Daemon:
         await self.events.publish({"type": "state", "state": state})
         return state
 
+    async def set_recording_format(self, value: Any) -> dict[str, Any]:
+        next_format = normalize_recording_format(str(value) if value is not None else None)
+        async with self._lock:
+            self._poll_recorder_unlocked()
+            if self.recorder.state.active:
+                raise CommandError("Stop recording before changing recording format")
+            self.recording_format = next_format
+            state = self._snapshot_unlocked().to_dict()
+        await asyncio.to_thread(self._save_recording_format)
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
     async def set_auto_convert_mp4(self, enabled: Any) -> dict[str, Any]:
         async with self._lock:
             self.auto_convert_mp4 = _coerce_bool(enabled)
@@ -621,6 +653,56 @@ class Equip1Daemon:
         await asyncio.to_thread(self._save_mp4_deinterlace)
         await self.events.publish({"type": "state", "state": state})
         return state
+
+    async def convert_all_captures_to_mp4(self) -> dict[str, Any]:
+        async with self._lock:
+            self._poll_recorder_unlocked()
+            if self.recorder.state.active:
+                raise CommandError("Stop recording before converting captures")
+            if self._storage_operation_active():
+                raise CommandError("Storage is mounting")
+            if self._usb_transfer_active() or self._usb_storage_starting():
+                raise CommandError("USB disk mode is active")
+            if self._conversion_active:
+                raise CommandError("MP4 conversion already running")
+
+        captures = await self._list_captures_cached(force=True)
+        sources = self._mp4_conversion_sources(captures)
+        if not sources:
+            return await self.snapshot()
+
+        async with self._lock:
+            if self._conversion_active:
+                raise CommandError("MP4 conversion already running")
+            first = sources[0]
+            self._conversion_active = True
+            self._conversion_progress_percent = 0
+            self._conversion_source = first.name
+            self._conversion_target = first.with_suffix(".mp4").name
+            self._conversion_last_error = None
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        self._conversion_task = asyncio.create_task(self._convert_capture_paths_to_mp4(sources), name="equip1-convert-all-mp4")
+        return state
+
+    def _mp4_conversion_sources(self, captures: list[dict[str, Any]]) -> list[Path]:
+        sources: list[Path] = []
+        seen: set[Path] = set()
+        for capture in captures:
+            name = str(capture.get("name") or "")
+            path = self.storage.capture_path(name)
+            if path is None or path.suffix.lower() == ".mp4":
+                continue
+            target = path.with_suffix(".mp4")
+            try:
+                if target.exists() and target.stat().st_size > 0:
+                    continue
+            except OSError:
+                continue
+            if path not in seen:
+                seen.add(path)
+                sources.append(path)
+        return sources
 
     async def set_auto_storage_switch(self, enabled: Any) -> dict[str, Any]:
         async with self._lock:
@@ -872,9 +954,26 @@ class Equip1Daemon:
         if not self.auto_convert_mp4:
             return
         source_path = self.capture_dir / filename
-        if source_path.suffix.lower() != ".dv":
-            self._debug_log(f"mp4 conversion skipped for non-DV capture {filename}")
+        if source_path.suffix.lower() == ".mp4":
+            self._debug_log(f"mp4 conversion skipped for MP4 capture {filename}")
             return
+        await self._convert_capture_paths_to_mp4([source_path])
+
+    async def _convert_capture_paths_to_mp4(self, sources: list[Path]) -> None:
+        try:
+            for source_path in sources:
+                await self._convert_capture_path_to_mp4(source_path)
+        finally:
+            await self._sync_storage("mp4 conversion")
+            await self.publish_captures()
+            async with self._lock:
+                self._conversion_active = False
+                state = self._snapshot_unlocked().to_dict()
+            await self.events.publish({"type": "state", "state": state})
+            if self._conversion_task is asyncio.current_task():
+                self._conversion_task = None
+
+    async def _convert_capture_path_to_mp4(self, source_path: Path) -> None:
         target_path = source_path.with_suffix(".mp4")
         async with self._lock:
             self._conversion_active = True
@@ -901,15 +1000,11 @@ class Equip1Daemon:
             self._debug_log(f"mp4 conversion finished source={source_path.name} target={target_path.name}")
         except Exception as exc:
             async with self._lock:
-                self._conversion_last_error = str(exc)
+                self._conversion_last_error = f"{source_path.name}: {exc}"
             log(f"MP4 conversion failed for {source_path.name}: {exc}", level="warning")
         finally:
             await self._sync_storage("mp4 conversion")
             await self.publish_captures()
-            async with self._lock:
-                self._conversion_active = False
-                state = self._snapshot_unlocked().to_dict()
-            await self.events.publish({"type": "state", "state": state})
 
     @staticmethod
     def _stamp_capture_mtime(path: Path, recorded_at: datetime) -> datetime | None:
@@ -1201,6 +1296,7 @@ class Equip1Daemon:
                 auto_storage_switch=self.auto_storage_switch,
                 hdmi_preview_enabled=self.hdmi_preview_enabled,
                 oled_rotate_180=self.oled_rotate_180,
+                recording_format=self.recording_format,
             ),
             error=self.error,
         )

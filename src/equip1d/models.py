@@ -11,6 +11,7 @@ from .settings import (
     LIGHTS_BRIGHTNESS_DEFAULT,
     MP4_DEINTERLACE_DEFAULT,
     MP4_QUALITY_DEFAULT,
+    RECORDING_FORMAT_DEFAULT,
 )
 
 RecorderMode = Literal[
@@ -137,6 +138,7 @@ class SettingsState:
     auto_storage_switch: bool = True
     hdmi_preview_enabled: bool = True
     oled_rotate_180: bool = False
+    recording_format: str = RECORDING_FORMAT_DEFAULT
 
 
 @dataclass

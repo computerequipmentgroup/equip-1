@@ -30,7 +30,7 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `storage_full` | Less than one minute of estimated capture capacity remains |
 | `mounting` | `/data` is being mounted, remounted, or switched |
 | `usb_transfer` | `/data` is exported over USB-C mass-storage mode |
-| `converting` | A completed `.dv` capture is being converted to MP4 |
+| `converting` | One or more captures are being converted to MP4 |
 | `error` | A command, monitor, recorder, storage, or USB operation failed |
 
 `models.py` also reserves `booting` and `stopping` for UI/state compatibility. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.
@@ -48,7 +48,8 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `GET` | `/api/preview.mjpg` | Browser MJPEG preview stream |
 | `GET` | `/api/stream.mkv` | Live DV or HDV copied into a Matroska stream for VLC/HDMI |
 | `POST` | `/api/time` | Set device clock from browser time only if clock is unset |
-| `POST` | `/api/settings/conversion` | Set automatic `.dv` to `.mp4` conversion, MP4 quality, and MP4 deinterlacing |
+| `POST` | `/api/settings/recording-format` | Set full-quality DV recording container to `mov`, `dv`, or `avi` |
+| `POST` | `/api/settings/conversion` | Set automatic capture-to-MP4 conversion, MP4 quality, and MP4 deinterlacing |
 | `POST` | `/api/settings/auto-storage-switch` | Enable/disable idle USB/SD automatic switching |
 | `POST` | `/api/settings/hdmi-preview` | Persist HDMI preview enabled/disabled for the preview watcher |
 | `POST` | `/api/settings/oled-rotation` | Persist built-in OLED 180-degree rotation (`rotate_180` or `enabled`) |
@@ -65,10 +66,11 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `POST` | `/api/commands/usb-storage-stop` | Stop USB-C mass-storage mode and remount `/data` |
 | `POST` | `/api/commands/storage-switch-usb` | Manually switch `/data` to USB-A storage |
 | `POST` | `/api/commands/storage-switch-sd` | Manually switch `/data` back to SD fallback |
+| `POST` | `/api/commands/convert-all-mp4` | Convert captures missing same-stem `.mp4` sidecars in the background |
 
 Command failures are returned as HTTP `409` with a text `detail`. User errors such as invalid time payloads are `400`; missing files are `404`.
 
-`state.camera.format` is `"unknown"`, `"dv"`, or `"hdv"`. It starts as `"unknown"` after a camera appears and changes once the shared `dvgrab` stream emits enough bytes to classify the source. Recordings use `.dv` for raw DV and `.m2t` for native HDV/MPEG-TS.
+`state.camera.format` is `"unknown"`, `"dv"`, or `"hdv"`. It starts as `"unknown"` after a camera appears and changes once the shared `dvgrab` stream emits enough bytes to classify the source. DV recordings default to `.mov`, with `.dv` and `.avi` selectable through settings. `.mov`/`.avi` are FFmpeg stream-copy containers, not transcoded MP4 exports. Native HDV/MPEG-TS still records as `.m2t`.
 
 `state.power` is optional PiSugar battery status. When `pisugar-server` is reachable at `/tmp/pisugar-server.sock`, `state.power.available` is `true` and `battery_percent` is populated for the OLED header indicator. Non-PiSugar builds or missing batteries report `available=false`.
 
@@ -87,6 +89,7 @@ The WebSocket also accepts settings messages from the web UI:
 { "type": "set-light-color", "colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]] }
 { "type": "set-lights-enabled", "enabled": true }
 { "type": "set-lights-brightness", "brightness": 0.25 }
+{ "type": "set-recording-format", "format": "mov" }
 { "type": "set-auto-convert-mp4", "enabled": true }
 { "type": "set-mp4-quality", "quality": "high" }
 { "type": "set-mp4-deinterlace", "enabled": true }

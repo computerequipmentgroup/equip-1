@@ -7,7 +7,7 @@ DV/HDV camera / FireWire
         │
         ▼
   dvgrab shared source       /data/captures
-  src/equip1d/dvsource.py ───────┬── recording sink (.dv/.m2t files)
+  src/equip1d/dvsource.py ───────┬── recording sink (.mov/.dv/.avi/.m2t files)
         │                        │
         ├── ffmpeg MJPEG ────────┼── GET /api/preview.mjpg
         └── ffmpeg MKV copy ─────┴── GET /api/stream.mkv

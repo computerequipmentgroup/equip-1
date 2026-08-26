@@ -53,16 +53,22 @@ class RecordingTracker:
                 return candidate
         raise RuntimeError("Could not find an available capture filename")
 
-    def start(self, timestamp: str | None = None, filename_stem: str | None = None) -> RecorderProcessState:
+    def start(
+        self,
+        timestamp: str | None = None,
+        filename_stem: str | None = None,
+        extension: str | None = None,
+        ffmpeg_bin: str = "ffmpeg",
+    ) -> RecorderProcessState:
         if self.state.active:
             raise RuntimeError("Already recording")
         if filename_stem is None:
             if timestamp is None:
                 timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            path = self.unique_capture_path(f"capture_{timestamp}")
+            path = self.unique_capture_path(f"capture_{timestamp}", extension=extension)
         else:
-            path = self.unique_capture_path(filename_stem)
-        self.source.start_recording(path)
+            path = self.unique_capture_path(filename_stem, extension=extension)
+        self.source.start_recording(path, ffmpeg_bin=ffmpeg_bin)
         self._intent = True
         self.state = RecorderProcessState(
             active=True,

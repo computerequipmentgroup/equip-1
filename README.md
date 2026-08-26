@@ -68,7 +68,7 @@ If automatic provisioning fails and the UI shows only rootfs-sized free space, c
 
 ### 4. Record and export
 
-Completed recordings are written as original `.dv` captures. By default, Equip-1 also creates same-stem `.mp4` sidecars in the background.
+Completed DV recordings are written as full-quality `.mov` captures by default, with settings for raw `.dv` or `.avi` containers. HDV sources still record as native `.m2t`. MP4 sidecars can be created on demand from settings, or automatically after each recording if auto-MP4 export is enabled.
 
 MP4 quality presets:
 
@@ -76,7 +76,7 @@ MP4 quality presets:
 | --- | --- | --- |
 | `small` | `[28]` | Smallest files |
 | `balanced` | `[23]` | Middle ground |
-| `high` | `[18]` | Default, close to source for most DV material |
+| `high` | `[18]` | Close to source for most DV material |
 | `max` | `[14]` | Highest quality, larger and slower |
 
 See [`src/docs/mp4-export.md`](src/docs/mp4-export.md) for the full export flow.
@@ -95,7 +95,8 @@ ap_password = firesecret
 [recording]
 capture_dir = /data/captures
 storage_label = EQUIP1
-auto_convert_mp4 = true
+recording_format = mov
+auto_convert_mp4 = false
 mp4_quality = high
 mp4_deinterlace = true
 auto_storage_switch = true

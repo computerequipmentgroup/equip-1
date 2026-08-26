@@ -88,6 +88,14 @@ async def set_capture_naming(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/settings/recording-format")
+async def set_recording_format(payload: dict) -> dict:
+    try:
+        return await daemon.set_recording_format(payload.get("format", payload.get("recording_format")))
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.post("/api/settings/conversion")
 async def set_conversion_settings(payload: dict) -> dict:
     state: dict | None = None
@@ -250,6 +258,14 @@ async def storage_switch_sd() -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@app.post("/api/commands/convert-all-mp4")
+async def convert_all_mp4() -> dict:
+    try:
+        return await daemon.convert_all_captures_to_mp4()
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 async def _handle_ws_command(message: object) -> None:
     if not isinstance(message, dict):
         return
@@ -268,6 +284,9 @@ async def _handle_ws_command(message: object) -> None:
     elif message.get("type") == "set-capture-naming":
         with contextlib.suppress(CommandError):
             await daemon.set_capture_naming(message.get("prefix"), message.get("template"))
+    elif message.get("type") == "set-recording-format":
+        with contextlib.suppress(CommandError):
+            await daemon.set_recording_format(message.get("format", message.get("recording_format")))
     elif message.get("type") == "set-auto-convert-mp4":
         with contextlib.suppress(CommandError):
             await daemon.set_auto_convert_mp4(message.get("enabled"))

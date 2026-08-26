@@ -61,12 +61,12 @@ Before exporting, the daemon stops recording if needed, stops preview, stops the
 
 ```json
 {
-  "name": "capture_20260710_121314.dv",
-  "path": "/data/captures/capture_20260710_121314.dv",
+  "name": "capture_20260710_121314.mov",
+  "path": "/data/captures/capture_20260710_121314.mov",
   "size_bytes": 12345678,
   "modified_at": 1783685594.0,
-  "download_url": "/api/captures/capture_20260710_121314.dv/download",
-  "thumbnail_url": "/api/captures/capture_20260710_121314.dv/thumbnail"
+  "download_url": "/api/captures/capture_20260710_121314.mov/download",
+  "thumbnail_url": "/api/captures/capture_20260710_121314.mov/thumbnail"
 }
 ```
 

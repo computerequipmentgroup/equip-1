@@ -10,7 +10,9 @@ LEGACY_LIGHTS_CONFIG_DEFAULT = "/etc/equip1/lights.json"
 LIGHTS_BRIGHTNESS_DEFAULT = 0.25
 CAPTURE_FILENAME_PREFIX_DEFAULT = "capture_"
 CAPTURE_FILENAME_TEMPLATE_DEFAULT = "{date}_{time}"
-AUTO_CONVERT_MP4_DEFAULT = True
+AUTO_CONVERT_MP4_DEFAULT = False
+RECORDING_FORMAT_DEFAULT = "mov"
+RECORDING_FORMAT_OPTIONS = ("dv", "mov", "avi")
 MP4_QUALITY_DEFAULT = "high"
 MP4_DEINTERLACE_DEFAULT = True
 MP4_QUALITY_OPTIONS = ("small", "balanced", "high", "max")
@@ -121,6 +123,18 @@ class Equip1Settings:
         parser.set("recording", "filename_template", template)
         self._write(parser)
 
+    def load_recording_format(self) -> str:
+        value = self.get(
+            "recording",
+            "recording_format",
+            RECORDING_FORMAT_DEFAULT,
+            env="EQUIP1_RECORDING_FORMAT",
+        )
+        return normalize_recording_format(value)
+
+    def save_recording_format(self, value: str) -> None:
+        self.save_value("recording", "recording_format", normalize_recording_format(value))
+
     def load_auto_convert_mp4(self) -> bool:
         return self.get_bool(
             "recording",
@@ -185,6 +199,18 @@ def _parse_bool(value: str | None, default: bool) -> bool:
 
 def _format_bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+def normalize_recording_format(value: str | None) -> str:
+    recording_format = (value or RECORDING_FORMAT_DEFAULT).strip().lower().lstrip(".")
+    aliases = {
+        "quicktime": "mov",
+        "qt": "mov",
+        "raw": "dv",
+        "dif": "dv",
+    }
+    recording_format = aliases.get(recording_format, recording_format)
+    return recording_format if recording_format in RECORDING_FORMAT_OPTIONS else RECORDING_FORMAT_DEFAULT
 
 
 def normalize_mp4_quality(value: str | None) -> str:

@@ -52,8 +52,8 @@ def _base_state(mode: str) -> dict[str, Any]:
         },
         "power": {"source": "pisugar", "available": True, "battery_percent": 87, "external_power": False, "charging": False},
         "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
-        "conversion": {"auto_mp4_enabled": True, "mp4_quality": "high", "mp4_deinterlace_enabled": True, "active": False, "source": None, "target": None, "last_error": None},
-        "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True, "oled_rotate_180": False},
+        "conversion": {"auto_mp4_enabled": False, "mp4_quality": "high", "mp4_deinterlace_enabled": True, "active": False, "source": None, "target": None, "last_error": None},
+        "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True, "oled_rotate_180": False, "recording_format": "mov"},
         "error": None,
     }
 
@@ -124,6 +124,10 @@ class DesignerAppAdapter:
 
     def command(self, name: str) -> None:
         self.session.command(name)
+
+    def command_async(self, name: str) -> bool:
+        self.session.command(name)
+        return True
 
     def set_setting(self, path: str, payload: dict) -> None:
         self.session.set_setting(path, payload)
@@ -209,18 +213,28 @@ class DesignerSession:
         if on_enter is not None:
             on_enter(DesignerAppAdapter(self))
 
+    def _oled_rotate_180_enabled(self) -> bool:
+        settings = self.state.get("settings") or {}
+        return bool(settings.get("oled_rotate_180", False))
+
     def button(self, name: str) -> None:
         app = DesignerAppAdapter(self)
-        if name == "up":
-            if self.state.get("mode") != "recording" and not self.current_screen.on_up(app) and self.current_screen.can_navigate(self.state):
-                self.change_screen(-1)
-        elif name == "down":
-            if self.state.get("mode") != "recording" and not self.current_screen.on_down(app) and self.current_screen.can_navigate(self.state):
-                self.change_screen(1)
-        elif name == "select":
-            self.current_screen.on_select(app)
-        else:
+        if name not in {"up", "down", "select"}:
             raise KeyError(name)
+        if name == "select":
+            self.current_screen.on_select(app)
+            return
+
+        rotate_180 = self._oled_rotate_180_enabled()
+        logical_up = name == "up" if rotate_180 else name == "down"
+        logical_down = name == "down" if rotate_180 else name == "up"
+        state = self.state
+        if state.get("mode") == "recording":
+            return
+        if logical_up and not self.current_screen.on_up(app) and self.current_screen.can_navigate(state):
+            self.change_screen(-1)
+        elif logical_down and not self.current_screen.on_down(app) and self.current_screen.can_navigate(state):
+            self.change_screen(1)
 
     def set_setting(self, path: str, payload: dict) -> None:
         self.command_log.insert(0, f"{time.strftime('%H:%M:%S')} {path} {payload}")
@@ -236,6 +250,9 @@ class DesignerSession:
                 conversion["mp4_quality"] = str(payload["mp4_quality"])
             if "mp4_deinterlace_enabled" in payload:
                 conversion["mp4_deinterlace_enabled"] = bool(payload["mp4_deinterlace_enabled"])
+        elif path == "/settings/recording-format":
+            settings = self.custom_state.setdefault("settings", {})
+            settings["recording_format"] = str(payload.get("format", payload.get("recording_format") or "mov"))
         elif path == "/settings/auto-storage-switch":
             settings = self.custom_state.setdefault("settings", {})
             settings["auto_storage_switch"] = bool(payload.get("enabled"))
@@ -270,6 +287,13 @@ class DesignerSession:
                 self.scenario_name = "custom"
             storage = self.custom_state.setdefault("storage", {})
             storage.update({"device": "/dev/mmcblk0p2", "device_kind": "sd", "mount_point": "/data", "filesystem_type": "exfat"})
+        elif name == "convert-all-mp4":
+            if self.custom_state is None:
+                self.custom_state = self.state
+                self.scenario_name = "custom"
+            conversion = self.custom_state.setdefault("conversion", {})
+            conversion.update({"active": True, "progress_percent": 42, "source": "capture_20260704_211642-001.dv", "target": "capture_20260704_211642-001.mp4", "last_error": None})
+            self.custom_state["mode"] = "converting"
         elif name.startswith("deck-"):
             if self.custom_state is None:
                 self.custom_state = self.state
@@ -501,13 +525,16 @@ def preview_png() -> Response:
         if screen is not session.boot_screen:
             draw_battery_indicator(draw, width, height, context)
 
+    state = session.state
+    settings = state.get("settings") or {}
     image = render_oled_image(
         render_screen,
         {
-            "state": session.state,
+            "state": state,
             "boot_elapsed": session.boot_elapsed,
             "boot_duration_seconds": session.boot_duration_seconds,
             "boot_hold_seconds": session.boot_hold_seconds,
+            "oled_rotate_180": bool(settings.get("oled_rotate_180", False)),
         },
         WIDTH,
         HEIGHT,

@@ -27,12 +27,13 @@ The default file is stored in the Buildroot overlay at `src/buildroot/overlay/et
 | `auto_storage_switch` | `EQUIP1_AUTO_STORAGE_SWITCH` | Enable idle USB/SD automatic switching |
 | `auto_storage_cooldown_seconds` | `EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS` | Minimum spacing between auto-switch attempts |
 | `normalize_dif_headers` | `EQUIP1_DV_NORMALIZE_DIF` | Enable DV DIF header normalization |
-| `auto_convert_mp4` | `EQUIP1_AUTO_CONVERT_MP4` | Convert completed `.dv` recordings to sidecar `.mp4` files |
+| `recording_format` | `EQUIP1_RECORDING_FORMAT` | Full-quality DV recording container: `mov`, `dv`, or `avi`; default `mov` |
+| `auto_convert_mp4` | `EQUIP1_AUTO_CONVERT_MP4` | Convert completed captures to sidecar `.mp4` files; default `false` |
 | `mp4_quality` | `EQUIP1_MP4_QUALITY` | MP4 preset: `small`, `balanced`, `high`, or `max`; default `high` |
 | `mp4_deinterlace` | `EQUIP1_MP4_DEINTERLACE` | Apply FFmpeg `nnedi` deinterlacing during MP4 export; default `true` |
 | `nnedi_weights` | `EQUIP1_NNEDI_WEIGHTS` | NNEDI weights file for MP4 deinterlacing, default `/opt/equip1/share/nnedi3_weights.bin` |
 
-MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (`balanced`), `18` (`high`), and `14` (`max`). Lower CRF means higher quality and larger files. The OLED settings screen also exposes `MP4 deint [ON/OFF]` for export deinterlacing. See [MP4 export options](mp4-export.md) for the full export flow and preset table.
+DV recordings default to `.mov`, with `.dv` and `.avi` available for users who prefer raw DV or AVI containers. `.mov` and `.avi` use FFmpeg stream copy, preserving the original DV video/audio essence without transcoding. HDV sources still record as native `.m2t`. MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (`balanced`), `18` (`high`), and `14` (`max`). Lower CRF means higher quality and larger files. The default is `[OFF]`. The OLED settings screen also exposes `Record fmt [MOV/DV/AVI]`, `MP4 deint [ON/OFF]` for export deinterlacing, and `Convert all` for on-demand sidecar creation. See [MP4 export options](mp4-export.md) for the full export flow and preset table.
 
 ### `[network]`
 
@@ -83,7 +84,7 @@ MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (
 
 The web UI changes these values over `WS /api/events`; the daemon writes them atomically. The OLED settings screen can also toggle LEDs through the daemon REST API.
 
-The OLED settings screen exposes auto-MP4 conversion, MP4 quality, MP4 deinterlacing, auto storage switch, HDMI preview, OLED 180-degree rotation, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original `.dv` capture and writes a same-stem `.mp4` file after recording finalization. Conversion runs in the background and publishes capture-list/state updates when it starts and finishes.
+The OLED settings screen exposes recording format, auto-MP4 conversion, MP4 quality, MP4 deinterlacing, on-demand Convert all, auto storage switch, HDMI preview, OLED 180-degree rotation, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original full-quality capture and writes a same-stem `.mp4` file after recording finalization. Conversion runs in the background and publishes capture-list/state updates when it starts and finishes.
 
 ### `[hdmi]`
 

@@ -5,7 +5,7 @@ export default defineNuxtConfig({
     head: {
       title: 'Equip-1 ⚹ DV RECORDER',
       meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover' },
         { name: 'theme-color', content: '#000000' },
         { name: 'application-name', content: 'Equip-1' },
         { name: 'mobile-web-app-capable', content: 'yes' },

@@ -5,6 +5,7 @@ import fcntl
 import os
 import queue
 import signal
+import subprocess
 import threading
 import time
 
@@ -115,6 +116,7 @@ class DvSource:
         self._rec_queue: queue.Queue[bytes | None] | None = None
         self._rec_thread: threading.Thread | None = None
         self._rec_handle = None
+        self._rec_proc: subprocess.Popen | None = None
         self._rec_path: Path | None = None
         self._rec_maxsize = int(os.environ.get("EQUIP1_DV_RECORD_QUEUE", "2048"))
         self._rec_dropped = 0
@@ -442,14 +444,20 @@ class DvSource:
 
     # ---- recording sink ------------------------------------------------
 
-    def start_recording(self, path: Path) -> None:
-        """Open ``path`` and route the live DV/HDV stream into it. Fast + sync."""
+    def start_recording(self, path: Path, ffmpeg_bin: str = "ffmpeg") -> None:
+        """Open ``path`` and route the live DV/HDV stream into it. Fast + sync.
+
+        Raw `.dv`/`.m2t` captures are written directly. `.mov` and `.avi` DV
+        captures are stream-copied through ffmpeg into a container, preserving
+        the original DV video/audio essence without transcoding.
+        """
         if self.recording:
             raise RuntimeError("Already recording")
         self.recording_error = None
         self._rec_dropped = 0
         self._rec_path = path
-        self._rec_handle = open(path, "wb", buffering=0)
+        self._rec_proc = None
+        self._rec_handle = self._open_recording_sink(path, ffmpeg_bin)
         rec_queue: queue.Queue[bytes | None] = queue.Queue(maxsize=self._rec_maxsize)
         self._rec_thread = threading.Thread(
             target=self._recording_writer, args=(rec_queue, self._rec_handle), daemon=True
@@ -457,6 +465,39 @@ class DvSource:
         self._rec_thread.start()
         # Publish last so the read loop never sees a half-initialised sink.
         self._rec_queue = rec_queue
+
+    def _open_recording_sink(self, path: Path, ffmpeg_bin: str):
+        suffix = path.suffix.lower()
+        if suffix not in {".mov", ".avi"}:
+            return open(path, "wb", buffering=0)
+        if self._stream_format == STREAM_FORMAT_HDV:
+            raise RuntimeError(f"{suffix} recording is only available for DV streams")
+        proc = subprocess.Popen(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "dv",
+                "-i",
+                "pipe:0",
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                str(path),
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if proc.stdin is None:
+            proc.kill()
+            raise RuntimeError("Could not open ffmpeg stdin for recording")
+        self._rec_proc = proc
+        return proc.stdin
 
     def stop_recording(self) -> None:
         rec_queue = self._rec_queue
@@ -469,14 +510,25 @@ class DvSource:
             thread.join(timeout=5.0)
         handle = self._rec_handle
         self._rec_handle = None
+        proc = self._rec_proc
+        self._rec_proc = None
         if handle is not None:
             try:
                 handle.flush()
-                os.fsync(handle.fileno())
+                if proc is None:
+                    os.fsync(handle.fileno())
             except OSError:
                 pass
             finally:
                 handle.close()
+        if proc is not None:
+            try:
+                return_code = proc.wait(timeout=30.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                return_code = proc.wait(timeout=5.0)
+            if return_code != 0:
+                self.recording_error = f"ffmpeg recording muxer exited with status {return_code}"
         if self._rec_dropped:
             self._log(f"recording dropped {self._rec_dropped} chunk(s) under disk stall", always=True)
         self._rec_path = None

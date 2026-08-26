@@ -6,6 +6,7 @@ const dvBytesPerSecond = Math.floor((216 * 1024 * 1024) / 60)
 
 const nowIso = () => new Date().toISOString()
 const defaultCaptureNaming = { prefix: 'capture_', template: '{date}_{time}' }
+const defaultRecordingFormat = 'mov'
 
 const pad2 = (value: number) => value.toString().padStart(2, '0')
 const filenameTagValues = (date = new Date()) => ({
@@ -39,8 +40,13 @@ const isMockEnabled = () => {
 const mockThumbnail = (label: string, color = '#5500ff') =>
   `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#050505"/><rect y="54" width="160" height="36" fill="${color}" opacity=".82"/><circle cx="116" cy="34" r="22" fill="#fff" opacity=".18"/><text x="10" y="78" fill="#fff" font-family="monospace" font-size="13">${label}</text></svg>`)}`
 
-const formatCaptureName = (date = new Date(), naming: Record<string, any> = defaultCaptureNaming, streamFormat = 'dv') =>
-  `${renderCaptureStem(naming, date)}.${streamFormat === 'hdv' ? 'm2t' : 'dv'}`
+const normalizeRecordingFormat = (value: any) => {
+  const format = String(value || defaultRecordingFormat).toLowerCase().replace(/^\./, '')
+  return ['dv', 'mov', 'avi'].includes(format) ? format : defaultRecordingFormat
+}
+
+const formatCaptureName = (date = new Date(), naming: Record<string, any> = defaultCaptureNaming, streamFormat = 'dv', recordingFormat = defaultRecordingFormat) =>
+  `${renderCaptureStem(naming, date)}.${streamFormat === 'hdv' ? 'm2t' : normalizeRecordingFormat(recordingFormat)}`
 
 const mockCaptureRows = (): CaptureEntry[] => [
   {
@@ -139,7 +145,7 @@ const mockState = (): Equip1State => ({
   },
   capture_naming: { ...defaultCaptureNaming },
   conversion: {
-    auto_mp4_enabled: true,
+    auto_mp4_enabled: false,
     mp4_quality: 'high',
     mp4_deinterlace_enabled: true,
     active: false,
@@ -151,7 +157,8 @@ const mockState = (): Equip1State => ({
   settings: {
     auto_storage_switch: true,
     hdmi_preview_enabled: true,
-    oled_rotate_180: false
+    oled_rotate_180: false,
+    recording_format: defaultRecordingFormat
   },
   error: null
 })
@@ -205,7 +212,7 @@ const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureE
     current.storage.base_used_bytes = current.storage.used_bytes
     current.recording = {
       active: true,
-      filename: formatCaptureName(new Date(startedAt), current.capture_naming || defaultCaptureNaming, current.camera?.format || 'dv'),
+      filename: formatCaptureName(new Date(startedAt), current.capture_naming || defaultCaptureNaming, current.camera?.format || 'dv', current.settings?.recording_format),
       started_at: startedAt,
       elapsed_seconds: 0,
       pid: 4242,
@@ -231,6 +238,16 @@ const applyMockCommand = (state: Ref<Equip1State | null>, captures: Ref<CaptureE
     current.mode = 'idle'
     current.storage.device = '/dev/mmcblk0p2'
     current.storage.device_kind = 'sd'
+  } else if (name === 'convert-all-mp4') {
+    current.mode = 'converting'
+    current.conversion = {
+      ...(current.conversion || {}),
+      active: true,
+      progress_percent: 42,
+      source: captures.value.find((capture) => !String(capture.name || '').endsWith('.mp4'))?.name || 'capture.mov',
+      target: 'capture.mp4',
+      last_error: null
+    }
   } else if (name === 'clear-error') {
     current.error = null
     current.mode = 'idle'
@@ -361,6 +378,37 @@ export const useEquip1State = () => {
     }
   }
 
+  const setRecordingFormat = async (format: string) => {
+    const clean = normalizeRecordingFormat(format)
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, settings: { ...(state.value.settings || {}), recording_format: clean } }
+      return state.value
+    }
+    state.value = await timedFetch<Equip1State>('settings.recording_format', `${apiBase}/settings/recording-format`, {
+      method: 'POST',
+      body: { format: clean }
+    })
+    return state.value
+  }
+
+  const setConversionSettings = async (payload: Record<string, any>) => {
+    const clean: Record<string, any> = {}
+    if ('auto_mp4_enabled' in payload) clean.auto_mp4_enabled = Boolean(payload.auto_mp4_enabled)
+    if ('mp4_deinterlace_enabled' in payload) clean.mp4_deinterlace_enabled = Boolean(payload.mp4_deinterlace_enabled)
+    if ('mp4_quality' in payload) clean.mp4_quality = String(payload.mp4_quality || 'high')
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      state.value = { ...state.value, conversion: { ...(state.value.conversion || {}), ...clean } }
+      return state.value
+    }
+    state.value = await timedFetch<Equip1State>('settings.conversion', `${apiBase}/settings/conversion`, {
+      method: 'POST',
+      body: clean
+    })
+    return state.value
+  }
+
   const setOledRotate180 = async (rotate_180: boolean) => {
     const enabled = Boolean(rotate_180)
     if (mock.value) {
@@ -443,7 +491,7 @@ export const useEquip1State = () => {
     }
   }
 
-  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setOledRotate180, setCaptureNaming, connectEvents, syncTime, mock }
+  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setRecordingFormat, setConversionSettings, setOledRotate180, setCaptureNaming, connectEvents, syncTime, mock }
 }
 
 export const useEquip1System = () => {

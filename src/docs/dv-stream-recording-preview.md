@@ -29,7 +29,7 @@ A start command does this:
 2. Probes for a camera.
 3. Checks at least one minute of estimated free capture space.
 4. Ensures the shared source is running and waits briefly for stream format detection.
-5. Opens `capture_YYYYMMDD_HHMMSS.dv` for raw DV or `capture_YYYYMMDD_HHMMSS.m2t` for native HDV in `/data/captures`. If the ROCK 2F clock is still unset and the stream is DV, the daemon first tries to use the DV camera datecode from the live stream for that timestamp.
+5. Opens `capture_YYYYMMDD_HHMMSS.mov` by default for DV, or `.dv`/`.avi` when selected in settings; native HDV always records as `capture_YYYYMMDD_HHMMSS.m2t` in `/data/captures`. MOV/AVI are FFmpeg stream-copy containers, so the original DV essence is preserved. If the ROCK 2F clock is still unset and the stream is DV, the daemon first tries to use the DV camera datecode from the live stream for that timestamp.
 6. Publishes the updated state, including `camera.format` and `recording.format`.
 
 A stop command closes the recording sink and immediately publishes idle state plus the freshly closed capture list, so LEDs/UI do not wait on slower finalization. In the background the daemon reads the first raw DV frames for embedded camera recording date/time when applicable, stamps the capture file mtime when datecode is present, runs `sync`, republishes captures, then generates JPG thumbnails and republishes captures again.
