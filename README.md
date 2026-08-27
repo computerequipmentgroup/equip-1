@@ -197,6 +197,4 @@ The daemon serves `src/uis/web/.output/public` when it exists.
 
 Hardware is licensed under [CERN OHL-S](https://ohwr.org/cern_ohl_s_v2.txt). Software is licensed under GPL. Derivatives must be released under the same licenses.
 
-## Web UI
-
 ![Equip-1 web UI](gfx/webui-v2.png)
