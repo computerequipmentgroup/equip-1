@@ -147,11 +147,11 @@ const mockState = (): Equip1State => ({
     filesystem_type: 'exfat'
   },
   network: {
-    mode: 'ap',
-    ssid: 'Equip-1',
-    ip: '10.42.0.1',
-    url: 'http://10.42.0.1',
-    dashboard_url: 'http://10.42.0.1'
+    mode: 'client',
+    ssid: 'Studio Wi-Fi',
+    ip: '192.168.1.42',
+    url: 'http://192.168.1.42',
+    dashboard_url: 'http://192.168.1.42'
   },
   deck: {
     available: true,
@@ -295,6 +295,7 @@ export const useEquip1State = () => {
   const mockInterval = useState<ReturnType<typeof setInterval> | null>('equip1-mock-interval', () => null)
   const resyncInterval = useState<ReturnType<typeof setInterval> | null>('equip1-resync-interval', () => null)
   const capturesResyncInterval = useState<ReturnType<typeof setInterval> | null>('equip1-captures-resync-interval', () => null)
+  const capturesLastResyncAt = useState<number>('equip1-captures-last-resync-at', () => 0)
 
   const apiBase = config.public.apiBase as string
   const wsBase = config.public.wsBase as string
@@ -338,8 +339,19 @@ export const useEquip1State = () => {
     }
   }
 
-  const resyncCaptures = async () => {
+  const captureIdleResyncMs = 10000
+  const captureRecordingResyncMs = 1000
+  const captureResyncTickMs = 1000
+  const captureResyncMs = () =>
+    state.value?.mode === 'recording' || state.value?.recording?.active
+      ? captureRecordingResyncMs
+      : captureIdleResyncMs
+
+  const resyncCaptures = async (force = false) => {
     if (mock.value) return
+    const now = Date.now()
+    if (!force && capturesLastResyncAt.value && now - capturesLastResyncAt.value < captureResyncMs()) return
+    capturesLastResyncAt.value = now
     try {
       captures.value = await timedFetch<CaptureEntry[]>('resync_captures', `${apiBase}/captures`)
     } catch {
@@ -348,13 +360,13 @@ export const useEquip1State = () => {
   }
 
   const resync = async () => {
-    await Promise.all([resyncState(), resyncCaptures()])
+    await Promise.all([resyncState(), resyncCaptures(true)])
   }
 
   const startResync = () => {
     if (!import.meta.client || mock.value) return
     if (!resyncInterval.value) resyncInterval.value = setInterval(resyncState, 3000)
-    if (!capturesResyncInterval.value) capturesResyncInterval.value = setInterval(resyncCaptures, 10000)
+    if (!capturesResyncInterval.value) capturesResyncInterval.value = setInterval(resyncCaptures, captureResyncTickMs)
   }
 
   const command = async (name: string) => {

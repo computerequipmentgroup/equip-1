@@ -14,6 +14,14 @@
   font-weight: 400;
 }
 
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('~/assets/fonts/JetBrainsMono-Regular.ttf') format('truetype');
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
 :root {
   color-scheme: dark;
   --bg: #000;
@@ -580,7 +588,8 @@ button:disabled {
 .filename-label {
   background: transparent;
   border-radius: 0;
-  font-size: 0.8em !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.9em !important;
 }
 .filename-label:disabled {
   cursor: not-allowed;
@@ -634,7 +643,7 @@ button:disabled {
   appearance: none;
   border: 1px solid var(--line-soft);
   color: var(--text);
-  font-family: monospace;
+  font-family: inherit;
   font-size: inherit;
   min-height: 2.6rem;
   padding: 0.6rem 0.7rem;
@@ -839,6 +848,9 @@ button:disabled {
 }
 .system-row .storage-legend {
   margin: 0 0 0.35rem;
+}
+.system-actions {
+  margin-top: 0.35rem;
 }
 .setting-row {
   align-items: center;

@@ -1081,7 +1081,7 @@ onMounted(async () => {
                   :disabled="Boolean(convertingWatchKey) || !watchTarget(group)"
                   @click.stop="toggleCaptureWatch(group)"
                 >
-                  <span>{{ convertingWatchKey === group.key ? "Preparing video…" : watchingCaptureKey === group.key ? "Hide video" : "Watch video" }}</span>
+                  <span>{{ convertingWatchKey === group.key ? "Preparing preview…" : watchingCaptureKey === group.key ? "Close preview" : "Watch preview" }}</span>
                 </button>
                 <a
                   v-if="group.primary"
@@ -1396,14 +1396,26 @@ onMounted(async () => {
               <span>IP Address</span>
               <span>{{ networkUrlLabel }}</span>
             </div>
-            <div v-if="connectedWifiSsid" class="storage-legend">
+          </div>
+          <div v-if="connectedWifiSsid" class="system-row system-network-row">
+            <div class="storage-legend">
               <span>Network</span>
               <span>{{ connectedWifiSsid }}</span>
             </div>
+          </div>
+          <div class="system-row">
             <p v-if="wifiMessage" class="hero-subtitle system-notification">{{ wifiMessage }}</p>
             <p v-if="wifiError" class="hero-subtitle update-error system-notification">{{ wifiError }}</p>
             <p v-if="updateError" class="hero-subtitle update-error system-notification">{{ updateError }}</p>
-            <div v-if="!wifiSwitchPending" class="actions two">
+            <div v-if="!wifiSwitchPending" class="actions two system-actions">
+              <button
+                v-if="wifiSetupOpen"
+                class="gloss-pill"
+                :disabled="wifiSaving"
+                @click="wifiSetupOpen = false"
+              >
+                <span>Close</span>
+              </button>
               <button
                 class="gloss-pill"
                 :class="{ 'gloss-green': wifiSetupOpen }"
@@ -1412,15 +1424,7 @@ onMounted(async () => {
               >
                 <span>{{ wifiSaving ? "Saving…" : wifiSetupOpen ? "Join" : isAccessPointNetwork ? "Network" : "AP mode" }}</span>
               </button>
-              <button
-                v-if="wifiSetupOpen"
-                class="gloss-pill"
-                :disabled="wifiSaving"
-                @click="wifiSetupOpen = false"
-              >
-                <span>Back</span>
-              </button>
-              <button v-else class="gloss-pill gloss-green" :disabled="updateNeedsWifi || updateChecking || updateApplying || !updateAvailable" @click="loadUpdateStatus(true, true)">
+              <button v-if="!wifiSetupOpen" class="gloss-pill gloss-green" :disabled="updateNeedsWifi || updateChecking || updateApplying || !updateAvailable" @click="loadUpdateStatus(true, true)">
                 <span>{{ updateChecking ? "Fetching" : "Update" }}</span>
               </button>
             </div>

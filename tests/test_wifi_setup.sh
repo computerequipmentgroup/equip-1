@@ -31,8 +31,8 @@ grep -q '"Join"' src/uis/web/pages/index.vue || fail "web UI must include one-wo
 grep -q 'Fetching.*Update' src/uis/web/pages/index.vue || fail "Network section must include update fetching label"
 grep -q 'isAccessPointNetwork ? "Network" : "AP mode"' src/uis/web/pages/index.vue || fail "Network mode button must switch between Network and AP mode"
 grep -q 'Switch back to AP mode?' src/uis/web/pages/index.vue || fail "AP mode switch must ask for confirmation"
-grep -q '>Back<' src/uis/web/pages/index.vue || fail "Wi-Fi setup form must have a Back button"
-grep -q "mode: 'ap'" src/uis/web/composables/useEquip1State.ts || fail "mock UI must simulate AP state by default"
+grep -q '>Close<' src/uis/web/pages/index.vue || fail "Wi-Fi setup form must have a Close button"
+grep -q "mode: 'client'" src/uis/web/composables/useEquip1State.ts || fail "mock UI must simulate connected Wi-Fi state by default"
 grep -q 'Switched to AP mode' src/uis/web/pages/index.vue || fail "mock UI must simulate AP switching"
 grep -q 'networkIp' src/uis/web/pages/index.vue || fail "web UI must derive update availability from actual network IP"
 grep -q "model: 'ROCK 2F'" src/uis/web/composables/useEquip1State.ts || fail "mock system model should be concise"
@@ -43,7 +43,7 @@ grep -q 'connectedWifiSsid' src/uis/web/pages/index.vue || fail "web UI must sho
 grep -q 'return truncateSsid(state.value?.network?.ssid)' src/uis/web/pages/index.vue || fail "web UI must truncate long SSIDs only in connected network state"
 ! grep -q '{{ truncateSsid(ssid) }}' src/uis/web/pages/index.vue || fail "SSID dropdown must keep full SSID labels"
 grep -q 'showNativeMessage(message)' src/uis/web/pages/index.vue || fail "Wi-Fi join message must use native browser prompt"
-grep -q 'v-if="!wifiSwitchPending" class="actions two"' src/uis/web/pages/index.vue || fail "Join/update buttons must hide while Wi-Fi switch is pending"
+grep -q 'v-if="!wifiSwitchPending" class="actions two system-actions"' src/uis/web/pages/index.vue || fail "Join/update buttons must hide while Wi-Fi switch is pending"
 
 sh -n src/buildroot/overlay/etc/init.d/S50network
 grep -q 'current_screen_idx = 1' src/uis/oled/app.py || fail "OLED must jump to Network screen after Wi-Fi joins"
