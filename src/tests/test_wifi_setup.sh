@@ -2,7 +2,7 @@
 set -eu
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 cd "$root"
 
 grep -q '@app.get("/api/network/wifi/scan")' src/equip1d/api.py || fail "daemon must expose Wi-Fi scan API"
@@ -48,6 +48,17 @@ grep -q 'v-if="!wifiSwitchPending" class="actions two system-actions"' src/uis/w
 sh -n src/buildroot/overlay/etc/init.d/S50network
 grep -q 'current_screen_idx = 1' src/uis/oled/app.py || fail "OLED must jump to Network screen after Wi-Fi joins"
 grep -q 'qr_mode = "url"' src/uis/oled/app.py || fail "OLED must open Network screen directly in URL QR mode"
+grep -q 'use_access_point_wifi' src/uis/oled/app.py || fail "OLED app must expose AP mode switch action"
+grep -q 'options.insert(0, "AP mode")' src/uis/oled/screens.py || fail "OLED Settings must put AP mode first while in Wi-Fi mode"
+grep -q 'app.use_access_point_wifi()' src/uis/oled/screens.py || fail "OLED Settings AP mode option must call AP fallback API"
+PYTHONPATH=src python3 - <<'PY' || fail "OLED AP mode option must appear at top only in Wi-Fi/client mode"
+from uis.oled.screens import SettingsScreen
+screen = SettingsScreen()
+client_state = {"network": {"mode": "client", "ssid": "Studio Wi-Fi"}}
+ap_state = {"network": {"mode": "access_point", "ssid": "Equip-1"}}
+assert screen._options(client_state)[0] == "AP mode"
+assert screen._options(ap_state)[0] == "LEDs"
+PY
 grep -q 'mode in {"access_point", "ap"}' src/uis/oled/screens.py || fail "OLED AP QR must only be available in AP mode"
 grep -q 'self.qr_mode == "wifi" and mode in {"access_point", "ap"}' src/uis/oled/screens.py || fail "OLED must not render stale AP QR outside AP mode"
 python3 -m compileall -q src/equip1d src/uis/oled

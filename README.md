@@ -11,6 +11,15 @@ The [Firehat](https://github.com/computerequipmentgroup/firehat) is also availab
 Website: <https://www.equip-1.c-e.group/>  
 Community Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
 
+## Features
+
+- One-button DV/HDV capture from FireWire camcorders.
+- On-device OLED/buttons UI plus a phone/laptop web dashboard.
+- Built-in Wi-Fi access point for field use, with optional client Wi-Fi for updates.
+- Full-quality `.mov`, `.dv`, `.avi`, or native HDV `.m2t` recordings.
+- On-demand or automatic MP4 sidecar export for easy previewing and sharing.
+- USB/SD capture storage handling with HDMI preview support.
+
 ## Getting started
 
 ### 1. Get or build an image
@@ -48,8 +57,8 @@ Default device access:
 | --- | --- |
 | Wi-Fi SSID | `Equip-1` |
 | Wi-Fi password | `firesecret` |
-| Dashboard | `http://10.42.0.1:8000` |
-| API base | `http://10.42.0.1:8000/api` |
+| Dashboard | `http://10.42.0.1/` |
+| API base | `http://10.42.0.1/api` |
 
 Connect a phone or laptop to the Equip-1 Wi-Fi network, open the dashboard, attach a FireWire DV/HDV camera, and use the web UI or the device buttons to preview and record.
 

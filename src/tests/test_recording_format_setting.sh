@@ -3,6 +3,9 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+cd "$root"
+
 grep -q 'RECORDING_FORMAT_DEFAULT = "mov"' src/equip1d/settings.py || fail "recording format must default to mov"
 grep -q 'recording_format = mov' src/buildroot/overlay/etc/equip1/equip-1.ini || fail "default INI must set recording_format mov"
 grep -q 'set_recording_format' src/equip1d/service.py || fail "daemon service must persist recording format"

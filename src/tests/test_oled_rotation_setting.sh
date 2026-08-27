@@ -3,6 +3,9 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+cd "$root"
+
 grep -q 'oled_rotate_180: bool = False' src/equip1d/models.py || fail "daemon state must expose oled_rotate_180"
 grep -q 'set_oled_rotate_180' src/equip1d/service.py || fail "daemon service must persist oled rotation"
 grep -q '/api/settings/oled-rotation' src/equip1d/api.py || fail "REST API must expose oled rotation setting"

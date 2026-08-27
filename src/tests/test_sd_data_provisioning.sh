@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+cd "$root"
+
 s15="src/buildroot/overlay/etc/init.d/S15data"
 switcher="src/buildroot/overlay/usr/sbin/equip1-storage-switch"
 gadget="src/buildroot/overlay/usr/sbin/equip1-usb-storage"

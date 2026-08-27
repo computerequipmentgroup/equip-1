@@ -3,6 +3,9 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+cd "$root"
+
 grep -q 'AUTO_CONVERT_MP4_DEFAULT = True' src/equip1d/settings.py || fail "auto MP4 conversion must default on in code"
 grep -q 'AUTO_CONVERT_MP4_MODE_DEFAULT = "background"' src/equip1d/settings.py || fail "auto MP4 conversion must default to background mode"
 grep -q 'MP4_DEINTERLACE_DEFAULT = False' src/equip1d/settings.py || fail "MP4 deinterlace must default off in code"

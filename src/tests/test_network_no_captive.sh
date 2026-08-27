@@ -3,6 +3,9 @@ set -euo pipefail
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+cd "$root"
+
 network_script=src/buildroot/overlay/etc/init.d/S50network
 daemon_script=src/buildroot/overlay/etc/init.d/S60equip1d
 settings=src/buildroot/overlay/etc/equip1/equip-1.ini

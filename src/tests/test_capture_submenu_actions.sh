@@ -6,6 +6,9 @@ fail() {
   exit 1
 }
 
+root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+cd "$root"
+
 grep -q '/api/captures/{capture_name}/watch' src/equip1d/api.py || fail "REST API must expose capture watch endpoint"
 grep -q '/api/captures/{capture_name}/conversion' src/equip1d/api.py || fail "REST API must expose single conversion endpoint"
 grep -q '/api/captures/{capture_name}/sidecar' src/equip1d/api.py || fail "REST API must keep sidecar endpoint compatibility"
