@@ -14,10 +14,11 @@ Community Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
 ## Features
 
 - One-button DV/HDV capture from FireWire camcorders.
-- On-device OLED/buttons UI plus a phone/laptop web dashboard.
-- Built-in Wi-Fi access point for field use, with optional client Wi-Fi for updates.
+- On-device OLED/buttons UI + web based controls.
+- Web UI controls for recording, video preview, file management and conversion settings.
 - Full-quality `.mov`, `.dv`, `.avi`, or native HDV `.m2t` recordings.
-- On-demand or automatic MP4 sidecar export for easy previewing and sharing.
+- On-demand or automatic MP4 conversions for easy previewing and sharing.
+- Optional MP4 deinterlacing for cleaner playback from interlaced DV sources.
 - USB/SD capture storage handling with HDMI preview support.
 
 ## Getting started
@@ -53,12 +54,12 @@ On a running device, edit the live settings file at:
 
 Default device access:
 
-| Setting | Default |
-| --- | --- |
-| Wi-Fi SSID | `Equip-1` |
-| Wi-Fi password | `firesecret` |
-| Dashboard | `http://10.42.0.1/` |
-| API base | `http://10.42.0.1/api` |
+| Setting        | Default                |
+| -------------- | ---------------------- |
+| Wi-Fi SSID     | `Equip-1`              |
+| Wi-Fi password | `firesecret`           |
+| Dashboard      | `http://10.42.0.1/`    |
+| API base       | `http://10.42.0.1/api` |
 
 Connect a phone or laptop to the Equip-1 Wi-Fi network, open the dashboard, attach a FireWire DV/HDV camera, and use the web UI or the device buttons to preview and record.
 
@@ -81,12 +82,12 @@ Completed DV recordings are written as full-quality `.mov` captures by default, 
 
 MP4 quality presets:
 
-| Setting | OLED label | Use |
-| --- | --- | --- |
-| `small` | `[28]` | Smallest files |
-| `balanced` | `[23]` | Middle ground |
-| `high` | `[18]` | Close to source for most DV material |
-| `max` | `[14]` | Highest quality, larger and slower |
+| Setting    | OLED label | Use                                  |
+| ---------- | ---------- | ------------------------------------ |
+| `small`    | `[28]`     | Smallest files                       |
+| `balanced` | `[23]`     | Middle ground                        |
+| `high`     | `[18]`     | Close to source for most DV material |
+| `max`      | `[14]`     | Highest quality, larger and slower   |
 
 See [`src/docs/mp4-export.md`](src/docs/mp4-export.md) for the full export flow.
 
@@ -191,8 +192,6 @@ npm run generate
 ```
 
 The daemon serves `src/uis/web/.output/public` when it exists.
-
-
 
 ## Open source
 
