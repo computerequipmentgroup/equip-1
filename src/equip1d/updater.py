@@ -67,9 +67,11 @@ class AppUpdater:
         self.repo = self._setting("repo", "computerequipmentgroup/equip-1", "EQUIP1_UPDATE_REPO")
         self.asset_name = self._setting("asset", "equip1-update.tar.gz", "EQUIP1_UPDATE_ASSET")
         self.token = os.environ.get("EQUIP1_UPDATE_TOKEN") or None
+        self.log_file = Path(os.environ.get("EQUIP1_UPDATE_LOG", "/data/logs/update.log")).expanduser()
         self.latest: ReleaseInfo | None = None
         self.last_checked_at: str | None = None
         self.last_error: str | None = None
+        self._ensure_update_log()
 
     def _setting(self, key: str, default: str, env: str) -> str:
         return self.settings.get("updates", key, default, env=env) or default
@@ -95,14 +97,19 @@ class AppUpdater:
 
     def check(self) -> dict[str, Any]:
         self.last_error = None
+        self._log_update(f"checking latest release from {self.repo}")
         try:
             self.latest = self._fetch_latest_release()
             self.last_checked_at = datetime.now(timezone.utc).isoformat()
+            asset = self.latest.asset_name or "no installable asset"
+            self._log_update(f"latest release {self.latest.tag or 'unknown'} ({asset})")
         except UpdateError as exc:
             self.last_error = str(exc)
+            self._log_update(f"check failed: {exc}")
         return self.status()
 
     def apply_latest(self) -> dict[str, Any]:
+        self._log_update("apply requested")
         status = self.check()
         if status.get("last_error"):
             raise UpdateError(str(status["last_error"]))
@@ -110,15 +117,25 @@ class AppUpdater:
         if latest is None:
             raise UpdateError("Could not check for updates")
         if not status.get("available"):
+            self._log_update("already up to date")
             return {**status, "applied": False, "message": "Already up to date"}
         if not latest.asset_url:
             raise UpdateError(f"Release {latest.tag} does not include an app update bundle")
 
         self.update_dir.mkdir(parents=True, exist_ok=True)
         archive_path = self.update_dir / latest.asset_name
-        self._download(latest.asset_url, archive_path)
-        self._install_bundle(archive_path, latest)
-        self._schedule_restart()
+        try:
+            self._log_update(f"downloading {latest.asset_name} for {latest.tag} to {archive_path}")
+            self._download(latest.asset_url, archive_path)
+            self._log_update(f"installing {archive_path}")
+            self._install_bundle(archive_path, latest)
+            self._log_update("scheduling service restart")
+            self._schedule_restart()
+        except UpdateError as exc:
+            self.last_error = str(exc)
+            self._log_update(f"apply failed: {exc}")
+            raise
+        self._log_update(f"apply succeeded: {latest.tag}")
         return {**self.status(), "applied": True, "message": "Update installed; restarting services"}
 
     def _fetch_latest_release(self) -> ReleaseInfo:
@@ -197,19 +214,39 @@ class AppUpdater:
             if payload is None:
                 raise UpdateError("Update bundle does not contain an Equip-1 app payload")
 
+            self._remove_unsafe_payload_links(payload)
+
             backup_dir = self.update_dir / f"backup-{int(time.time())}"
             backup_dir.mkdir(parents=True, exist_ok=True)
-            for name in ("equip1d", "uis", "fonts", "requirements.txt"):
-                target = self.app_dir / name
-                source = payload / name
-                if not source.exists():
-                    continue
-                if target.exists():
-                    shutil.move(str(target), str(backup_dir / name))
-                if source.is_dir():
-                    shutil.copytree(source, target)
-                else:
-                    shutil.copy2(source, target)
+            components = ("uis", "fonts", "requirements.txt", "equip1d")
+            backups: list[tuple[Path, Path]] = []
+            installed: list[Path] = []
+            try:
+                for name in components:
+                    target = self.app_dir / name
+                    source = payload / name
+                    if not source.exists():
+                        continue
+                    if target.exists() or target.is_symlink():
+                        backup_path = backup_dir / name
+                        self._move_to_backup(target, backup_path)
+                        backups.append((backup_path, target))
+                    try:
+                        self._copy_payload_item(source, target)
+                    except (OSError, shutil.Error):
+                        if target.exists() or target.is_symlink():
+                            self._remove_path(target)
+                        raise
+                    installed.append(target)
+            except (OSError, shutil.Error) as exc:
+                self._log_update(f"rolling back failed install: {exc}")
+                for target in reversed(installed):
+                    if target.exists() or target.is_symlink():
+                        self._remove_path(target)
+                for backup_path, target in reversed(backups):
+                    if backup_path.exists() or backup_path.is_symlink():
+                        self._move_to_backup(backup_path, target)
+                raise UpdateError(f"Could not install app bundle: {exc}") from exc
 
             version = self.current_version()
             version.update(
@@ -222,6 +259,68 @@ class AppUpdater:
                 }
             )
             self.version_file.write_text(json.dumps(version, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _ensure_update_log(self) -> None:
+        try:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            self.log_file.touch(exist_ok=True)
+        except OSError:
+            # Update logging must never stop the daemon or updater.
+            pass
+
+    def _log_update(self, message: str) -> None:
+        try:
+            self._ensure_update_log()
+            timestamp = datetime.now(timezone.utc).isoformat()
+            with self.log_file.open("a", encoding="utf-8") as handle:
+                handle.write(f"{timestamp} {message}\n")
+        except OSError:
+            pass
+
+    @staticmethod
+    def _copy_payload_item(source: Path, target: Path) -> None:
+        if source.is_symlink():
+            return
+        if source.is_dir():
+            shutil.copytree(source, target, symlinks=False, ignore=AppUpdater._ignore_symlinks)
+        else:
+            shutil.copy2(source, target)
+
+    @staticmethod
+    def _move_to_backup(source: Path, destination: Path) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_symlink():
+            # /data is often exFAT for host-readable logs/captures and cannot
+            # store symlinks. Drop stale app symlinks rather than failing the
+            # update while trying to back them up.
+            source.unlink()
+        elif source.is_dir():
+            shutil.copytree(source, destination, symlinks=False, ignore=AppUpdater._ignore_symlinks)
+            shutil.rmtree(source)
+        else:
+            shutil.copy2(source, destination)
+            source.unlink()
+
+    @staticmethod
+    def _ignore_symlinks(directory: str, names: list[str]) -> set[str]:
+        base = Path(directory)
+        return {name for name in names if (base / name).is_symlink()}
+
+    @staticmethod
+    def _remove_path(path: Path) -> None:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _remove_unsafe_payload_links(payload: Path) -> None:
+        # Nuxt generates .output/public; local dev trees can also contain a
+        # convenience `dist` symlink.  Do not install absolute build-host links
+        # like /Users/... onto the appliance.
+        dist = payload / "uis" / "web" / "dist"
+        if dist.is_symlink():
+            dist.unlink()
 
     @staticmethod
     def _safe_extract(archive: tarfile.TarFile, destination: Path) -> None:

@@ -14,7 +14,7 @@ from . import perf
 from .camera import FireWireCameraDetector
 from .deck import DeckCommand, DeckControlError, DvcontDeckController
 from .dvmetadata import stamp_file_from_dv_recording_date
-from .dvsource import DvSource
+from .dvsource import DvSource, STREAM_FORMAT_UNKNOWN
 from .events import EventBus
 from .logging import debug_enabled, log
 from .models import (
@@ -337,7 +337,11 @@ class Equip1Daemon:
                 # recording just opens a file on the live stream -- no preview
                 # hand-off, no device acquisition, effectively instant.
                 await self.dv.ensure_running(True)
-                await self.dv.wait_for_stream_format(timeout=2.0)
+                stream_format = await self.dv.wait_for_stream_format(timeout=2.0)
+                if stream_format == STREAM_FORMAT_UNKNOWN:
+                    raise CommandError(
+                        "Could not determine DV/HDV stream format"
+                    )
                 recorded_at = await self._recording_datetime(now)
                 filename_stem = self._render_capture_filename_stem(recorded_at)
                 extension = self._recording_extension()
@@ -993,6 +997,9 @@ class Equip1Daemon:
             # only difference is a lighter filter while recording so the browser
             # feed yields CPU to the capture write.
             await self.dv.ensure_running(True)
+            stream_format = await self.dv.wait_for_stream_format(timeout=2.0)
+            if stream_format == STREAM_FORMAT_UNKNOWN:
+                raise CommandError("Could not determine DV/HDV stream format")
             recording = state["mode"] == "recording"
             if kind == "mkv":
                 return self.preview.stream_mkv(recording=recording)

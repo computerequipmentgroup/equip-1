@@ -441,50 +441,70 @@ class SettingsScreen(Screen):
     def __init__(self) -> None:
         self.controlling = False
         self.selected = 0
-        self.options = ["LEDs", "OLED flip", "FORMAT", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview", "Back"]
+        self.base_options = ["LEDs", "OLED flip", "FORMAT", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview"]
+
+    def _wifi_client_mode(self, state: dict[str, Any]) -> bool:
+        network = state.get("network") or {}
+        mode = str(network.get("mode") or "").lower()
+        return mode in {"client", "lan", "station", "sta"}
+
+    def _options(self, state: dict[str, Any]) -> list[str]:
+        options = list(self.base_options)
+        if self._wifi_client_mode(state):
+            options.insert(0, "AP mode")
+        options.append("Back")
+        return options
 
     def on_select(self, app) -> None:
         if not self.controlling:
             self.controlling = True
             self.selected = 0
             return
-        if self.selected == len(self.options) - 1:
+        state = app.state or {}
+        options = self._options(state)
+        self.selected = max(0, min(self.selected, len(options) - 1))
+        option = options[self.selected]
+        if option == "Back":
             self.controlling = False
             self.selected = 0
             return
-        state = app.state or {}
         conversion = state.get("conversion") or {}
         settings = state.get("settings") or {}
         lights = state.get("lights") or {}
-        if self.selected == 0:
+        if option == "AP mode":
+            if hasattr(app, "use_access_point_wifi"):
+                app.use_access_point_wifi()
+        elif option == "LEDs":
             app.set_setting("/settings/lights", {"enabled": not bool(lights.get("enabled", True))})
-        elif self.selected == 1:
+        elif option == "OLED flip":
             app.set_setting("/settings/oled-rotation", {"rotate_180": not bool(settings.get("oled_rotate_180", False))})
-        elif self.selected == 2:
+        elif option == "FORMAT":
             if state.get("mode") != "recording":
                 app.set_setting("/settings/recording-format", {"format": self._next_recording_format(settings)})
-        elif self.selected == 3:
+        elif option == "MP4 export":
             app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
-        elif self.selected == 4:
+        elif option == "MP4 deint":
             app.set_setting(
                 "/settings/conversion",
                 {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", False))},
             )
-        elif self.selected == 5:
+        elif option == "STORAGE auto":
             app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
-        elif self.selected == 6:
+        elif option == "HDMI preview":
             app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
 
     def on_up(self, app) -> bool:
         if not self.controlling:
             return False
-        self.selected = (self.selected - 1) % len(self.options)
+        options = self._options(app.state or {})
+        self.selected = (self.selected - 1) % len(options)
         return True
 
     def on_down(self, app) -> bool:
         if not self.controlling:
             return False
-        self.selected = (self.selected + 1) % len(self.options)
+        options = self._options(app.state or {})
+        self.selected = (self.selected + 1) % len(options)
         return True
 
     @staticmethod
@@ -522,27 +542,33 @@ class SettingsScreen(Screen):
             idx = 0
         return options[(idx + 1) % len(options)]
 
-    def _option_label(self, state: dict[str, Any], index: int) -> str:
+    def _option_label(self, state: dict[str, Any], option: str | int) -> str:
+        if isinstance(option, int):
+            option = self._options(state)[option]
         conversion = state.get("conversion") or {}
         settings = state.get("settings") or {}
         lights = state.get("lights") or {}
-        if index == 0:
+        network = state.get("network") or {}
+        if option == "AP mode":
+            ssid = str(network.get("ssid") or "WiFi")[:8]
+            return f"AP mode [{ssid}]"
+        if option == "LEDs":
             return f"LEDs [{self._on_off(lights.get('enabled'), True)}]"
-        if index == 1:
+        if option == "OLED flip":
             return f"OLED flip [{'BL' if bool(settings.get('oled_rotate_180', False)) else 'BR'}]"
-        if index == 2:
+        if option == "FORMAT":
             return f"FORMAT [{self._recording_format_value(settings)}]"
-        if index == 3:
+        if option == "MP4 export":
             return f"MP4 export [{self._mp4_export_value(conversion)}]"
-        if index == 4:
+        if option == "MP4 deint":
             return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), False)}]"
-        if index == 5:
+        if option == "STORAGE auto":
             return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
-        if index == 6:
+        if option == "HDMI preview":
             return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
-        if index == 7:
+        if option == "Back":
             return "Back"
-        return self.options[index]
+        return option
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
         state = context.get("state") or {}
@@ -552,15 +578,16 @@ class SettingsScreen(Screen):
             draw.text((0, CONTENT_Y), "Daemon offline", font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT), "Settings unavailable", font=font, fill=255)
             return
+        options = self._options(state)
+        self.selected = max(0, min(self.selected, len(options) - 1))
         if not self.controlling:
-            draw.text((0, CONTENT_Y), self._option_label(state, 0), font=font, fill=255)
-            draw.text((0, CONTENT_Y + LINE_HEIGHT), self._option_label(state, 1), font=font, fill=255)
-            draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), self._option_label(state, 2), font=font, fill=255)
+            for row, option in enumerate(options[:3]):
+                draw.text((0, CONTENT_Y + row * LINE_HEIGHT), self._option_label(state, option), font=font, fill=255)
             return
-        start = max(0, min(self.selected - 1, len(self.options) - 3))
-        for row, option_index in enumerate(range(start, min(start + 3, len(self.options)))):
+        start = max(0, min(self.selected - 1, len(options) - 3))
+        for row, option_index in enumerate(range(start, min(start + 3, len(options)))):
             prefix = "> " if option_index == self.selected else "  "
-            draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + self._option_label(state, option_index), font=font, fill=255)
+            draw.text((0, CONTENT_Y + row * LINE_HEIGHT), prefix + self._option_label(state, options[option_index]), font=font, fill=255)
 
 
 class UsbTransferScreen(Screen):

@@ -127,6 +127,13 @@ class DvSource:
         self._latest_recording_datetime = None
         self._latest_timecode = None
         self._stream_format: StreamFormat = STREAM_FORMAT_UNKNOWN
+        self._format_probe = bytearray()
+        # Sniff a small accumulated window before falling back to DV. This keeps
+        # short first reads from permanently misclassifying native HDV/MPEG-TS as
+        # DV while adding only a tiny startup delay for real DV sources.
+        self._format_probe_min_bytes = int(
+            os.environ.get("EQUIP1_DV_FORMAT_PROBE_BYTES", "4096")
+        )
         self._format_event: asyncio.Event | None = None
 
     # ---- lifecycle -----------------------------------------------------
@@ -188,6 +195,7 @@ class DvSource:
         self._latest_recording_datetime = None
         self._latest_timecode = None
         self._stream_format = STREAM_FORMAT_UNKNOWN
+        self._format_probe.clear()
         self._format_event = asyncio.Event()
         self._log("starting shared dvgrab DV/HDV source", always=True)
         # Give dvgrab a private pipe we own the read end of, so a blocking thread
@@ -261,6 +269,7 @@ class DvSource:
         self._latest_recording_datetime = None
         self._latest_timecode = None
         self._stream_format = STREAM_FORMAT_UNKNOWN
+        self._format_probe.clear()
         if self._format_event is not None:
             self._format_event.set()
         self._close_all_subscribers()
@@ -308,6 +317,8 @@ class DvSource:
                 if not chunk:
                     break
                 chunk = self._prepare_chunk(chunk, loop)
+                if not chunk:
+                    continue
                 if first:
                     loop.call_soon_threadsafe(
                         self._log,
@@ -333,7 +344,19 @@ class DvSource:
 
     def _prepare_chunk(self, chunk: bytes, loop: asyncio.AbstractEventLoop) -> bytes:
         if self._stream_format == STREAM_FORMAT_UNKNOWN:
-            self._set_stream_format(self._detect_stream_format(chunk), loop)
+            self._format_probe.extend(chunk)
+            detected = self._detect_stream_format(
+                bytes(self._format_probe),
+                allow_dv_default=len(self._format_probe) >= self._format_probe_min_bytes,
+            )
+            self._set_stream_format(detected, loop)
+            if self._stream_format == STREAM_FORMAT_UNKNOWN:
+                # Do not feed unclassified bytes to ffmpeg or the DV DIF normalizer.
+                # If this turns out to be HDV, treating an early partial TS packet
+                # as DV corrupts the stream and blanks preview.
+                return b""
+            chunk = bytes(self._format_probe)
+            self._format_probe.clear()
         if self._stream_format == STREAM_FORMAT_HDV:
             return chunk
 
@@ -358,21 +381,30 @@ class DvSource:
             self._format_event.set()
 
     @staticmethod
-    def _detect_stream_format(chunk: bytes) -> StreamFormat:
+    def _detect_stream_format(
+        chunk: bytes,
+        allow_dv_default: bool = True,
+    ) -> StreamFormat:
         # Native HDV is MPEG-2 transport stream: 188-byte packets with 0x47 sync.
-        # Try every possible alignment because an os.read() may begin mid-packet.
-        if len(chunk) >= 188 * 3:
-            limit = min(188, len(chunk) - (188 * 3) + 1)
+        # Search the accumulated probe buffer for any packet run, not just the
+        # alignment of the latest read. Some cameras/dvgrab builds can produce a
+        # short first read, and permanently defaulting that read to DV corrupts HDV.
+        required_packets = 3
+        if len(chunk) >= 188 * required_packets:
+            limit = len(chunk) - (188 * required_packets) + 1
             for start in range(limit):
-                packet_count = 0
-                for offset in range(start, len(chunk), 188):
-                    if chunk[offset] != 0x47:
-                        break
-                    packet_count += 1
-                    if packet_count >= 3:
-                        return STREAM_FORMAT_HDV
+                if chunk[start] != 0x47:
+                    continue
+                if all(
+                    chunk[start + 188 * packet] == 0x47
+                    for packet in range(required_packets)
+                ):
+                    return STREAM_FORMAT_HDV
+        if not allow_dv_default:
+            return STREAM_FORMAT_UNKNOWN
         # dvgrab stdout otherwise contains raw DV DIF frames. Defaulting to DV
-        # preserves existing behaviour and lets the DV header normalizer run.
+        # after a short probe preserves existing behaviour and lets the DV header
+        # normalizer run for DV sources without misclassifying short HDV reads.
         return STREAM_FORMAT_DV
 
     def _normalize_dif_chunk(self, chunk: bytes) -> bytes:
@@ -420,6 +452,7 @@ class DvSource:
         self._latest_recording_datetime = None
         self._latest_timecode = None
         self._stream_format = STREAM_FORMAT_UNKNOWN
+        self._format_probe.clear()
         if self._format_event is not None:
             self._format_event.set()
         self._close_all_subscribers()

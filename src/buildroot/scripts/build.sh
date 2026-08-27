@@ -160,6 +160,7 @@ rsync -a --delete "$ROOT_DIR/equip1d" "$OVERLAY_DIR/opt/equip1/"
 rsync -a --delete \
     --exclude 'web/node_modules' \
     --exclude 'web/.nuxt' \
+    --exclude 'web/dist' \
     "$ROOT_DIR/uis" "$OVERLAY_DIR/opt/equip1/"
 rsync -a --delete "$ROOT_DIR/fonts" "$OVERLAY_DIR/opt/equip1/"
 cp "$ROOT_DIR/requirements.txt" "$OVERLAY_DIR/opt/equip1/requirements.txt"

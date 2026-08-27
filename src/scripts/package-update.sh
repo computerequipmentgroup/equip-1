@@ -37,6 +37,7 @@ rsync -a --delete "$SRC_DIR/equip1d" "$PAYLOAD/"
 rsync -a --delete \
     --exclude 'web/node_modules' \
     --exclude 'web/.nuxt' \
+    --exclude 'web/dist' \
     "$SRC_DIR/uis" "$PAYLOAD/"
 rsync -a --delete "$SRC_DIR/fonts" "$PAYLOAD/"
 cp "$SRC_DIR/requirements.txt" "$PAYLOAD/requirements.txt"

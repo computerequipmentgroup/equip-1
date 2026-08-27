@@ -257,6 +257,36 @@ class OledApp:
                 "error": {"message": "Setting failed", "detail": detail},
             })
 
+    def use_access_point_wifi(self) -> None:
+        started = time.monotonic()
+        with self._api_lock:
+            result = self.api.post_json("/network/ap", {})
+        elapsed_ms = (time.monotonic() - started) * 1000.0
+        if result.ok:
+            log(f"OLED network AP mode requested {elapsed_ms:.1f}ms", level="debug")
+            current = self.state or {}
+            result_data = result.data if isinstance(result.data, dict) else {}
+            network = result_data.get("network") if isinstance(result_data.get("network"), dict) else {}
+            self._set_state({
+                **current,
+                "network": {
+                    **(current.get("network") or {}),
+                    **network,
+                    "mode": "access_point",
+                    "ssid": network.get("ssid") or (current.get("network") or {}).get("ssid") or "Equip-1",
+                    "ip": network.get("ip") or "10.42.0.1",
+                    "url": network.get("url") or "http://10.42.0.1",
+                },
+            })
+        else:
+            detail = result.error or "network/ap"
+            log(f"OLED network AP mode failed: {detail}", level="warning")
+            self._set_state({
+                **(self.state or {}),
+                "mode": "error",
+                "error": {"message": "Network failed", "detail": detail},
+            })
+
     def _recover_stop_command_failure(self, detail: str) -> bool:
         # Stop is safety/UX critical: a transient OLED HTTP timeout should not
         # leave the local UI stuck in error if the daemon has already left

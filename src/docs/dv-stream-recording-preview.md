@@ -65,6 +65,7 @@ Some camcorders emit DV DIF blocks that are playable but rejected by parts of `f
 | --- | --- | --- |
 | `EQUIP1_DV_BUFFERS` | `50` | `dvgrab -buffers` ring size |
 | `EQUIP1_DV_PIPE_BYTES` | `1048576` | Target kernel pipe size between `dvgrab` and reader |
+| `EQUIP1_DV_FORMAT_PROBE_BYTES` | `4096` | Accumulated bytes to sniff before defaulting an unrecognized stream to DV |
 | `EQUIP1_DV_RECORD_QUEUE` | `2048` | Recording writer queue length |
 | `EQUIP1_DV_PREVIEW_QUEUE` | `32` | Preview subscriber queue length |
 | `EQUIP1_PREVIEW_FPS` | `25` | Idle browser preview FPS |
