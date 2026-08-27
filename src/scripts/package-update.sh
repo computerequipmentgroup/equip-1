@@ -52,11 +52,8 @@ cat > "$PAYLOAD/version.json" <<EOF
 }
 EOF
 
-GENERIC="$OUT_DIR/equip1-update.tar.gz"
-VERSIONED="$OUT_DIR/equip-1-${TAG}-update.tar.gz"
-tar -C "$TMP" -czf "$GENERIC" equip1-update
-cp "$GENERIC" "$VERSIONED"
+BUNDLE="$OUT_DIR/equip1-update.tar.gz"
+tar -C "$TMP" -czf "$BUNDLE" equip1-update
 
-echo "==> Update bundle ready: $GENERIC"
-echo "==> Versioned copy ready: $VERSIONED"
-echo "Attach either asset to the GitHub release for $TAG."
+echo "==> Update bundle ready: $BUNDLE"
+echo "Attach this asset to the GitHub release for $TAG."

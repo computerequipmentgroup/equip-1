@@ -26,7 +26,7 @@ The web dashboard can automatically update a running device from one release tag
 EQUIP1_VERSION_TAG=v0.1.1 ./src/scripts/package-update.sh
 ```
 
-The script writes both `dist/equip1-update.tar.gz` and `dist/equip-1-v0.1.1-update.tar.gz`. Attach either to the GitHub release. Full `.img.xz` release assets are still for manual flashing and are intentionally ignored by the in-place updater.
+The script writes `dist/equip1-update.tar.gz`. Attach that asset to the GitHub release. Full `.img.xz` release assets are still for manual flashing and are intentionally ignored by the in-place updater.
 
 ## Important paths
 

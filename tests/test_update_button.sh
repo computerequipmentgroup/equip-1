@@ -4,7 +4,7 @@ set -euo pipefail
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 grep -q 'class AppUpdater' src/equip1d/updater.py || fail "daemon must include release-bundle updater"
-grep -q '_asset_matches' src/equip1d/updater.py || fail "updater must accept versioned app update bundles"
+grep -q '_asset_matches' src/equip1d/updater.py || fail "updater must match app update bundles by configured asset name"
 grep -q 'package-update.sh' <(find src/scripts -maxdepth 1 -type f -print) || fail "repo must include app update bundle packaging script"
 grep -q '/api/update/check' src/equip1d/api.py || fail "API must expose update check endpoint"
 grep -q '/api/update/apply' src/equip1d/api.py || fail "API must expose update apply endpoint"
@@ -34,7 +34,7 @@ latest = ReleaseInfo(tag="v9.9.9", name="", body="", url="", asset_name="equip1-
 assert AppUpdater._is_available({"tag": "v0.1.0"}, latest) is True
 updater = AppUpdater()
 assert updater._asset_matches("equip1-update.tar.gz", "v0.1.1") is True
-assert updater._asset_matches("equip-1-v0.1.1-update.tar.gz", "v0.1.1") is True
+assert updater._asset_matches("equip-1-v0.1.1-update.tar.gz", "v0.1.1") is False
 assert updater._asset_matches("equip-1-v0.1.1-rock2f.img.xz", "v0.1.1") is False
 PY
 

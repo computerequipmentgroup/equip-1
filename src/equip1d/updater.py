@@ -148,11 +148,7 @@ class AppUpdater:
         )
 
     def _asset_matches(self, name: str, tag: str) -> bool:
-        clean = name.strip()
-        if clean == self.asset_name:
-            return True
-        tag = tag.strip()
-        return clean in {f"equip-1-{tag}-update.tar.gz", f"equip-1-{tag}-update.tgz"} or clean.endswith("-update.tar.gz")
+        return name.strip() == self.asset_name
 
     def _request_json(self, url: str) -> dict[str, Any]:
         request = Request(url, headers=self._headers({"Accept": "application/vnd.github+json"}))
