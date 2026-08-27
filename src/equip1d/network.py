@@ -67,6 +67,7 @@ def get_network_state(port: int) -> NetworkState:
     ap_iface = settings.get("network", "ap_iface", "wlan0", env="EQUIP1_AP_IFACE") if ap_enabled else None
     ap_ssid = settings.get("network", "ap_ssid", "Equip-1", env="EQUIP1_AP_SSID") if ap_enabled else None
     ap_password = settings.get("network", "ap_password", "firesecret", env="EQUIP1_AP_PASSWORD") if ap_enabled else None
+    client_ssid = settings.get("network", "client_ssid", None, env="EQUIP1_WIFI_CLIENT_SSID")
     ap_ip = get_interface_ipv4(ap_iface) if ap_iface else None
 
     if ap_ip:
@@ -85,10 +86,10 @@ def get_network_state(port: int) -> NetworkState:
         return NetworkState(
             ip=lan_ip,
             hostname=hostname,
-            url=_http_url(f"{hostname}.local", port) if hostname else _http_url(lan_ip, port),
+            url=_http_url(lan_ip, port),
             mode="lan",
-            ssid=ap_ssid,
-            password=ap_password,
+            ssid=client_ssid,
+            password=None,
             ap_ip=None,
             iface=ap_iface,
         )

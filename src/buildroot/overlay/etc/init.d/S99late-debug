@@ -57,7 +57,7 @@ import json
 import time
 import urllib.request
 
-url = "http://127.0.0.1:8000/api/state"
+url = "http://127.0.0.1/api/state"
 started = time.monotonic()
 try:
     with urllib.request.urlopen(url, timeout=8.0) as response:

@@ -25,6 +25,8 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_AP_DHCP_LEASE network ap_dhcp_lease 12h
     equip1_ini_default EQUIP1_AP_COUNTRY network ap_country ""
     equip1_ini_default EQUIP1_NETWORK_BACKGROUND network startup_background 1
+    equip1_ini_default EQUIP1_CLIENT_FALLBACK_AP network client_fallback_ap 1
+    equip1_ini_default EQUIP1_SETTINGS_FILE paths settings_file /etc/equip1/equip-1.ini
     equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
 fi
 
@@ -40,6 +42,8 @@ AP_DHCP_END="${EQUIP1_AP_DHCP_END:-10.42.0.100}"
 AP_DHCP_LEASE="${EQUIP1_AP_DHCP_LEASE:-12h}"
 AP_COUNTRY="${EQUIP1_AP_COUNTRY:-}"
 NETWORK_BACKGROUND="${EQUIP1_NETWORK_BACKGROUND:-1}"
+CLIENT_FALLBACK_AP="${EQUIP1_CLIENT_FALLBACK_AP:-1}"
+SETTINGS_FILE="${EQUIP1_SETTINGS_FILE:-/etc/equip1/equip-1.ini}"
 LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
 if [ "$LOG_LEVEL" = "quiet" ]; then
     LOGFILE=/dev/null
@@ -175,11 +179,9 @@ start_ap() {
         --dhcp-range="$AP_DHCP_START,$AP_DHCP_END,$AP_DHCP_LEASE" \
         --dhcp-option="3,$AP_IP" \
         --dhcp-option="6,$AP_IP" \
-        --dhcp-option="114,http://$AP_IP/" \
         --address="/equip-1/$AP_IP" \
         --address="/equip-1.local/$AP_IP" \
         --address="/equip1.local/$AP_IP" \
-        --address="/#/$AP_IP" \
         --pid-file="$DNSMASQ_PID" \
         --log-facility="$DNSMASQ_LOG" >>"$LOGFILE" 2>&1 || {
             log "dnsmasq failed; see $DNSMASQ_LOG"
@@ -188,7 +190,45 @@ start_ap() {
         }
 
     ip addr show "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
-    log "WiFi AP ready: http://$AP_IP:8000/"
+    log "WiFi AP ready: http://$AP_IP/"
+}
+
+set_wifi_mode_ap() {
+    [ -n "$SETTINGS_FILE" ] || return 0
+    mkdir -p "$(dirname "$SETTINGS_FILE")" 2>/dev/null || true
+    if [ ! -f "$SETTINGS_FILE" ]; then
+        {
+            echo "[network]"
+            echo "wifi_mode = ap"
+        } >"$SETTINGS_FILE" 2>/dev/null || true
+        return 0
+    fi
+    awk '
+        BEGIN { in_network=0; saw_network=0; set_mode=0 }
+        /^\[network\][[:space:]]*$/ { in_network=1; saw_network=1; print; next }
+        /^\[/ {
+            if (in_network && !set_mode) { print "wifi_mode = ap"; set_mode=1 }
+            in_network=0
+        }
+        in_network && /^[[:space:]]*wifi_mode[[:space:]]*=/ { print "wifi_mode = ap"; set_mode=1; next }
+        { print }
+        END {
+            if (!saw_network) { print ""; print "[network]"; print "wifi_mode = ap" }
+            else if (in_network && !set_mode) { print "wifi_mode = ap" }
+        }
+    ' "$SETTINGS_FILE" >"$SETTINGS_FILE.tmp" 2>/dev/null && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE" 2>/dev/null || rm -f "$SETTINGS_FILE.tmp" 2>/dev/null || true
+}
+
+wait_for_client_ip() {
+    for _ in $(seq 1 30); do
+        CLIENT_IP="$(ip -4 -o addr show dev "$AP_IFACE" 2>/dev/null | awk '$3 == "inet" { sub(/\/.*/, "", $4); print $4; exit }')"
+        if [ -n "$CLIENT_IP" ]; then
+            log "WiFi client ready: http://$CLIENT_IP/"
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
 }
 
 wpa_status() {
@@ -226,6 +266,8 @@ start_client() {
     fi
 
     stop_network_services
+    ip link set "$AP_IFACE" down >>"$LOGFILE" 2>&1 || true
+    ip addr flush dev "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
     ip link set "$AP_IFACE" up >>"$LOGFILE" 2>&1 || true
     iw dev "$AP_IFACE" set power_save off >>"$LOGFILE" 2>&1 || true
     ip addr show "$AP_IFACE" >>"$LOGFILE" 2>&1 || true
@@ -238,6 +280,14 @@ start_client() {
     wait_for_wifi_ready || true
     wpa_status
     udhcpc -i "$AP_IFACE" -b >>"$LOGFILE" 2>&1 || true
+    if ! wait_for_client_ip; then
+        log "WiFi client did not get an IP address"
+        if [ "$CLIENT_FALLBACK_AP" = "1" ] || [ "$CLIENT_FALLBACK_AP" = "true" ]; then
+            log "Falling back to Equip-1 AP mode"
+            set_wifi_mode_ap
+            start_ap
+        fi
+    fi
 }
 
 case "$1" in

@@ -40,6 +40,7 @@ from .settings import (
     Equip1Settings,
     LEGACY_LIGHTS_CONFIG_DEFAULT,
     LIGHTS_BRIGHTNESS_DEFAULT,
+    normalize_auto_convert_mp4_mode,
     normalize_mp4_quality,
     normalize_recording_format,
 )
@@ -178,7 +179,7 @@ class Equip1Daemon:
     def __init__(
         self,
         capture_dir: str | os.PathLike[str],
-        host_url_port: int = 8000,
+        host_url_port: int = 80,
         dvgrab_bin: str = "dvgrab",
         dvcont_bin: str = "dvcont",
         ffmpeg_bin: str = "ffmpeg",
@@ -211,6 +212,8 @@ class Equip1Daemon:
         self._last_state: dict[str, Any] | None = None
         self._last_captures_storage_key: tuple[Any, ...] | None = None
         self._storage_snapshot_cache: tuple[float, Any] | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._last_conversion_progress_publish = 0.0
         self._storage_snapshot_ttl = self.settings.get_float(
             "performance", "storage_snapshot_ttl", 0.75, env="EQUIP1_STORAGE_SNAPSHOT_TTL"
         )
@@ -225,7 +228,8 @@ class Equip1Daemon:
         self.lights_default_colors, self.lights_enabled, self.lights_brightness = self._load_light_settings()
         self.capture_naming_prefix, self.capture_naming_template = self._load_capture_naming()
         self.recording_format = self.settings.load_recording_format()
-        self.auto_convert_mp4 = self.settings.load_auto_convert_mp4()
+        self.auto_convert_mp4_mode = self.settings.load_auto_convert_mp4_mode()
+        self.auto_convert_mp4 = self.auto_convert_mp4_mode != "off"
         self.mp4_quality = self.settings.load_mp4_quality()
         self.mp4_deinterlace = self.settings.load_mp4_deinterlace()
         self.nnedi_weights = self.settings.get(
@@ -240,15 +244,26 @@ class Equip1Daemon:
         self._conversion_source: str | None = None
         self._conversion_target: str | None = None
         self._conversion_last_error: str | None = None
+        self._conversion_deinterlace_algorithm: str | None = None
+        self._conversion_deinterlace_fallback = False
         self._conversion_task: asyncio.Task | None = None
+        self._conversion_blocks_recording = True
         self._recording_date_hints: dict[str, datetime] = {}
         self.error: ErrorState | None = None
+        weights_path = Path(self.nnedi_weights).expanduser() if self.nnedi_weights else None
+        self._debug_log(
+            "mp4 deinterlace config "
+            f"enabled={self.mp4_deinterlace} "
+            f"weights={weights_path} "
+            f"weights_exists={bool(weights_path and weights_path.is_file())} "
+            f"algorithm={self._configured_deinterlace_algorithm()}"
+        )
 
     @classmethod
     def from_env(cls) -> "Equip1Daemon":
         settings = Equip1Settings()
         capture_dir = settings.get("recording", "capture_dir", "~/captures", env="EQUIP1_CAPTURE_DIR") or "~/captures"
-        port = settings.get_int("network", "port", 8000, env="EQUIP1_PORT")
+        port = settings.get_int("network", "port", 80, env="EQUIP1_PORT")
         dvgrab_bin = os.environ.get("EQUIP1_DVGRAB_BIN", "dvgrab")
         dvcont_bin = os.environ.get("EQUIP1_DVCONT_BIN", "dvcont")
         ffmpeg_bin = os.environ.get("EQUIP1_FFMPEG_BIN", "ffmpeg")
@@ -262,6 +277,7 @@ class Equip1Daemon:
         )
 
     async def start_monitor(self) -> None:
+        self._loop = asyncio.get_running_loop()
         self._cleanup_stale_usb_storage_state()
         if self._monitor_task is None:
             self._monitor_task = asyncio.create_task(self._monitor_loop())
@@ -306,6 +322,8 @@ class Equip1Daemon:
                 raise CommandError("Storage is mounting")
             if self._usb_transfer_active():
                 raise CommandError("USB disk mode is active")
+            if self._conversion_active and self._conversion_blocks_recording:
+                raise CommandError("MP4 conversion already running")
             probe = self.camera.probe()
             if not probe.connected:
                 raise CommandError("No DV/HDV camera detected")
@@ -570,11 +588,14 @@ class Equip1Daemon:
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
 
-    def _save_auto_convert_mp4(self) -> None:
+    def _save_auto_convert_mp4_mode(self) -> None:
         try:
-            self.settings.save_auto_convert_mp4(self.auto_convert_mp4)
+            self.settings.save_auto_convert_mp4_mode(self.auto_convert_mp4_mode)
         except OSError as exc:
             self._debug_log(f"could not save settings to {self.settings.path}: {exc}")
+
+    def _save_auto_convert_mp4(self) -> None:
+        self._save_auto_convert_mp4_mode()
 
     def _save_mp4_quality(self) -> None:
         try:
@@ -629,13 +650,18 @@ class Equip1Daemon:
         await self.events.publish({"type": "state", "state": state})
         return state
 
-    async def set_auto_convert_mp4(self, enabled: Any) -> dict[str, Any]:
+    async def set_auto_convert_mp4_mode(self, mode: Any) -> dict[str, Any]:
+        next_mode = normalize_auto_convert_mp4_mode(str(mode) if mode is not None else None)
         async with self._lock:
-            self.auto_convert_mp4 = _coerce_bool(enabled)
+            self.auto_convert_mp4_mode = next_mode
+            self.auto_convert_mp4 = next_mode != "off"
             state = self._snapshot_unlocked().to_dict()
-        await asyncio.to_thread(self._save_auto_convert_mp4)
+        await asyncio.to_thread(self._save_auto_convert_mp4_mode)
         await self.events.publish({"type": "state", "state": state})
         return state
+
+    async def set_auto_convert_mp4(self, enabled: Any) -> dict[str, Any]:
+        return await self.set_auto_convert_mp4_mode("foreground" if _coerce_bool(enabled) else "off")
 
     async def set_mp4_quality(self, quality: Any) -> dict[str, Any]:
         next_quality = normalize_mp4_quality(str(quality) if quality is not None else None)
@@ -656,15 +682,7 @@ class Equip1Daemon:
 
     async def convert_all_captures_to_mp4(self) -> dict[str, Any]:
         async with self._lock:
-            self._poll_recorder_unlocked()
-            if self.recorder.state.active:
-                raise CommandError("Stop recording before converting captures")
-            if self._storage_operation_active():
-                raise CommandError("Storage is mounting")
-            if self._usb_transfer_active() or self._usb_storage_starting():
-                raise CommandError("USB disk mode is active")
-            if self._conversion_active:
-                raise CommandError("MP4 conversion already running")
+            self._assert_capture_write_allowed_unlocked()
 
         captures = await self._list_captures_cached(force=True)
         sources = self._mp4_conversion_sources(captures)
@@ -680,10 +698,86 @@ class Equip1Daemon:
             self._conversion_source = first.name
             self._conversion_target = first.with_suffix(".mp4").name
             self._conversion_last_error = None
+            self._conversion_blocks_recording = True
+            self._prepare_conversion_algorithm_state_unlocked()
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         self._conversion_task = asyncio.create_task(self._convert_capture_paths_to_mp4(sources), name="equip1-convert-all-mp4")
         return state
+
+    async def convert_capture_to_mp4(self, name: str) -> dict[str, Any]:
+        async with self._lock:
+            self._assert_capture_write_allowed_unlocked()
+        path = self.storage.capture_path(str(name or ""))
+        if path is None:
+            raise CommandError("Capture not found")
+        if path.suffix.lower() == ".mp4":
+            return await self.snapshot()
+        target = path.with_suffix(".mp4")
+        try:
+            if target.exists() and target.stat().st_size > 0:
+                return await self.snapshot()
+        except OSError:
+            pass
+        async with self._lock:
+            if self._conversion_active:
+                raise CommandError("MP4 conversion already running")
+            self._conversion_active = True
+            self._conversion_progress_percent = 0
+            self._conversion_source = path.name
+            self._conversion_target = target.name
+            self._conversion_last_error = None
+            self._conversion_blocks_recording = True
+            self._prepare_conversion_algorithm_state_unlocked()
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        self._conversion_task = asyncio.create_task(self._convert_capture_paths_to_mp4([path]), name="equip1-convert-mp4")
+        return state
+
+    async def delete_capture(self, name: str, *, include_related: bool = False) -> dict[str, Any]:
+        async with self._lock:
+            self._poll_recorder_unlocked()
+            if self.recorder.state.active:
+                raise CommandError("Stop recording before deleting captures")
+            if self._storage_operation_active():
+                raise CommandError("Storage is mounting")
+            if self._usb_transfer_active() or self._usb_storage_starting():
+                raise CommandError("USB disk mode is active")
+        deleted = await asyncio.to_thread(self.storage.delete_capture, str(name or ""), include_related=include_related)
+        if not deleted:
+            raise CommandError("Capture not found")
+        await self._sync_storage("capture deletion")
+        self._captures_cache = None
+        await self.publish_captures()
+        return await self.snapshot()
+
+    def _configured_deinterlace_algorithm(self) -> str:
+        if not self.mp4_deinterlace:
+            return "off"
+        weights_path = Path(self.nnedi_weights).expanduser() if self.nnedi_weights else None
+        return "nnedi3" if weights_path and weights_path.is_file() else "yadif"
+
+    def _prepare_conversion_algorithm_state_unlocked(self) -> None:
+        algorithm = self._configured_deinterlace_algorithm()
+        self._conversion_deinterlace_algorithm = algorithm
+        self._conversion_deinterlace_fallback = self.mp4_deinterlace and algorithm != "nnedi3"
+
+    def _set_conversion_algorithm(self, algorithm: str) -> None:
+        if algorithm != self._conversion_deinterlace_algorithm:
+            self._debug_log(f"mp4 conversion using deinterlace_algorithm={algorithm}")
+        self._conversion_deinterlace_algorithm = algorithm
+        self._conversion_deinterlace_fallback = self.mp4_deinterlace and algorithm != "nnedi3"
+
+    def _assert_capture_write_allowed_unlocked(self) -> None:
+        self._poll_recorder_unlocked()
+        if self.recorder.state.active:
+            raise CommandError("Stop recording before converting captures")
+        if self._storage_operation_active():
+            raise CommandError("Storage is mounting")
+        if self._usb_transfer_active() or self._usb_storage_starting():
+            raise CommandError("USB disk mode is active")
+        if self._conversion_active:
+            raise CommandError("MP4 conversion already running")
 
     def _mp4_conversion_sources(self, captures: list[dict[str, Any]]) -> list[Path]:
         sources: list[Path] = []
@@ -948,7 +1042,17 @@ class Equip1Daemon:
             await self._maybe_convert_recording_to_mp4(prefix)
 
     def _set_conversion_progress(self, percent: int) -> None:
-        self._conversion_progress_percent = max(0, min(100, int(percent)))
+        next_percent = max(0, min(100, int(percent)))
+        if next_percent == self._conversion_progress_percent:
+            return
+        self._conversion_progress_percent = next_percent
+        now = time.monotonic()
+        if next_percent not in {0, 100} and now - self._last_conversion_progress_publish < 0.75:
+            return
+        self._last_conversion_progress_publish = now
+        loop = self._loop
+        if loop and loop.is_running():
+            loop.call_soon_threadsafe(lambda: asyncio.create_task(self.publish_state()))
 
     async def _maybe_convert_recording_to_mp4(self, filename: str) -> None:
         if not self.auto_convert_mp4:
@@ -957,30 +1061,39 @@ class Equip1Daemon:
         if source_path.suffix.lower() == ".mp4":
             self._debug_log(f"mp4 conversion skipped for MP4 capture {filename}")
             return
-        await self._convert_capture_paths_to_mp4([source_path])
+        while True:
+            async with self._lock:
+                active = self._conversion_active
+            if not active:
+                break
+            await asyncio.sleep(1.0)
+        await self._convert_capture_paths_to_mp4([source_path], blocks_recording=self.auto_convert_mp4_mode != "background")
 
-    async def _convert_capture_paths_to_mp4(self, sources: list[Path]) -> None:
+    async def _convert_capture_paths_to_mp4(self, sources: list[Path], *, blocks_recording: bool = True) -> None:
         try:
             for source_path in sources:
-                await self._convert_capture_path_to_mp4(source_path)
+                await self._convert_capture_path_to_mp4(source_path, blocks_recording=blocks_recording)
         finally:
             await self._sync_storage("mp4 conversion")
             await self.publish_captures()
             async with self._lock:
                 self._conversion_active = False
+                self._conversion_blocks_recording = True
                 state = self._snapshot_unlocked().to_dict()
             await self.events.publish({"type": "state", "state": state})
             if self._conversion_task is asyncio.current_task():
                 self._conversion_task = None
 
-    async def _convert_capture_path_to_mp4(self, source_path: Path) -> None:
+    async def _convert_capture_path_to_mp4(self, source_path: Path, *, blocks_recording: bool = True) -> None:
         target_path = source_path.with_suffix(".mp4")
         async with self._lock:
             self._conversion_active = True
+            self._conversion_blocks_recording = blocks_recording
             self._conversion_progress_percent = 0
             self._conversion_source = source_path.name
             self._conversion_target = target_path.name
             self._conversion_last_error = None
+            self._prepare_conversion_algorithm_state_unlocked()
             state = self._snapshot_unlocked().to_dict()
         await self.events.publish({"type": "state", "state": state})
         try:
@@ -992,6 +1105,7 @@ class Equip1Daemon:
                 self._set_conversion_progress,
                 self.mp4_deinterlace,
                 self.nnedi_weights,
+                self._set_conversion_algorithm,
             )
             async with self._lock:
                 self._conversion_progress_percent = 100
@@ -1230,7 +1344,7 @@ class Equip1Daemon:
             mode = "error"
         elif recording_active:
             mode = "recording"
-        elif self._conversion_active:
+        elif self._conversion_active and self._conversion_blocks_recording:
             mode = "converting"
         elif storage.recording_minutes_available < 1:
             mode = "storage_full"
@@ -1284,8 +1398,11 @@ class Equip1Daemon:
             ),
             conversion=ConversionState(
                 auto_mp4_enabled=self.auto_convert_mp4,
+                auto_mp4_mode=self.auto_convert_mp4_mode,
                 mp4_quality=self.mp4_quality,
                 mp4_deinterlace_enabled=self.mp4_deinterlace,
+                mp4_deinterlace_algorithm=self._conversion_deinterlace_algorithm or self._configured_deinterlace_algorithm(),
+                mp4_deinterlace_fallback=self._conversion_deinterlace_fallback if self._conversion_active else (self.mp4_deinterlace and self._configured_deinterlace_algorithm() != "nnedi3"),
                 active=self._conversion_active,
                 progress_percent=self._conversion_progress_percent,
                 source=self._conversion_source,

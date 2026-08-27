@@ -37,46 +37,71 @@ const isMockEnabled = () => {
   return setting === '1' || setting === 'true' || (import.meta.dev && setting !== '0' && setting !== 'false')
 }
 
-const mockThumbnail = (label: string, color = '#5500ff') =>
-  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 90"><rect width="160" height="90" fill="#050505"/><rect y="54" width="160" height="36" fill="${color}" opacity=".82"/><circle cx="116" cy="34" r="22" fill="#fff" opacity=".18"/><text x="10" y="78" fill="#fff" font-family="monospace" font-size="13">${label}</text></svg>`)}`
+const mockThumbnail = (_label: string, _color = '') => 'mock-thumbnail'
 
 const normalizeRecordingFormat = (value: any) => {
   const format = String(value || defaultRecordingFormat).toLowerCase().replace(/^\./, '')
   return ['dv', 'mov', 'avi'].includes(format) ? format : defaultRecordingFormat
 }
 
+const normalizeAutoMp4Mode = (value: any, fallback = 'off') => {
+  const mode = String(value || fallback).toLowerCase().replace(/-/g, '_')
+  const aliases: Record<string, string> = {
+    fg: 'foreground',
+    front: 'foreground',
+    blocking: 'foreground',
+    bg: 'background',
+    back: 'background',
+    nonblocking: 'background',
+    non_blocking: 'background',
+    on: 'foreground',
+    true: 'foreground',
+    yes: 'foreground',
+    '1': 'foreground',
+    false: 'off',
+    no: 'off',
+    '0': 'off'
+  }
+  const clean = aliases[mode] || mode
+  return ['off', 'foreground', 'background'].includes(clean) ? clean : 'off'
+}
+
 const formatCaptureName = (date = new Date(), naming: Record<string, any> = defaultCaptureNaming, streamFormat = 'dv', recordingFormat = defaultRecordingFormat) =>
   `${renderCaptureStem(naming, date)}.${streamFormat === 'hdv' ? 'm2t' : normalizeRecordingFormat(recordingFormat)}`
 
-const mockCaptureRows = (): CaptureEntry[] => [
-  {
-    name: 'capture_20260704_211642-001.dv',
-    path: '/data/captures/capture_20260704_211642-001.dv',
-    size_bytes: 1_640_000_000,
-    modified_at: Date.now() / 1000 - 1800,
-    download_url: 'data:text/plain,mock capture',
-    thumbnail_url: mockThumbnail('capture 01', '#5500ff')
-  },
-  {
-    name: 'sony_trv900_tape_03.dv',
-    path: '/data/captures/sony_trv900_tape_03.dv',
-    size_bytes: 4_380_000_000,
-    modified_at: Date.now() / 1000 - 86_400,
-    download_url: 'data:text/plain,mock capture',
-    thumbnail_url: mockThumbnail('tape 03', '#2444ff')
-  },
-  {
-    name: 'family_archive_1999.dv',
-    path: '/data/captures/family_archive_1999.dv',
-    size_bytes: 2_210_000_000,
-    modified_at: Date.now() / 1000 - 604_800,
-    download_url: 'data:text/plain,mock capture',
-    thumbnail_url: mockThumbnail('1999', '#8844ff')
+const mockCaptureRows = (): CaptureEntry[] => {
+  const now = Date.now() / 1000
+  const rows: CaptureEntry[] = []
+  for (let i = 1; i <= 27; i += 1) {
+    const stem = `capture_20260704_${String(210000 + i).padStart(6, '0')}-${String(i).padStart(3, '0')}`
+    const extension = i % 7 === 0 ? 'avi' : i % 5 === 0 ? 'mov' : 'dv'
+    const sizeBytes = 980_000_000 + i * 137_000_000
+    rows.push({
+      name: `${stem}.${extension}`,
+      path: `/data/captures/${stem}.${extension}`,
+      size_bytes: sizeBytes,
+      modified_at: now - i * 1800,
+      download_url: 'data:text/plain,mock capture',
+      watch_url: 'data:video/mp4,',
+      thumbnail_url: mockThumbnail(`capture ${i}`, '#5500ff')
+    })
+    if (i % 4 === 1) {
+      rows.push({
+        name: `${stem}.mp4`,
+        path: `/data/captures/${stem}.mp4`,
+        size_bytes: Math.max(1_000_000, Math.round(sizeBytes * 0.14)),
+        modified_at: now - i * 1800 + 120,
+        download_url: 'data:text/plain,mock mp4 conversion',
+        watch_url: 'data:video/mp4,',
+        thumbnail_url: mockThumbnail(`mp4 conversion ${i}`, '#44aa22')
+      })
+    }
   }
-]
+  return rows
+}
 
 const mockSystemStats = (): SystemStats => ({
-  model: 'Radxa ROCK 2F / RK3528A',
+  model: 'ROCK 2F',
   cpu: {
     load_1m: 0.74,
     count: 4,
@@ -125,7 +150,8 @@ const mockState = (): Equip1State => ({
     mode: 'ap',
     ssid: 'Equip-1',
     ip: '10.42.0.1',
-    dashboard_url: 'http://10.42.0.1:8000'
+    url: 'http://10.42.0.1',
+    dashboard_url: 'http://10.42.0.1'
   },
   deck: {
     available: true,
@@ -145,9 +171,12 @@ const mockState = (): Equip1State => ({
   },
   capture_naming: { ...defaultCaptureNaming },
   conversion: {
-    auto_mp4_enabled: false,
+    auto_mp4_enabled: true,
+    auto_mp4_mode: 'background',
     mp4_quality: 'high',
-    mp4_deinterlace_enabled: true,
+    mp4_deinterlace_enabled: false,
+    mp4_deinterlace_algorithm: 'off',
+    mp4_deinterlace_fallback: false,
     active: false,
     progress_percent: 0,
     source: null,
@@ -394,7 +423,13 @@ export const useEquip1State = () => {
 
   const setConversionSettings = async (payload: Record<string, any>) => {
     const clean: Record<string, any> = {}
-    if ('auto_mp4_enabled' in payload) clean.auto_mp4_enabled = Boolean(payload.auto_mp4_enabled)
+    if ('auto_mp4_mode' in payload) {
+      clean.auto_mp4_mode = normalizeAutoMp4Mode(payload.auto_mp4_mode)
+      clean.auto_mp4_enabled = clean.auto_mp4_mode !== 'off'
+    } else if ('auto_mp4_enabled' in payload) {
+      clean.auto_mp4_enabled = Boolean(payload.auto_mp4_enabled)
+      clean.auto_mp4_mode = clean.auto_mp4_enabled ? 'foreground' : 'off'
+    }
     if ('mp4_deinterlace_enabled' in payload) clean.mp4_deinterlace_enabled = Boolean(payload.mp4_deinterlace_enabled)
     if ('mp4_quality' in payload) clean.mp4_quality = String(payload.mp4_quality || 'high')
     if (mock.value) {
@@ -552,5 +587,51 @@ export const useEquip1Captures = () => {
     return `${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}/download`
   }
 
-  return { captures, error, load, downloadUrl, mock }
+  const watchUrl = (capture: CaptureEntry) => {
+    if (mock.value && capture.watch_url) return capture.watch_url
+    return `${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}/watch`
+  }
+
+  const createSidecar = async (capture: CaptureEntry) => {
+    if (mock.value) {
+      const name = String(capture.name || '')
+      const dot = name.lastIndexOf('.')
+      const sidecarName = `${dot >= 0 ? name.slice(0, dot) : name}.mp4`
+      if (!captures.value.some((row) => row.name === sidecarName)) {
+        captures.value = [
+          ...captures.value,
+          {
+            name: sidecarName,
+            path: `/data/captures/${sidecarName}`,
+            size_bytes: Math.max(1_000_000, Math.round(Number(capture.size_bytes || 0) * 0.14)),
+            modified_at: Date.now() / 1000,
+            download_url: 'data:text/plain,mock mp4 conversion',
+            watch_url: 'data:video/mp4,',
+            thumbnail_url: capture.thumbnail_url || mockThumbnail('mp4 conversion', '#44aa22')
+          }
+        ]
+      }
+      return
+    }
+    await $fetch(`${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}/conversion`, { method: 'POST' })
+    await load()
+  }
+
+  const deleteCapture = async (capture: CaptureEntry, related = false) => {
+    if (mock.value) {
+      const name = String(capture.name || '')
+      const dot = name.lastIndexOf('.')
+      const stem = dot >= 0 ? name.slice(0, dot) : name
+      captures.value = captures.value.filter((row) => {
+        if (row.name === name) return false
+        if (related && String(row.name || '').startsWith(`${stem}.`)) return false
+        return true
+      })
+      return
+    }
+    await $fetch(`${config.public.apiBase}/captures/${encodeURIComponent(capture.name)}${related ? '?related=true' : ''}`, { method: 'DELETE' })
+    await load()
+  }
+
+  return { captures, error, load, downloadUrl, watchUrl, createSidecar, deleteCapture, mock }
 }

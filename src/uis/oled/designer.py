@@ -36,7 +36,7 @@ def _base_state(mode: str) -> dict[str, Any]:
         "network": {
             "ip": "10.42.0.1",
             "hostname": "equip1",
-            "url": "http://10.42.0.1:8000",
+            "url": "http://10.42.0.1",
             "mode": "access_point",
             "ssid": "Equip-1",
             "password": "firesecret",
@@ -52,7 +52,7 @@ def _base_state(mode: str) -> dict[str, Any]:
         },
         "power": {"source": "pisugar", "available": True, "battery_percent": 87, "external_power": False, "charging": False},
         "lights": {"enabled": True, "brightness": 0.25, "default_colors": [[0, 0, 255], [0, 0, 255], [0, 0, 255]]},
-        "conversion": {"auto_mp4_enabled": False, "mp4_quality": "high", "mp4_deinterlace_enabled": True, "active": False, "source": None, "target": None, "last_error": None},
+        "conversion": {"auto_mp4_enabled": True, "auto_mp4_mode": "background", "mp4_quality": "high", "mp4_deinterlace_enabled": False, "active": False, "source": None, "target": None, "last_error": None},
         "settings": {"auto_storage_switch": True, "hdmi_preview_enabled": True, "oled_rotate_180": False, "recording_format": "mov"},
         "error": None,
     }
@@ -140,7 +140,7 @@ class DesignerSession:
     def __init__(self) -> None:
         self.screens: list[Screen] = [RecordingScreen(), DeckScreen(), StorageScreen(), UsbTransferScreen(), NetworkScreen(), SettingsScreen()]
         self.boot_screen = BootScreen()
-        self.boot_duration_seconds = 3.0
+        self.boot_duration_seconds = 1.0
         self.boot_hold_seconds = 1.1
         self.screen_index = 0
         self.scenario_name = "ready"
@@ -244,8 +244,13 @@ class DesignerSession:
             self.scenario_name = "custom"
         if path == "/settings/conversion":
             conversion = self.custom_state.setdefault("conversion", {})
-            if "auto_mp4_enabled" in payload:
+            if "auto_mp4_mode" in payload:
+                mode = str(payload["auto_mp4_mode"] or "off").lower()
+                conversion["auto_mp4_mode"] = mode if mode in {"off", "foreground", "background"} else "off"
+                conversion["auto_mp4_enabled"] = conversion["auto_mp4_mode"] != "off"
+            elif "auto_mp4_enabled" in payload:
                 conversion["auto_mp4_enabled"] = bool(payload["auto_mp4_enabled"])
+                conversion["auto_mp4_mode"] = "foreground" if conversion["auto_mp4_enabled"] else "off"
             if "mp4_quality" in payload:
                 conversion["mp4_quality"] = str(payload["mp4_quality"])
             if "mp4_deinterlace_enabled" in payload:

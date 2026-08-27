@@ -81,107 +81,18 @@ def _storage_device_label(storage: dict[str, Any]) -> str:
 class BootScreen(Screen):
     title = "BOOT"
 
-    def __init__(self) -> None:
-        # The morph target and the text-pixel layout are constant for the whole
-        # boot animation, so cache them instead of recomputing every frame.
-        self._target_cache: tuple[tuple[int, int, str], list[tuple[int, int]]] | None = None
-        self._text_cache: tuple[tuple[int, int], list[tuple[int, int, int]]] | None = None
-
     def can_navigate(self, state: dict[str, Any]) -> bool:
         return False
 
-    def _target_pixels(self, width: int, height: int, context: dict, mode: str) -> list[tuple[int, int]]:
-        key = (width, height, mode)
-        if self._target_cache is not None and self._target_cache[0] == key:
-            return self._target_cache[1]
-
-        from PIL import Image, ImageDraw
-
-        from .display import OledDraw
-
-        target = Image.new("1", (width, height))
-        target_state = context.get("state") or {}
-        if mode == "boot":
-            target_state = {"mode": "idle", "recording": {"active": False, "elapsed_seconds": 0}, "storage": {"recording_minutes_available": 0}}
-        RecordingScreen().render(OledDraw(target, ImageDraw.Draw(target)), width, height, {**context, "state": target_state})
-        pixels = list(target.getdata())
-        lit = [(i % width, i // width) for i, value in enumerate(pixels) if value]
-        self._target_cache = (key, lit)
-        return lit
-
-    def _text_pixels(self, width: int, height: int, text_positions, image) -> list[tuple[int, int, int]]:
-        key = (width, height)
-        if self._text_cache is not None and self._text_cache[0] == key:
-            return self._text_cache[1]
-        candidates: list[tuple[int, int, int]] = []
-        for x, y, bbox in text_positions:
-            for py in range(max(0, y + bbox[1]), min(height, y + bbox[3])):
-                for px in range(max(0, x + bbox[0]), min(width, x + bbox[2])):
-                    if image is not None and not image.getpixel((px, py)):
-                        continue
-                    seed = (px * 1103515245 + py * 12345 + 97) & 0x7FFFFFFF
-                    candidates.append((px, py, seed))
-        self._text_cache = (key, candidates)
-        return candidates
-
     def render(self, draw, width: int, height: int, context: dict) -> None:
-        elapsed = float(context.get("boot_elapsed", time.monotonic() % 3.0))
-        duration = max(0.1, float(context.get("boot_duration_seconds", 3.0)))
-        hold = max(0.0, float(context.get("boot_hold_seconds", 1.1)))
-
         font = _font(context, "font_boot")
-        lines = ("equip-1", "firehat")
-        line_gap = 2
-        line_layout = []
-        total_text_height = line_gap * (len(lines) - 1)
-        for line in lines:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            text_height = bbox[3] - bbox[1]
-            total_text_height += text_height
-            line_layout.append((line, bbox, text_height))
-
-        y_cursor = (height - total_text_height) // 2
-        text_positions = []
-        for line, bbox, text_height in line_layout:
-            text_width = bbox[2] - bbox[0]
-            x = (width - text_width) // 2 - bbox[0]
-            y = y_cursor - bbox[1]
-            draw.text((x, y), line, font=font, fill=255)
-            text_positions.append((x, y, bbox))
-            y_cursor += text_height + line_gap
-
-        fade_start = min(hold, duration - 0.1)
-        if elapsed <= fade_start:
-            return
-
-        fade = max(0.0, min(1.0, (elapsed - fade_start) / max(0.1, duration - fade_start)))
-        fade_eased = fade * fade * (3.0 - 2.0 * fade)
-        threshold = int(fade_eased * 256)
-
-        target_mode = (context.get("state") or {}).get("mode") or "boot"
-        target_pixels = self._target_pixels(width, height, context, target_mode)
-
-        image = getattr(draw, "image", None)
-        candidates = self._text_pixels(width, height, text_positions, image)
-
-        drift = min(1.0, fade_eased * 1.08)
-        morph_visibility = int((1.0 - max(0.0, min(1.0, (fade - 0.78) / 0.22))) * 256)
-        for px, py, seed in candidates:
-            if seed % 256 >= threshold:
-                continue
-            draw.point((px, py), fill=0)
-            if not target_pixels or ((seed >> 8) % 256) >= morph_visibility:
-                continue
-            tx, ty = target_pixels[seed % len(target_pixels)]
-            mx = int(px + (tx - px) * drift)
-            my = int(py + (ty - py) * drift)
-            draw.point((mx, my), fill=255)
-
-        target_threshold = int(max(0.0, min(1.0, (fade - 0.25) / 0.75)) * 256)
-        for tx, ty in target_pixels:
-            seed = (tx * 1103515245 + ty * 12345 + 193) & 0x7FFFFFFF
-            if seed % 256 < target_threshold:
-                draw.point((tx, ty), fill=255)
+        title = "equip-1"
+        bbox = draw.textbbox((0, 0), title, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x = (width - text_width) // 2 - bbox[0]
+        y = (height - text_height) // 2 - bbox[1]
+        draw.text((x, y), title, font=font, fill=255)
 
 
 class RecordingScreen(Screen):
@@ -358,7 +269,8 @@ class NetworkScreen(Screen):
 
     def _available_qr_modes(self, network: dict) -> list[str]:
         modes = []
-        if network.get("ssid") and network.get("password"):
+        mode = str(network.get("mode") or "").lower()
+        if mode in {"access_point", "ap"} and network.get("ssid") and network.get("password"):
             modes.append("wifi")
         if network.get("url"):
             modes.append("url")
@@ -411,7 +323,8 @@ class NetworkScreen(Screen):
         ssid = network.get("ssid")
         password = network.get("password")
         url = network.get("url")
-        if self.qr_mode == "wifi" and ssid and password:
+        mode = str(network.get("mode") or "").lower()
+        if self.qr_mode == "wifi" and mode in {"access_point", "ap"} and ssid and password:
             self._render_qr(draw, width, height, "AP", ("wifi", str(ssid), str(password)), _wifi_qr_payload(str(ssid), str(password)), font)
             return
         if self.qr_mode == "url" and url:
@@ -420,10 +333,13 @@ class NetworkScreen(Screen):
 
         self.qr_mode = None
         draw.text((0, HEADER_Y), "NETWORK", font=font, fill=255)
-        if ssid:
-            draw.text((0, CONTENT_Y), f"WiFi: {ssid}"[:21], font=font, fill=255)
+        if ssid and mode in {"access_point", "ap"}:
+            draw.text((0, CONTENT_Y), f"AP: {ssid}"[:21], font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT), f"Pass: {password or 'unknown'}"[:21], font=font, fill=255)
             draw.text((0, CONTENT_Y + LINE_HEIGHT * 2), (network.get("url") or "Starting AP")[:21], font=font, fill=255)
+        elif ssid:
+            draw.text((0, CONTENT_Y), f"WiFi: {ssid}"[:21], font=font, fill=255)
+            draw.text((0, CONTENT_Y + LINE_HEIGHT), (network.get("url") or network.get("ip") or "No IP")[:21], font=font, fill=255)
         else:
             host = network.get("hostname") or "equip1"
             draw.text((0, CONTENT_Y), network.get("url") or f"http://{host}.local", font=font, fill=255)
@@ -519,11 +435,13 @@ class SettingsScreen(Screen):
 
     QUALITY_OPTIONS = ("small", "balanced", "high", "max")
     QUALITY_LABELS = {"small": "28", "balanced": "23", "high": "18", "max": "14"}
+    MP4_MODE_OPTIONS = ("off", "foreground", "background")
+    MP4_MODE_LABELS = {"off": "OFF", "foreground": "FG", "background": "BG"}
 
     def __init__(self) -> None:
         self.controlling = False
         self.selected = 0
-        self.options = ["LEDs", "Record fmt", "MP4 export", "MP4 deint", "CONVERT all", "STORAGE auto", "HDMI preview", "OLED rotate", "Back"]
+        self.options = ["LEDs", "OLED flip", "FORMAT", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview", "Back"]
 
     def on_select(self, app) -> None:
         if not self.controlling:
@@ -541,27 +459,21 @@ class SettingsScreen(Screen):
         if self.selected == 0:
             app.set_setting("/settings/lights", {"enabled": not bool(lights.get("enabled", True))})
         elif self.selected == 1:
+            app.set_setting("/settings/oled-rotation", {"rotate_180": not bool(settings.get("oled_rotate_180", False))})
+        elif self.selected == 2:
             if state.get("mode") != "recording":
                 app.set_setting("/settings/recording-format", {"format": self._next_recording_format(settings)})
-        elif self.selected == 2:
-            app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
         elif self.selected == 3:
+            app.set_setting("/settings/conversion", self._next_mp4_export_payload(conversion))
+        elif self.selected == 4:
             app.set_setting(
                 "/settings/conversion",
-                {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", True))},
+                {"mp4_deinterlace_enabled": not bool(conversion.get("mp4_deinterlace_enabled", False))},
             )
-        elif self.selected == 4:
-            if state.get("mode") not in {"recording", "mounting", "usb_transfer", "offline", "converting"} and not bool(conversion.get("active")):
-                if hasattr(app, "command_async"):
-                    app.command_async("convert-all-mp4")
-                else:
-                    app.command("convert-all-mp4")
         elif self.selected == 5:
             app.set_setting("/settings/auto-storage-switch", {"enabled": not bool(settings.get("auto_storage_switch", True))})
         elif self.selected == 6:
             app.set_setting("/settings/hdmi-preview", {"enabled": not bool(settings.get("hdmi_preview_enabled", True))})
-        elif self.selected == 7:
-            app.set_setting("/settings/oled-rotation", {"rotate_180": not bool(settings.get("oled_rotate_180", False))})
 
     def on_up(self, app) -> bool:
         if not self.controlling:
@@ -579,24 +491,23 @@ class SettingsScreen(Screen):
     def _on_off(value: Any, default: bool = True) -> str:
         return "ON" if bool(value if value is not None else default) else "OFF"
 
+    def _mp4_export_mode(self, conversion: dict[str, Any]) -> str:
+        raw_mode = conversion.get("auto_mp4_mode")
+        if raw_mode is None:
+            return "background" if bool(conversion.get("auto_mp4_enabled", True)) else "off"
+        mode = str(raw_mode or "off").lower()
+        return mode if mode in self.MP4_MODE_OPTIONS else "off"
+
     def _mp4_export_value(self, conversion: dict[str, Any]) -> str:
-        if not bool(conversion.get("auto_mp4_enabled", False)):
-            return "OFF"
-        quality = str(conversion.get("mp4_quality") or "high").lower()
-        return self.QUALITY_LABELS.get(quality, "18")
+        return self.MP4_MODE_LABELS[self._mp4_export_mode(conversion)]
 
     def _next_mp4_export_payload(self, conversion: dict[str, Any]) -> dict[str, Any]:
-        enabled = bool(conversion.get("auto_mp4_enabled", False))
-        quality = str(conversion.get("mp4_quality") or "high").lower()
-        if not enabled:
-            return {"auto_mp4_enabled": True, "mp4_quality": "small"}
+        mode = self._mp4_export_mode(conversion)
         try:
-            idx = self.QUALITY_OPTIONS.index(quality)
+            idx = self.MP4_MODE_OPTIONS.index(mode)
         except ValueError:
-            idx = 2
-        if idx >= len(self.QUALITY_OPTIONS) - 1:
-            return {"auto_mp4_enabled": False}
-        return {"auto_mp4_enabled": True, "mp4_quality": self.QUALITY_OPTIONS[idx + 1]}
+            idx = 0
+        return {"auto_mp4_mode": self.MP4_MODE_OPTIONS[(idx + 1) % len(self.MP4_MODE_OPTIONS)]}
 
     def _recording_format_value(self, settings: dict[str, Any]) -> str:
         value = str(settings.get("recording_format") or "mov").lower().lstrip(".")
@@ -618,20 +529,18 @@ class SettingsScreen(Screen):
         if index == 0:
             return f"LEDs [{self._on_off(lights.get('enabled'), True)}]"
         if index == 1:
-            return f"Record fmt [{self._recording_format_value(settings)}]"
+            return f"OLED flip [{'BL' if bool(settings.get('oled_rotate_180', False)) else 'BR'}]"
         if index == 2:
-            return f"MP4 export [{self._mp4_export_value(conversion)}]"
+            return f"FORMAT [{self._recording_format_value(settings)}]"
         if index == 3:
-            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), True)}]"
+            return f"MP4 export [{self._mp4_export_value(conversion)}]"
         if index == 4:
-            return "CONVERT all [RUN]" if bool(conversion.get("active")) else "CONVERT all"
+            return f"MP4 deint [{self._on_off(conversion.get('mp4_deinterlace_enabled'), False)}]"
         if index == 5:
             return f"STORAGE auto [{self._on_off(settings.get('auto_storage_switch'), True)}]"
         if index == 6:
             return f"HDMI preview [{self._on_off(settings.get('hdmi_preview_enabled'), True)}]"
         if index == 7:
-            return f"OLED rotate [{self._on_off(settings.get('oled_rotate_180'), False)}]"
-        if index == 8:
             return "Back"
         return self.options[index]
 

@@ -14,9 +14,13 @@ from fastapi.staticfiles import StaticFiles
 from . import perf
 from .service import CommandError, Equip1Daemon
 from .sysinfo import get_system_stats
+from .updater import AppUpdater, UpdateError
+from .wifi import WifiConfigError, WifiManager
 
 
 daemon = Equip1Daemon.from_env()
+updater = AppUpdater()
+wifi = WifiManager()
 
 
 @asynccontextmanager
@@ -60,6 +64,47 @@ async def get_system() -> dict:
         perf.log_elapsed("api.system", started)
 
 
+@app.get("/api/update")
+async def get_update_status() -> dict:
+    return updater.status()
+
+
+@app.post("/api/update/check")
+async def check_update() -> dict:
+    return await asyncio.to_thread(updater.check)
+
+
+@app.post("/api/update/apply")
+async def apply_update() -> dict:
+    try:
+        return await asyncio.to_thread(updater.apply_latest)
+    except UpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/network/wifi")
+async def get_wifi_status() -> dict:
+    return await asyncio.to_thread(wifi.status)
+
+
+@app.get("/api/network/wifi/scan")
+async def scan_wifi() -> dict:
+    return await asyncio.to_thread(wifi.scan)
+
+
+@app.post("/api/network/wifi")
+async def configure_wifi(payload: dict) -> dict:
+    try:
+        return await asyncio.to_thread(wifi.configure_client, payload.get("ssid"), payload.get("password"))
+    except WifiConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/network/ap")
+async def use_access_point() -> dict:
+    return await asyncio.to_thread(wifi.use_access_point)
+
+
 @app.get("/api/captures")
 async def get_captures() -> list[dict]:
     started = time.perf_counter()
@@ -99,7 +144,9 @@ async def set_recording_format(payload: dict) -> dict:
 @app.post("/api/settings/conversion")
 async def set_conversion_settings(payload: dict) -> dict:
     state: dict | None = None
-    if "auto_mp4_enabled" in payload:
+    if "auto_mp4_mode" in payload:
+        state = await daemon.set_auto_convert_mp4_mode(payload.get("auto_mp4_mode"))
+    elif "auto_mp4_enabled" in payload:
         state = await daemon.set_auto_convert_mp4(payload.get("auto_mp4_enabled"))
     if "mp4_quality" in payload:
         state = await daemon.set_mp4_quality(payload.get("mp4_quality"))
@@ -140,6 +187,50 @@ async def download_capture(capture_name: str) -> FileResponse:
     return FileResponse(str(path), media_type="application/octet-stream", filename=path.name)
 
 
+@app.get("/api/captures/{capture_name}/watch")
+async def watch_capture(capture_name: str) -> FileResponse:
+    path = await daemon.capture_path(capture_name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Capture not found")
+    media_types = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska",
+        ".m2t": "video/mp2t",
+        ".mts": "video/mp2t",
+        ".ts": "video/mp2t",
+        ".dv": "video/dv",
+        ".dif": "video/dv",
+    }
+    return FileResponse(str(path), media_type=media_types.get(path.suffix.lower(), "application/octet-stream"), filename=path.name)
+
+
+@app.delete("/api/captures/{capture_name}")
+async def delete_capture(capture_name: str, related: bool = False) -> dict:
+    try:
+        return await daemon.delete_capture(capture_name, include_related=related)
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+async def _create_capture_conversion(capture_name: str) -> dict:
+    try:
+        return await daemon.convert_capture_to_mp4(capture_name)
+    except CommandError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/captures/{capture_name}/conversion")
+async def create_capture_conversion(capture_name: str) -> dict:
+    return await _create_capture_conversion(capture_name)
+
+
+@app.post("/api/captures/{capture_name}/sidecar")
+async def create_capture_sidecar(capture_name: str) -> dict:
+    return await _create_capture_conversion(capture_name)
+
+
 @app.get("/api/captures/{capture_name}/thumbnail")
 async def capture_thumbnail(capture_name: str) -> FileResponse:
     path = await daemon.thumbnail_path(capture_name)
@@ -160,7 +251,7 @@ async def live_preview() -> StreamingResponse:
 @app.get("/api/stream.mkv")
 async def live_mkv_stream(takeover: bool = False) -> StreamingResponse:
     # Raw DV or native HDV remuxed into Matroska for VLC and other network players. Open
-    # http://<device-ip>:8000/api/stream.mkv in VLC's "Open Network Stream".
+    # http://<device-ip>/api/stream.mkv in VLC's "Open Network Stream".
     # The HDMI framebuffer watcher passes takeover=1 so plugging in a monitor
     # preempts a browser MJPEG preview that may already be holding the stream.
     try:
@@ -289,7 +380,10 @@ async def _handle_ws_command(message: object) -> None:
             await daemon.set_recording_format(message.get("format", message.get("recording_format")))
     elif message.get("type") == "set-auto-convert-mp4":
         with contextlib.suppress(CommandError):
-            await daemon.set_auto_convert_mp4(message.get("enabled"))
+            if "mode" in message:
+                await daemon.set_auto_convert_mp4_mode(message.get("mode"))
+            else:
+                await daemon.set_auto_convert_mp4(message.get("enabled"))
     elif message.get("type") == "set-mp4-quality":
         with contextlib.suppress(CommandError):
             await daemon.set_mp4_quality(message.get("quality"))

@@ -2,25 +2,24 @@
 const { state, connected, refresh, connectEvents, syncTime } = useEquip1State()
 
 const mode = computed(() => state.value?.mode || 'offline')
+const conversionActive = computed(() => Boolean(state.value?.conversion?.active))
+const noCameraDetected = computed(() => {
+  const cameraConnected = state.value?.camera?.connected
+  return mode.value === 'no_camera' || cameraConnected === false || cameraConnected === 0 || cameraConnected === 'false'
+})
 const headerChipLabel = computed(() => {
-  if (!connected.value) return 'Offline'
   if (mode.value === 'recording') return 'Recording'
-  if (mode.value === 'usb_transfer') return 'USB mode'
-  if (mode.value === 'mounting') return 'Mounting'
-  if (mode.value === 'booting') return 'Booting'
-  if (mode.value === 'no_camera') return 'No cam'
-  if (mode.value === 'storage_full') return 'Storage full'
-  if (mode.value === 'error') return 'Error'
-  return 'Ready'
+  if (noCameraDetected.value) return 'No cam'
+  if (!connected.value) return 'Busy'
+  if (conversionActive.value) return 'Busy'
+  if (mode.value === 'idle') return 'Ready'
+  return 'Busy'
 })
 const headerChipClass = computed(() => ({
-  offline: !connected.value,
+  busy: !noCameraDetected.value && (!connected.value || (mode.value !== 'recording' && (conversionActive.value || !['idle', 'recording'].includes(mode.value)))),
+  ready: connected.value && mode.value === 'idle' && !conversionActive.value && !noCameraDetected.value,
   recording: connected.value && mode.value === 'recording',
-  usb: connected.value && mode.value === 'usb_transfer',
-  mounting: connected.value && mode.value === 'mounting',
-  warning: connected.value && ['booting', 'no_camera', 'storage_full'].includes(mode.value),
-  error: connected.value && mode.value === 'error',
-  ready: connected.value && mode.value === 'idle'
+  'no-camera': noCameraDetected.value && mode.value !== 'recording'
 }))
 
 const reloadPage = () => {

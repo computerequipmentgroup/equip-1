@@ -10,7 +10,7 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 
 ## Main modules
 
-- `src/equip1d/main.py` — entrypoint, Uvicorn startup, optional captive portal redirect server.
+- `src/equip1d/main.py` — entrypoint, Uvicorn startup, optional captive portal redirect server; disabled by default so operating systems do not open captive-network assistants.
 - `src/equip1d/api.py` — FastAPI routes, streaming responses, WebSocket endpoint, static web dashboard mount.
 - `src/equip1d/service.py` — `Equip1Daemon`, command validation, monitor loop, state snapshots, event publishing.
 - `src/equip1d/power.py` — optional PiSugar power-manager socket reader for battery status.
@@ -42,6 +42,10 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `GET` | `/api/state` | Full daemon state snapshot |
 | `GET` | `/api/storage` | `state.storage` only |
 | `GET` | `/api/system` | CPU, memory, model, and temperature stats |
+| `GET` | `/api/network/wifi` | Current Wi-Fi setup/status summary |
+| `GET` | `/api/network/wifi/scan` | Best-effort scan for visible SSIDs, including AP-mode scan via `iw ... ap-force` where supported |
+| `POST` | `/api/network/wifi` | Save client Wi-Fi `ssid`/`password`, switch from AP to client mode, and restart networking |
+| `POST` | `/api/network/ap` | Switch back to Equip-1 access-point mode and restart networking |
 | `GET` | `/api/captures` | Capture files and thumbnail/download URLs |
 | `GET` | `/api/captures/{name}/download` | Download a capture file by safe basename |
 | `GET` | `/api/captures/{name}/thumbnail` | Download generated JPG thumbnail |
@@ -49,7 +53,7 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `GET` | `/api/stream.mkv` | Live DV or HDV copied into a Matroska stream for VLC/HDMI |
 | `POST` | `/api/time` | Set device clock from browser time only if clock is unset |
 | `POST` | `/api/settings/recording-format` | Set full-quality DV recording container to `mov`, `dv`, or `avi` |
-| `POST` | `/api/settings/conversion` | Set automatic capture-to-MP4 conversion, MP4 quality, and MP4 deinterlacing |
+| `POST` | `/api/settings/conversion` | Set automatic capture-to-MP4 mode (`off`, Blocking as `foreground`, or `background`), MP4 quality, and MP4 deinterlacing |
 | `POST` | `/api/settings/auto-storage-switch` | Enable/disable idle USB/SD automatic switching |
 | `POST` | `/api/settings/hdmi-preview` | Persist HDMI preview enabled/disabled for the preview watcher |
 | `POST` | `/api/settings/oled-rotation` | Persist built-in OLED 180-degree rotation (`rotate_180` or `enabled`) |
@@ -68,7 +72,9 @@ On the appliance image, `S60equip1d` runs the same module from `/opt/equip1`.
 | `POST` | `/api/commands/storage-switch-sd` | Manually switch `/data` back to SD fallback |
 | `POST` | `/api/commands/convert-all-mp4` | Convert captures missing same-stem `.mp4` sidecars in the background |
 
-Command failures are returned as HTTP `409` with a text `detail`. User errors such as invalid time payloads are `400`; missing files are `404`.
+Command failures are returned as HTTP `409` with a text `detail`. User errors such as invalid time payloads or Wi-Fi credentials are `400`; missing files are `404`.
+
+The Wi-Fi setup flow is intentionally skippable: devices default to AP mode for direct dashboard control, but software update checks require the device itself to have upstream internet through client Wi-Fi/LAN. Dashboard URLs use the device IP address without an explicit port: `http://10.42.0.1` in AP mode, or the LAN IP shown by state/OLED in client mode. If client Wi-Fi fails to get an IP address, network startup falls back to AP mode.
 
 `state.camera.format` is `"unknown"`, `"dv"`, or `"hdv"`. It starts as `"unknown"` after a camera appears and changes once the shared `dvgrab` stream emits enough bytes to classify the source. DV recordings default to `.mov`, with `.dv` and `.avi` selectable through settings. `.mov`/`.avi` are FFmpeg stream-copy containers, not transcoded MP4 exports. Native HDV/MPEG-TS still records as `.m2t`.
 
@@ -90,7 +96,7 @@ The WebSocket also accepts settings messages from the web UI:
 { "type": "set-lights-enabled", "enabled": true }
 { "type": "set-lights-brightness", "brightness": 0.25 }
 { "type": "set-recording-format", "format": "mov" }
-{ "type": "set-auto-convert-mp4", "enabled": true }
+{ "type": "set-auto-convert-mp4", "mode": "background" }
 { "type": "set-mp4-quality", "quality": "high" }
 { "type": "set-mp4-deinterlace", "enabled": true }
 ```

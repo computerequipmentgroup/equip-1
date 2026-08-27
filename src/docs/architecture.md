@@ -48,7 +48,7 @@ FastAPI daemon (src/equip1d/api.py, service.py)
 2. BusyBox init runs `src/buildroot/overlay/etc/init.d/S*` scripts.
 3. `S15data` prepares `/data` and `/data/captures` from USB storage or the SD fallback partition.
 4. `S50network` starts access-point, client, or disabled Wi-Fi mode.
-5. `S60equip1d` exports settings and starts the FastAPI daemon on port `8000`.
-6. `S61equip1-oled` starts the OLED/buttons UI against `http://127.0.0.1:8000/api`.
+5. `S60equip1d` exports settings and starts the FastAPI daemon on port `80`.
+6. `S61equip1-oled` starts the OLED/buttons UI against `http://127.0.0.1/api`.
 7. `S62equip1-hdmi-preview` watches HDMI status and opens `/api/stream.mkv?takeover=1` when needed.
 8. `S98equip1-log-export` mirrors selected logs from `/var/log/equip1/` to `/data/logs/`.

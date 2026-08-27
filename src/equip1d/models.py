@@ -6,6 +6,7 @@ from typing import Literal
 
 from .settings import (
     AUTO_CONVERT_MP4_DEFAULT,
+    AUTO_CONVERT_MP4_MODE_DEFAULT,
     CAPTURE_FILENAME_PREFIX_DEFAULT,
     CAPTURE_FILENAME_TEMPLATE_DEFAULT,
     LIGHTS_BRIGHTNESS_DEFAULT,
@@ -124,8 +125,11 @@ class LightsState:
 @dataclass
 class ConversionState:
     auto_mp4_enabled: bool = AUTO_CONVERT_MP4_DEFAULT
+    auto_mp4_mode: str = AUTO_CONVERT_MP4_MODE_DEFAULT
     mp4_quality: str = MP4_QUALITY_DEFAULT
     mp4_deinterlace_enabled: bool = MP4_DEINTERLACE_DEFAULT
+    mp4_deinterlace_algorithm: str = "off"
+    mp4_deinterlace_fallback: bool = False
     active: bool = False
     progress_percent: int = 0
     source: str | None = None

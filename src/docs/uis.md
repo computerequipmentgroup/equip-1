@@ -103,7 +103,7 @@ Common settings live in `/etc/equip1/equip-1.ini` under `[ui]`, with environment
 
 | Setting | Env override | Default |
 | --- | --- | --- |
-| `api_base` | `EQUIP1_API_BASE` | `http://127.0.0.1:8000/api` |
+| `api_base` | `EQUIP1_API_BASE` | `http://127.0.0.1/api` in the Buildroot image |
 | `api_timeout` | `EQUIP1_API_TIMEOUT` | `5.0` |
 | `state_fetch_interval` | `EQUIP1_STATE_FETCH_INTERVAL` | `1.0` |
 | `boot_duration_seconds` | `EQUIP1_BOOT_DURATION_SECONDS` | `3.0` |

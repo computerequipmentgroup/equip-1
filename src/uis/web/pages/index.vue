@@ -20,9 +20,30 @@ const {
   error: capturesError,
   load,
   downloadUrl,
+  watchUrl,
+  createSidecar,
+  deleteCapture,
 } = useEquip1Captures();
 const { system, error: systemError, load: loadSystem } = useEquip1System();
 const config = useRuntimeConfig();
+
+type UpdateStatus = Record<string, any>;
+const defaultSoftwareVersion = "v0.1.0";
+const ssidMaxLabelLength = 18;
+const truncateSsid = (value: any) => {
+  const text = String(value || "").trim();
+  return text.length > ssidMaxLabelLength ? `${text.slice(0, ssidMaxLabelLength - 1)}…` : text;
+};
+const showNativeMessage = (message: string) => {
+  if (import.meta.client) window.alert(message);
+};
+const formatUpdateVersion = (value: any) => {
+  const text = String(value || "").trim();
+  const exact = text.match(/^v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$/i);
+  if (exact) return `v${exact[1]}`;
+  const embedded = text.match(/(?:^|[^0-9A-Za-z])v?(\d+\.\d+\.\d+)(?:[^0-9A-Za-z]|$)/i);
+  return embedded ? `v${embedded[1]}` : defaultSoftwareVersion;
+};
 
 const defaultCaptureNaming = { prefix: "capture_", template: "{date}_{time}" };
 const captureNamingVariables = [
@@ -36,11 +57,171 @@ const captureNamingVariables = [
   "minute",
   "second",
 ];
-// Only surface captures whose thumbnail has finished rendering, so a new
-// recording appears in the list complete rather than as a blank placeholder.
-const readyCaptures = computed(() =>
-  captures.value.filter((capture) => capture.thumbnail_url),
+const captureStem = (capture: Record<string, any>) => {
+  const name = String(capture.name || "");
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(0, dot) : name;
+};
+const captureExt = (capture: Record<string, any>) =>
+  String(capture.name || "")
+    .split(".")
+    .pop()
+    ?.toLowerCase() || "";
+const isSidecarCapture = (capture: Record<string, any>) =>
+  captureExt(capture) === "mp4";
+const isTemporaryCapture = (capture: Record<string, any>) =>
+  captureStem(capture).endsWith(".tmp");
+const groupedCaptures = computed(() => {
+  const groups = new Map<
+    string,
+    { key: string; primary: Record<string, any> | null; sidecars: Record<string, any>[] }
+  >();
+  for (const capture of captures.value) {
+    if (isTemporaryCapture(capture)) continue;
+    const key = captureStem(capture);
+    if (!groups.has(key)) groups.set(key, { key, primary: null, sidecars: [] });
+    const group = groups.get(key)!;
+    if (isSidecarCapture(capture)) group.sidecars.push(capture);
+    else group.primary = capture;
+  }
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      primary: group.primary || group.sidecars[0] || null,
+      sidecars: group.sidecars.sort(
+        (a, b) => Number(b.modified_at || 0) - Number(a.modified_at || 0),
+      ),
+    }))
+    .filter((group) => group.primary)
+    .sort(
+      (a, b) =>
+        Number(b.primary?.modified_at || 0) - Number(a.primary?.modified_at || 0),
+    );
+});
+const capturePageSize = 6;
+const capturePage = ref(1);
+const capturePageCount = computed(() =>
+  Math.max(1, Math.ceil(groupedCaptures.value.length / capturePageSize)),
 );
+const paginatedCaptures = computed(() => {
+  const start = (capturePage.value - 1) * capturePageSize;
+  return groupedCaptures.value.slice(start, start + capturePageSize);
+});
+const setCapturePage = (page: number) => {
+  const next = Math.max(1, Math.min(capturePageCount.value, page));
+  capturePage.value = next;
+  openCaptureKey.value = null;
+  watchingCaptureKey.value = null;
+};
+type CaptureGroup = {
+  key: string;
+  primary: Record<string, any> | null;
+  sidecars: Record<string, any>[];
+};
+
+const openCaptureKey = ref<string | null>(null);
+const watchingCaptureKey = ref<string | null>(null);
+const convertingWatchKey = ref<string | null>(null);
+const watchRequestId = ref(0);
+const toggleCaptureMenu = (key: string) => {
+  openCaptureKey.value = openCaptureKey.value === key ? null : key;
+  if (openCaptureKey.value !== key) {
+    watchingCaptureKey.value = null;
+    if (convertingWatchKey.value === key) {
+      convertingWatchKey.value = null;
+      watchRequestId.value += 1;
+    }
+  }
+};
+const watchTarget = (group: Pick<CaptureGroup, "primary" | "sidecars">) =>
+  group.sidecars.find((sidecar) => captureExt(sidecar) === "mp4") || group.primary;
+const mp4SidecarForKey = (key: string) =>
+  captures.value.find(
+    (capture) => captureStem(capture) === key && captureExt(capture) === "mp4",
+  ) || null;
+const mp4NameForCapture = (capture: Record<string, any>) => {
+  const name = String(capture.name || "");
+  const dot = name.lastIndexOf(".");
+  return `${dot >= 0 ? name.slice(0, dot) : name}.mp4`;
+};
+const conversionMatchesCapture = (capture: Record<string, any>) => {
+  const current = conversion.value;
+  if (!current?.active) return false;
+  const targetName = mp4NameForCapture(capture);
+  return current.source === capture.name || current.target === targetName;
+};
+const captureHasMp4Sidecar = (group: Pick<CaptureGroup, "sidecars">) =>
+  group.sidecars.some((sidecar) => captureExt(sidecar) === "mp4");
+const conversionProgressPercent = () =>
+  Math.max(0, Math.min(100, Math.round(Number(conversion.value?.progress_percent || 0))));
+const conversionMatchesGroup = (group: Pick<CaptureGroup, "primary">) =>
+  Boolean(group.primary && conversionMatchesCapture(group.primary));
+const captureConversionStatus = (group: CaptureGroup) => {
+  if (conversionMatchesGroup(group)) return `conversion ${conversionProgressPercent()}%`;
+  if (captureHasMp4Sidecar(group)) return "conversion ready";
+  return "";
+};
+const captureConversionActionLabel = (group: CaptureGroup) => {
+  if (conversionMatchesGroup(group)) return `Converting ${conversionProgressPercent()}%`;
+  if (captureHasMp4Sidecar(group)) return "Conversion ready";
+  return "Create conversion";
+};
+const waitForMp4Sidecar = async (
+  groupKey: string,
+  primary: Record<string, any>,
+  token: number,
+) => {
+  const targetName = mp4NameForCapture(primary);
+  while (watchRequestId.value === token) {
+    const sidecar = mp4SidecarForKey(groupKey);
+    if (sidecar) return sidecar;
+    const current = conversion.value;
+    if (
+      !current?.active &&
+      current?.last_error &&
+      (current.source === primary.name || current.target === targetName)
+    ) {
+      throw new Error(String(current.last_error));
+    }
+    await wait(1200);
+    await Promise.all([load(), refresh()]);
+  }
+  return null;
+};
+const ensureWatchTarget = async (group: CaptureGroup, token: number) => {
+  const existingMp4 = mp4SidecarForKey(group.key);
+  if (existingMp4) return existingMp4;
+  const target = watchTarget(group);
+  if (target && captureExt(target) === "mp4") return target;
+  const primary = group.primary;
+  if (!primary) return target || null;
+  if (isSidecarCapture(primary)) return primary;
+  if (!conversionMatchesCapture(primary)) await createSidecar(primary);
+  await Promise.all([load(), refresh()]);
+  return mp4SidecarForKey(group.key) || waitForMp4Sidecar(group.key, primary, token);
+};
+const toggleCaptureWatch = async (group: CaptureGroup) => {
+  if (watchingCaptureKey.value === group.key) {
+    watchingCaptureKey.value = null;
+    return;
+  }
+  if (convertingWatchKey.value) return;
+  const token = watchRequestId.value + 1;
+  watchRequestId.value = token;
+  convertingWatchKey.value = group.key;
+  watchingCaptureKey.value = null;
+  try {
+    actionError.value = null;
+    const target = await ensureWatchTarget(group, token);
+    if (target && watchRequestId.value === token) watchingCaptureKey.value = group.key;
+  } catch (err: any) {
+    if (watchRequestId.value === token) {
+      actionError.value = err?.data?.detail || err?.message || "Could not prepare video";
+    }
+  } finally {
+    if (watchRequestId.value === token) convertingWatchKey.value = null;
+  }
+};
 
 const mode = computed(() => state.value?.mode || "offline");
 const isMounting = computed(() => mode.value === "mounting");
@@ -48,18 +229,41 @@ const recording = computed(() => state.value?.recording || {});
 const storage = computed(() => state.value?.storage || {});
 const deviceSettings = computed(() => state.value?.settings || {});
 const conversion = computed(() => state.value?.conversion || {});
-const mp4ExportEnabled = computed(() =>
-  Boolean(conversion.value.auto_mp4_enabled),
-);
+const mp4ConversionModes = ["off", "foreground", "background"];
+const mp4ConversionMode = computed(() => {
+  const mode = String(
+    conversion.value.auto_mp4_mode ||
+      (conversion.value.auto_mp4_enabled !== false ? "background" : "off"),
+  ).toLowerCase();
+  return mp4ConversionModes.includes(mode) ? mode : "off";
+});
+const mp4ExportEnabled = computed(() => mp4ConversionMode.value !== "off");
+const mp4ConversionModeLabel = computed(() => {
+  if (mp4ConversionMode.value === "foreground") return "Blocking";
+  if (mp4ConversionMode.value === "background") return "Background";
+  return "Off";
+});
 const mp4DeinterlaceEnabled = computed(
-  () => conversion.value.mp4_deinterlace_enabled !== false,
+  () => conversion.value.mp4_deinterlace_enabled === true,
 );
+const mp4DeinterlaceAlgorithmLabel = computed(() => {
+  if (!mp4DeinterlaceEnabled.value) return "";
+  const algorithm = String(
+    conversion.value.mp4_deinterlace_algorithm || "yadif",
+  ).toLowerCase();
+  return algorithm === "nnedi3" && !conversion.value.mp4_deinterlace_fallback
+    ? "NNEDI3"
+    : "YADIF fallback";
+});
 const recordingFormat = computed(() =>
   String(deviceSettings.value.recording_format || "mov").toLowerCase(),
 );
-const recordingFormatOptions = ["mov", "dv", "avi"];
+const recordingFormatOptions = ["dv", "mov", "avi"];
 const oledRotate180 = computed(() =>
   Boolean(deviceSettings.value.oled_rotate_180),
+);
+const oledFlipLabel = computed(() =>
+  oledRotate180.value ? "Buttons left" : "Buttons right",
 );
 const captureNaming = computed(
   () => state.value?.capture_naming || defaultCaptureNaming,
@@ -175,6 +379,58 @@ const temperaturePercent = computed(() =>
     Math.min(100, Math.round(Number(system.value?.temperature?.percent || 0))),
   ),
 );
+const updateStatus = ref<UpdateStatus | null>(null);
+const wifiSsid = ref("");
+const wifiPassword = ref("");
+const wifiNetworks = ref<string[]>([]);
+const wifiScanning = ref(false);
+const wifiSaving = ref(false);
+const wifiMessage = ref<string | null>(null);
+const wifiError = ref<string | null>(null);
+const wifiSetupOpen = ref(false);
+const wifiSwitchPending = ref(false);
+const updateChecking = ref(false);
+const updateApplying = ref(false);
+const updateUpToDateVisible = ref(false);
+const updateUpToDateTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const updateError = ref<string | null>(null);
+const recDockHidden = ref(false);
+const recDockHideScrollY = 220;
+const updateAvailable = computed(() => Boolean(updateStatus.value?.available));
+const updateNetworkMode = computed(() =>
+  String(state.value?.network?.mode || "").toLowerCase(),
+);
+const networkIp = computed(() =>
+  String(state.value?.network?.ip || state.value?.network?.url || "10.42.0.1").replace(/^https?:\/\//, "").split("/", 1)[0],
+);
+const isApIp = computed(() => networkIp.value === "10.42.0.1");
+const isAccessPointNetwork = computed(() =>
+  isApIp.value || (["access_point", "ap"].includes(updateNetworkMode.value) && !networkIp.value),
+);
+const networkUrlLabel = computed(() => networkIp.value);
+const connectedWifiSsid = computed(() => {
+  if (isAccessPointNetwork.value) return "";
+  if (!["lan", "client", "station", "sta"].includes(updateNetworkMode.value)) return "";
+  return truncateSsid(state.value?.network?.ssid);
+});
+const updateNeedsWifi = computed(
+  () => isAccessPointNetwork.value || updateNetworkMode.value === "offline",
+);
+const updateNetworkHint = computed(() =>
+  updateNeedsWifi.value ? "Connect Equip-1 to Wi-Fi for updates." : "",
+);
+const updateCurrentLabel = computed(() => {
+  const current = updateStatus.value?.current || {};
+  return formatUpdateVersion(current.tag || current.version);
+});
+const updateLatestLabel = computed(() =>
+  updateStatus.value?.latest?.tag ? formatUpdateVersion(updateStatus.value.latest.tag) : "No update",
+);
+const updateSoftwareLabel = computed(() => {
+  if (updateAvailable.value) return updateLatestLabel.value;
+  if (updateUpToDateVisible.value) return "Already up to date.";
+  return updateCurrentLabel.value;
+});
 const recordDimmed = computed(
   () => !["idle", "recording"].includes(mode.value),
 );
@@ -188,18 +444,15 @@ const previewing = ref(false);
 const previewLoaded = ref(false);
 const previewError = ref<string | null>(null);
 const previewNonce = ref(0);
+const previewAspectRatio = ref("4 / 3");
+const previewImage = ref<HTMLImageElement | null>(null);
 const previewRetryTimer = ref<ReturnType<typeof setTimeout> | null>(null);
+const previewDimensionInterval = ref<ReturnType<typeof setInterval> | null>(null);
 const previewAllowed = computed(
   () => connected.value && ["idle", "recording"].includes(mode.value),
 );
-const mockPreviewSrc = computed(
-  () =>
-    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#080808"/><stop offset="1" stop-color="#5500ff"/></linearGradient></defs><rect width="320" height="240" fill="url(#g)"/><g opacity=".2" stroke="#fff">${Array.from({ length: 12 }, (_, i) => `<path d="M0 ${i * 24}H320"/>`).join("")}${Array.from({ length: 16 }, (_, i) => `<path d="M${i * 24} 0V240"/>`).join("")}</g><circle cx="225" cy="92" r="42" fill="#fff" opacity=".16"/><rect x="32" y="154" width="196" height="34" fill="#000" opacity=".55"/><text x="42" y="176" fill="#fff" font-family="monospace" font-size="18">MOCK LIVE DV</text><text x="42" y="204" fill="#fff" opacity=".68" font-family="monospace" font-size="12">Sony DCR-TRV900 / ${previewNonce.value}</text></svg>`)}`,
-);
-const previewSrc = computed(() =>
-  mock.value
-    ? mockPreviewSrc.value
-    : `${config.public.apiBase}/preview.mjpg?t=${previewNonce.value}`,
+const previewSrc = computed(
+  () => `${config.public.apiBase}/preview.mjpg?t=${previewNonce.value}`,
 );
 // Absolute URL so it resolves inside a separate player app, not just the
 // dashboard's own origin. The daemon serves both the web UI and the stream.
@@ -291,8 +544,15 @@ const selectRecordingFormat = (format: string) => {
   if (mode.value === "recording") return;
   setRecordingFormat(format);
 };
-const toggleMp4Export = () =>
-  setConversionSettings({ auto_mp4_enabled: !mp4ExportEnabled.value });
+const toggleMp4Export = () => {
+  const nextMode =
+    mp4ConversionMode.value === "off"
+      ? "foreground"
+      : mp4ConversionMode.value === "foreground"
+        ? "background"
+        : "off";
+  setConversionSettings({ auto_mp4_mode: nextMode });
+};
 const toggleMp4Deinterlace = () =>
   setConversionSettings({
     mp4_deinterlace_enabled: !mp4DeinterlaceEnabled.value,
@@ -306,6 +566,15 @@ const onLightsBrightnessInput = (event: Event) => {
 
 const sizeGb = (bytes: number) =>
   `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+const captureMinutes = (
+  capture: Record<string, any> | null | undefined,
+) => {
+  const durationSeconds = Number(capture?.duration_seconds || 0);
+  if (durationSeconds > 0) return Math.max(1, Math.round(durationSeconds / 60));
+  const sizeBytes = Number(capture?.size_bytes || 0);
+  if (sizeBytes <= 0) return 0;
+  return Math.max(1, Math.round(sizeBytes / (216 * 1024 * 1024)));
+};
 const systemLoadLabel = computed(() => {
   const load = Number(system.value?.cpu?.load_1m || 0).toFixed(2);
   const count = Number(system.value?.cpu?.count || 0);
@@ -321,6 +590,7 @@ const systemTempLabel = computed(() => {
   const temp = system.value?.temperature?.celsius;
   return typeof temp === "number" ? `${temp.toFixed(1)} °C` : "Unknown";
 });
+const systemModelLabel = computed(() => String(system.value?.model || "ROCK compute"));
 const modified = (value: number | string | null | undefined) => {
   if (value === null || value === undefined || value === "")
     return "Unknown date";
@@ -332,6 +602,16 @@ const modified = (value: number | string | null | undefined) => {
     : Date.parse(String(value));
   const date = new Date(millis);
   return Number.isNaN(date.getTime()) ? "Unknown date" : date.toLocaleString();
+};
+const captureThumbnailUrl = (capture: Record<string, any> | null | undefined) => {
+  const url = String(capture?.thumbnail_url || "");
+  if (!url || url === "mock-thumbnail") return "";
+  if (/^(data:|blob:|https?:\/\/)/i.test(url)) return url;
+  if (url.startsWith("/api/")) {
+    const apiBase = String(config.public.apiBase || "/api").replace(/\/$/, "");
+    return `${apiBase}${url.slice(4)}`;
+  }
+  return url;
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -374,6 +654,162 @@ const appendCaptureNamingVariable = (variable: string) => {
   scheduleCaptureNamingSave();
 };
 
+const updateRecDockVisibility = () => {
+  if (!import.meta.client) return;
+  recDockHidden.value = window.scrollY > recDockHideScrollY;
+};
+
+const showUpToDateBriefly = () => {
+  updateUpToDateVisible.value = true;
+  if (updateUpToDateTimer.value) clearTimeout(updateUpToDateTimer.value);
+  updateUpToDateTimer.value = setTimeout(() => {
+    updateUpToDateVisible.value = false;
+    updateUpToDateTimer.value = null;
+  }, 4000);
+};
+
+const loadUpdateStatus = async (check = false, prompt = false) => {
+  if (check && updateNeedsWifi.value) {
+    updateError.value = null;
+    return;
+  }
+  if (mock.value) {
+    updateStatus.value = {
+      current: { version: defaultSoftwareVersion, tag: defaultSoftwareVersion },
+      latest: null,
+      available: false,
+      last_checked_at: check ? new Date().toISOString() : null,
+      last_error: null,
+    };
+    if (check) showUpToDateBriefly();
+    return;
+  }
+  updateChecking.value = check;
+  updateError.value = null;
+  try {
+    updateStatus.value = await $fetch<UpdateStatus>(
+      `${config.public.apiBase}/update${check ? "/check" : ""}`,
+      check ? { method: "POST" } : undefined,
+    );
+    if (prompt && updateStatus.value?.available) {
+      const install = !import.meta.client || window.confirm(`Install ${updateLatestLabel.value} now?`);
+      if (install) await applyUpdate();
+    }
+    if (check && !updateStatus.value?.available && !updateStatus.value?.last_error) showUpToDateBriefly();
+  } catch (err: any) {
+    updateError.value = err?.data?.detail || err?.message || "Could not check for updates";
+  } finally {
+    updateChecking.value = false;
+  }
+};
+
+const applyUpdate = async () => {
+  updateApplying.value = true;
+  updateError.value = null;
+  try {
+    updateStatus.value = await $fetch<UpdateStatus>(`${config.public.apiBase}/update/apply`, {
+      method: "POST",
+    });
+  } catch (err: any) {
+    updateError.value = err?.data?.detail || err?.message || "Could not install update";
+  } finally {
+    updateApplying.value = false;
+  }
+};
+
+const scanWifiNetworks = async () => {
+  wifiScanning.value = true;
+  wifiError.value = null;
+  try {
+    if (mock.value) {
+      wifiNetworks.value = ["Studio Wi-Fi", "Home Wi-Fi", "Guest"];
+      if (!wifiSsid.value) wifiSsid.value = wifiNetworks.value[0];
+      return;
+    }
+    const result = await $fetch<Record<string, any>>(`${config.public.apiBase}/network/wifi/scan`);
+    wifiNetworks.value = Array.isArray(result?.ssids) ? result.ssids.map(String) : [];
+    if (!wifiSsid.value && wifiNetworks.value.length) wifiSsid.value = wifiNetworks.value[0];
+  } catch (err: any) {
+    wifiError.value = err?.data?.detail || err?.message || "Could not scan Wi-Fi";
+  } finally {
+    wifiScanning.value = false;
+  }
+};
+
+const openWifiSetup = () => {
+  wifiSwitchPending.value = false;
+  wifiSetupOpen.value = true;
+  scanWifiNetworks();
+};
+
+const configureWifi = async () => {
+  wifiSaving.value = true;
+  wifiError.value = null;
+  wifiMessage.value = null;
+  wifiSwitchPending.value = false;
+  try {
+    if (mock.value) {
+      state.value = {
+        ...(state.value || {}),
+        network: {
+          mode: "lan",
+          ssid: wifiSsid.value || "Studio Wi-Fi",
+          ip: "192.168.1.42",
+          url: "http://192.168.1.42",
+          dashboard_url: "http://192.168.1.42",
+        },
+      };
+      showNativeMessage("Joined Wi-Fi.");
+    } else {
+      const result = await $fetch<Record<string, any>>(`${config.public.apiBase}/network/wifi`, {
+        method: "POST",
+        body: { ssid: wifiSsid.value, password: wifiPassword.value },
+      });
+      const message = result?.message || "Switching to Wi-Fi. Reconnect using the IP shown on OLED.";
+      wifiSwitchPending.value = true;
+      showNativeMessage(message);
+    }
+    wifiPassword.value = "";
+    wifiSetupOpen.value = false;
+  } catch (err: any) {
+    wifiError.value = err?.data?.detail || err?.message || "Could not save Wi-Fi";
+  } finally {
+    wifiSaving.value = false;
+  }
+};
+
+const useAccessPointWifi = async () => {
+  if (import.meta.client && !window.confirm("Switch back to AP mode?")) return;
+  wifiSaving.value = true;
+  wifiError.value = null;
+  wifiMessage.value = null;
+  wifiSwitchPending.value = false;
+  try {
+    if (mock.value) {
+      state.value = {
+        ...(state.value || {}),
+        network: {
+          mode: "ap",
+          ssid: "Equip-1",
+          ip: "10.42.0.1",
+          url: "http://10.42.0.1",
+          dashboard_url: "http://10.42.0.1",
+        },
+      };
+      showNativeMessage("Switched to AP mode.");
+    } else {
+      const result = await $fetch<Record<string, any>>(`${config.public.apiBase}/network/ap`, {
+        method: "POST",
+      });
+      showNativeMessage(result?.message || "Switching back to the Equip-1 access point.");
+    }
+  } catch (err: any) {
+    wifiError.value = err?.data?.detail || err?.message || "Could not switch Wi-Fi mode";
+  } finally {
+    wifiSaving.value = false;
+  }
+};
+
 const runCommand = async (name: string) => {
   try {
     actionError.value = null;
@@ -398,6 +834,35 @@ const runCommand = async (name: string) => {
   }
 };
 
+const createCaptureSidecar = async (capture: Record<string, any>) => {
+  try {
+    actionError.value = null;
+    await createSidecar(capture);
+    await refresh();
+  } catch (err: any) {
+    actionError.value =
+      err?.data?.detail || err?.message || "Could not create conversion";
+  }
+};
+const deleteCaptureItem = async (capture: Record<string, any>, related = false) => {
+  const message = related
+    ? `Delete ${capture.name} and its conversion?`
+    : `Delete ${capture.name}?`;
+  if (import.meta.client && !window.confirm(message)) return;
+  try {
+    actionError.value = null;
+    await deleteCapture(capture, related);
+    if (related) {
+      openCaptureKey.value = null;
+      watchingCaptureKey.value = null;
+    }
+    await refresh();
+  } catch (err: any) {
+    actionError.value =
+      err?.data?.detail || err?.message || "Could not delete capture";
+  }
+};
+
 const startPreview = () => {
   if (!previewAllowed.value || previewing.value) return;
   if (previewRetryTimer.value) {
@@ -410,7 +875,14 @@ const startPreview = () => {
   previewing.value = true;
 };
 
-const handlePreviewLoad = () => {
+const updatePreviewAspectRatio = (img = previewImage.value) => {
+  if (!img || img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+  const next = `${img.naturalWidth} / ${img.naturalHeight}`;
+  if (previewAspectRatio.value !== next) previewAspectRatio.value = next;
+};
+
+const handlePreviewLoad = (event: Event) => {
+  updatePreviewAspectRatio(event.target as HTMLImageElement);
   previewLoaded.value = true;
 };
 
@@ -453,19 +925,34 @@ watch(
   { immediate: true, deep: true },
 );
 
+watch(capturePageCount, (pageCount) => {
+  if (capturePage.value > pageCount) setCapturePage(pageCount);
+});
+
 onBeforeUnmount(() => {
   previewing.value = false;
   if (previewRetryTimer.value) clearTimeout(previewRetryTimer.value);
+  if (previewDimensionInterval.value) clearInterval(previewDimensionInterval.value);
+  if (updateUpToDateTimer.value) clearTimeout(updateUpToDateTimer.value);
   if (namingDirty.value || namingTouched.value) saveCaptureNaming();
   else if (namingSaveTimer.value) clearTimeout(namingSaveTimer.value);
   if (systemInterval.value) clearInterval(systemInterval.value);
+  if (import.meta.client) window.removeEventListener("scroll", updateRecDockVisibility);
 });
 
 onMounted(async () => {
   loadClosedCards();
-  await Promise.all([refresh(), load(), loadSystem()]);
+  await Promise.all([refresh(), load(), loadSystem(), loadUpdateStatus(false)]);
   connectEvents();
+  setTimeout(() => {
+    if (!updateNeedsWifi.value) loadUpdateStatus(true, true);
+  }, 2000);
   systemInterval.value = setInterval(loadSystem, 3000);
+  previewDimensionInterval.value = setInterval(() => updatePreviewAspectRatio(), 250);
+  if (import.meta.client) {
+    updateRecDockVisibility();
+    window.addEventListener("scroll", updateRecDockVisibility, { passive: true });
+  }
   if (previewAllowed.value) startPreview();
 });
 </script>
@@ -480,10 +967,15 @@ onMounted(async () => {
     </p>
 
     <article class="preview-section full-span">
-      <div class="live-preview" :class="{ active: previewing }">
+      <div
+        class="live-preview"
+        :class="{ active: previewing, loaded: previewLoaded }"
+        :style="{ '--preview-aspect': previewAspectRatio }"
+      >
         <div class="live-placeholder">{{ placeholderStatus }}</div>
         <img
-          v-if="previewing"
+          v-if="previewing && !mock"
+          ref="previewImage"
           :src="previewSrc"
           alt="Live DV/HDV preview"
           :class="{ loaded: previewLoaded }"
@@ -491,15 +983,8 @@ onMounted(async () => {
           @error="handlePreviewError"
         />
       </div>
-    </article>
-
-    <article class="hero-card full-span">
-      <div class="hero-top" @click="toggleCard('record')">
-        <span class="card-title">Record</span>
-      </div>
       <div
-        v-if="cardOpen('record')"
-        class="timecode-fit big"
+        class="preview-timecode timecode-fit big"
         :class="{ dimmed: recordDimmed }"
         aria-label="Elapsed recording time"
       >
@@ -512,7 +997,6 @@ onMounted(async () => {
     <article class="card">
       <div class="card-top" @click="toggleCard('storage')">
         <span class="card-title">Storage</span>
-        <!-- <span class="spec-chip">microSD</span> -->
       </div>
       <template v-if="cardOpen('storage')">
         <div
@@ -544,38 +1028,118 @@ onMounted(async () => {
       </div>
       <template v-if="cardOpen('captures')">
         <p v-if="capturesError" class="error">{{ capturesError }}</p>
-        <div v-if="readyCaptures.length" class="list">
+        <div v-if="groupedCaptures.length" class="list captures-list">
           <div
-            v-for="capture in readyCaptures"
-            :key="capture.path"
-            class="row capture-row"
+            v-for="group in paginatedCaptures"
+            :key="group.key"
+            class="capture-group"
           >
-            <div class="capture-thumb">
-              <img :src="capture.thumbnail_url" alt="" loading="lazy" />
-            </div>
-            <div class="row-main">
-              <strong class="row-title">{{ capture.name }}</strong>
-              <div class="row-meta">{{ modified(capture.modified_at) }}</div>
-            </div>
-            <div class="row-side capture-actions">
-              <span class="spec-chip">{{ sizeGb(capture.size_bytes) }}</span>
-              <a
-                class="download-arrow"
-                :href="downloadUrl(capture)"
-                :download="capture.name"
-                aria-label="Download capture"
-                >↓</a
+            <button
+              type="button"
+              class="row capture-row capture-row-button"
+              :class="{ open: openCaptureKey === group.key }"
+              :aria-expanded="openCaptureKey === group.key"
+              @click="toggleCaptureMenu(group.key)"
+            >
+              <div class="capture-thumb" aria-hidden="true">
+                <img
+                  v-if="captureThumbnailUrl(group.primary)"
+                  :src="captureThumbnailUrl(group.primary)"
+                  alt=""
+                  loading="lazy"
+                />
+                <span v-else></span>
+              </div>
+              <div class="row-main">
+                <span class="row-title">{{ group.primary?.name }}</span>
+                <div class="row-meta">
+                  {{ sizeGb(group.primary?.size_bytes || 0) }} ·
+                  {{ captureMinutes(group.primary) }} mins
+                  <span v-if="captureConversionStatus(group)"> · {{ captureConversionStatus(group) }}</span>
+                </div>
+                <div class="row-meta">
+                  {{ modified(group.primary?.modified_at) }}
+                </div>
+              </div>
+            </button>
+            <div v-if="openCaptureKey === group.key" class="capture-menu">
+              <div
+                v-if="watchingCaptureKey === group.key && watchTarget(group)"
+                class="capture-watch"
               >
+                <video
+                  :src="watchUrl(watchTarget(group)!)"
+                  controls
+                  playsinline
+                  preload="metadata"
+                ></video>
+              </div>
+              <div class="capture-menu-actions">
+                <button
+                  type="button"
+                  class="capture-menu-action"
+                  :disabled="Boolean(convertingWatchKey) || !watchTarget(group)"
+                  @click.stop="toggleCaptureWatch(group)"
+                >
+                  <span>{{ convertingWatchKey === group.key ? "Preparing video…" : watchingCaptureKey === group.key ? "Hide video" : "Watch video" }}</span>
+                </button>
+                <a
+                  v-if="group.primary"
+                  class="capture-menu-action"
+                  :href="downloadUrl(group.primary)"
+                  :download="group.primary.name"
+                  @click.stop
+                >
+                  <span>Download capture</span>
+                </a>
+                <button
+                  v-if="group.primary && !isSidecarCapture(group.primary)"
+                  type="button"
+                  class="capture-menu-action"
+                  :disabled="Boolean(convertingWatchKey) || convertAllDisabled || captureHasMp4Sidecar(group)"
+                  @click.stop="createCaptureSidecar(group.primary)"
+                >
+                  <span>{{ captureConversionActionLabel(group) }}</span>
+                </button>
+                <button
+                  v-if="group.primary"
+                  type="button"
+                  class="capture-menu-action danger"
+                  :disabled="mode === 'recording' || isMounting || mode === 'usb_transfer'"
+                  @click.stop="deleteCaptureItem(group.primary, true)"
+                >
+                  <span>Delete capture</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-        <p v-else class="empty">No captures yet.</p>
+        <div v-if="capturePageCount > 1" class="capture-pagination">
+          <button
+            type="button"
+            class="capture-page-button"
+            :disabled="capturePage <= 1"
+            @click="setCapturePage(capturePage - 1)"
+          >
+            Prev
+          </button>
+          <span>Page {{ capturePage }} / {{ capturePageCount }}</span>
+          <button
+            type="button"
+            class="capture-page-button"
+            :disabled="capturePage >= capturePageCount"
+            @click="setCapturePage(capturePage + 1)"
+          >
+            Next
+          </button>
+        </div>
+        <p v-if="!groupedCaptures.length" class="empty no-captures-empty">No captures yet.</p>
       </template>
     </article>
 
     <article class="card full-span">
       <div class="card-top" @click="toggleCard('recording-format')">
-        <span class="card-title">Recording format</span>
+        <span class="card-title">Format</span>
       </div>
       <template v-if="cardOpen('recording-format')">
         <div class="setting-row">
@@ -596,47 +1160,27 @@ onMounted(async () => {
       </template>
     </article>
     <article class="card full-span">
-      <div class="card-top" @click="toggleCard('convert')">
-        <span class="card-title">Convert</span>
-      </div>
-      <template v-if="cardOpen('convert')">
-        <div class="setting-row">
-          <button
-            type="button"
-            class="gloss-pill"
-            :disabled="convertAllDisabled"
-            @click="runCommand('convert-all-mp4')"
-          >
-            <span>{{
-              conversion.active
-                ? `${conversion.progress_percent || 0}%`
-                : "Convert all"
-            }}</span>
-          </button>
-        </div>
-      </template>
-    </article>
-    <article class="card full-span">
       <div class="card-top" @click="toggleCard('toggles')">
         <span class="card-title">Toggles</span>
       </div>
       <template v-if="cardOpen('toggles')">
         <div class="setting-row conversion-toggles">
           <label class="switch-row">
-            <span class="switch-label">Auto MP4 Export</span>
+            <span class="switch-label">MP4 Conversion<span v-if="mp4ExportEnabled">: {{ mp4ConversionModeLabel }}</span></span>
             <button
               type="button"
-              class="gloss-switch"
-              :class="{ on: mp4ExportEnabled }"
-              :aria-pressed="mp4ExportEnabled"
-              aria-label="Toggle auto MP4 export"
+              class="gloss-switch tri-switch"
+              :class="mp4ConversionMode"
+              :aria-label="`Set MP4 conversion mode (currently ${mp4ConversionModeLabel})`"
               @click="toggleMp4Export"
             >
               <span class="switch-knob"></span>
             </button>
           </label>
           <label class="switch-row">
-            <span class="switch-label">Deinterlace Export</span>
+            <span class="switch-label">
+              Deinterlace Conversion<span v-if="mp4DeinterlaceAlgorithmLabel">: {{ mp4DeinterlaceAlgorithmLabel }}</span>
+            </span>
             <button
               type="button"
               class="gloss-switch"
@@ -649,13 +1193,13 @@ onMounted(async () => {
             </button>
           </label>
           <label class="switch-row">
-            <span class="switch-label">Rotate Display</span>
+            <span class="switch-label">Flip Display: {{ oledFlipLabel }}</span>
             <button
               type="button"
               class="gloss-switch"
               :class="{ on: oledRotate180 }"
               :aria-pressed="oledRotate180"
-              aria-label="Toggle display rotation"
+              aria-label="Toggle display 180-degree flip"
               @click="toggleOledRotate180"
             >
               <span class="switch-knob"></span>
@@ -812,12 +1356,12 @@ onMounted(async () => {
     <article class="card full-span">
       <div class="card-top" @click="toggleCard('system')">
         <span class="card-title">System</span>
-        <span class="spec-chip">{{ system?.model || "ROCK compute" }}</span>
+        <span class="spec-chip">{{ systemModelLabel }}</span>
       </div>
       <template v-if="cardOpen('system')">
-        <p v-if="systemError" class="error">{{ systemError }}</p>
+        <p v-if="systemError" class="error system-notification">{{ systemError }}</p>
         <div class="system-bars">
-          <div class="system-row">
+          <div class="system-row system-stat-row">
             <div class="storage-legend">
               <span>CPU load</span><span>{{ systemLoadLabel }}</span>
             </div>
@@ -825,7 +1369,7 @@ onMounted(async () => {
               <span :style="{ width: `${cpuPercent}%` }" />
             </div>
           </div>
-          <div class="system-row">
+          <div class="system-row system-stat-row">
             <div class="storage-legend">
               <span>Memory</span><span>{{ systemMemoryLabel }}</span>
             </div>
@@ -833,12 +1377,63 @@ onMounted(async () => {
               <span :style="{ width: `${memoryPercent}%` }" />
             </div>
           </div>
-          <div class="system-row">
+          <div class="system-row system-stat-row">
             <div class="storage-legend">
               <span>Temperature</span><span>{{ systemTempLabel }}</span>
             </div>
             <div class="storage-bar" aria-label="Temperature">
               <span :style="{ width: `${temperaturePercent}%` }" />
+            </div>
+          </div>
+          <div class="system-row system-version-row">
+            <div class="storage-legend">
+              <span>{{ updateAvailable ? "Update available" : "Software Version" }}</span>
+              <span>{{ updateSoftwareLabel }}</span>
+            </div>
+          </div>
+          <div class="system-row">
+            <div class="storage-legend">
+              <span>IP Address</span>
+              <span>{{ networkUrlLabel }}</span>
+            </div>
+            <div v-if="connectedWifiSsid" class="storage-legend">
+              <span>Network</span>
+              <span>{{ connectedWifiSsid }}</span>
+            </div>
+            <p v-if="wifiMessage" class="hero-subtitle system-notification">{{ wifiMessage }}</p>
+            <p v-if="wifiError" class="hero-subtitle update-error system-notification">{{ wifiError }}</p>
+            <p v-if="updateError" class="hero-subtitle update-error system-notification">{{ updateError }}</p>
+            <div v-if="!wifiSwitchPending" class="actions two">
+              <button
+                class="gloss-pill"
+                :class="{ 'gloss-green': wifiSetupOpen }"
+                :disabled="wifiSaving || (wifiSetupOpen && (!wifiSsid || wifiPassword.length < 8))"
+                @click="wifiSetupOpen ? configureWifi() : isAccessPointNetwork ? openWifiSetup() : useAccessPointWifi()"
+              >
+                <span>{{ wifiSaving ? "Saving…" : wifiSetupOpen ? "Join" : isAccessPointNetwork ? "Network" : "AP mode" }}</span>
+              </button>
+              <button
+                v-if="wifiSetupOpen"
+                class="gloss-pill"
+                :disabled="wifiSaving"
+                @click="wifiSetupOpen = false"
+              >
+                <span>Back</span>
+              </button>
+              <button v-else class="gloss-pill gloss-green" :disabled="updateNeedsWifi || updateChecking || updateApplying || !updateAvailable" @click="loadUpdateStatus(true, true)">
+                <span>{{ updateChecking ? "Fetching" : "Update" }}</span>
+              </button>
+            </div>
+            <div v-if="wifiSetupOpen" class="network-fields">
+              <label class="field-row">
+                <select v-model="wifiSsid" class="text-input filename-label" aria-label="Wi-Fi SSID">
+                  <option disabled value="">{{ wifiScanning ? "Scanning…" : "SSID" }}</option>
+                  <option v-for="ssid in wifiNetworks" :key="ssid" :value="ssid">{{ ssid }}</option>
+                </select>
+              </label>
+              <label class="field-row">
+                <input v-model="wifiPassword" class="text-input filename-label" type="password" autocomplete="current-password" placeholder="Password min. 8 characters" aria-label="Wi-Fi password" />
+              </label>
             </div>
           </div>
         </div>
@@ -885,7 +1480,7 @@ onMounted(async () => {
         </div>
       </template>
     </article>
-    <div class="rec-dock" aria-label="Recording controls">
+    <div class="rec-dock" :class="{ hidden: recDockHidden }" aria-label="Recording controls">
       <button
         v-if="mode !== 'recording'"
         class="rec-button"

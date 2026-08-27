@@ -31,8 +31,8 @@ While idle, the daemon monitor loop can automatically switch storage:
 Manual API commands are also available:
 
 ```sh
-curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-usb
-curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-sd
+curl -X POST http://127.0.0.1/api/commands/storage-switch-usb
+curl -X POST http://127.0.0.1/api/commands/storage-switch-sd
 ```
 
 The daemon stops preview and the shared DV/HDV source before switching so helper scripts can unmount `/data` safely. It refuses to switch while recording.
@@ -44,13 +44,13 @@ USB-C transfer mode exports the block device currently backing `/data` to a host
 Start:
 
 ```sh
-curl -X POST http://127.0.0.1:8000/api/commands/usb-storage-start
+curl -X POST http://127.0.0.1/api/commands/usb-storage-start
 ```
 
 Stop:
 
 ```sh
-curl -X POST http://127.0.0.1:8000/api/commands/usb-storage-stop
+curl -X POST http://127.0.0.1/api/commands/usb-storage-stop
 ```
 
 Before exporting, the daemon stops recording if needed, stops preview, stops the shared DV/HDV source, runs `sync`, and calls `/usr/sbin/equip1-usb-storage start`. During storage switches and USB-C start/stop remounts, `state.mode` is `mounting` so UIs can show a wait indicator. While `mounting` or `usb_transfer`, captures are hidden and live streaming is disabled.

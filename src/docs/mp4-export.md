@@ -17,9 +17,9 @@ MP4 export runs **after recording stops**, not during recording:
 2. Stop is requested from OLED/web/API.
 3. The recorder closes the capture and immediately publishes the non-recording state.
 4. Finalization continues in the background.
-5. If automatic MP4 export is enabled, the daemon runs `ffmpeg` and creates the sidecar `.mp4`. MP4 export is off by default; users can also trigger **Convert all** from settings to process existing captures on demand.
+5. If automatic MP4 export is enabled, the daemon runs `ffmpeg` and creates the sidecar `.mp4`. MP4 export is off by default; users can choose whether export runs in **Blocking** or **Background**, and can also trigger **Convert all** from settings to process existing captures on demand.
 
-The original recording path is therefore not slowed down by MP4 encoding. The device can still be busy after recording while the export is running.
+The original recording path is therefore not slowed down by MP4 encoding. In Blocking mode the post-recording export marks the daemon as `converting` and blocks starting a new recording until the sidecar is done. In Background mode the export still runs after recording stops, but the daemon can start another recording while FFmpeg works, for hosts with enough CPU and storage bandwidth.
 
 ## OLED setting
 
@@ -29,15 +29,13 @@ The OLED settings screen shows MP4 export as:
 MP4 export [OFF]
 ```
 
-When enabled, the bracket value is the x264 CRF number. Lower CRF means higher quality and larger files.
-
 Cycle order:
 
 ```text
-[OFF] -> [28] -> [23] -> [18] -> [14]
+[OFF] -> [FG] -> [BG]
 ```
 
-Default:
+`[FG]` means automatic conversion blocks the next recording. `[BG]` means automatic conversion continues in the background and allows another recording to start. Default:
 
 ```text
 [OFF]
@@ -53,7 +51,8 @@ While exporting, the OLED record screen replaces remaining minutes with `XX% MP4
 | `[23]` | `balanced` | 23 | 5 | AAC 128k | Middle ground between size and quality |
 | `[18]` | `high` | 18 | 3 | AAC 128k | Visually close to source for most DV material |
 | `[14]` | `max` | 14 | 1 | AAC 192k | Highest available quality; larger and slower |
-| `[OFF]` | `auto_convert_mp4 = false` | — | — | — | Do not create MP4 sidecars |
+| `[OFF]` | `auto_convert_mp4_mode = off` | — | — | — | Do not create MP4 sidecars |
+| `[FG]` / `[BG]` | `auto_convert_mp4_mode = foreground` / `background` | Uses `mp4_quality` | Uses `mp4_quality` | Uses `mp4_quality` | Create MP4 sidecars after recording; FG/Blocking blocks the next recording, BG/Background does not |
 
 The daemon first tries H.264 via `libx264`:
 
@@ -91,9 +90,10 @@ In `/etc/equip1/equip-1.ini`:
 
 ```ini
 [recording]
-auto_convert_mp4 = false
+auto_convert_mp4 = true
+auto_convert_mp4_mode = background
 mp4_quality = high
-mp4_deinterlace = true
+mp4_deinterlace = false
 nnedi_weights = /opt/equip1/share/nnedi3_weights.bin
 ```
 
@@ -101,7 +101,8 @@ Environment overrides:
 
 | Env var | Values |
 | --- | --- |
-| `EQUIP1_AUTO_CONVERT_MP4` | `true`/`false`, `1`/`0`, `on`/`off` |
+| `EQUIP1_AUTO_CONVERT_MP4_MODE` | `off`, `foreground`, `background` |
+| `EQUIP1_AUTO_CONVERT_MP4` | Legacy boolean: `true`/`false`, `1`/`0`, `on`/`off`; `true` maps to the default `background` mode when no explicit mode is set |
 | `EQUIP1_MP4_QUALITY` | `small`, `balanced`, `high`, `max` |
 | `EQUIP1_MP4_DEINTERLACE` | `true`/`false`, `1`/`0`, `on`/`off` |
 | `EQUIP1_NNEDI_WEIGHTS` | Path to `nnedi3_weights.bin`; default `/opt/equip1/share/nnedi3_weights.bin` |
@@ -114,7 +115,7 @@ Aliases accepted by the daemon include:
 | `medium` | `balanced` |
 | `best`, `maximum`, `ultra`, `archive`, `archival` | `max` |
 
-Unknown quality values fall back to `high`.
+Unknown mode values fall back to `off`. Unknown quality values fall back to `high`.
 
 ## API and state
 
@@ -127,7 +128,7 @@ POST /api/settings/conversion
 Example payloads:
 
 ```json
-{ "auto_mp4_enabled": true, "mp4_quality": "high" }
+{ "auto_mp4_mode": "foreground", "mp4_quality": "high" }
 ```
 
 ```json
@@ -135,7 +136,7 @@ Example payloads:
 ```
 
 ```json
-{ "auto_mp4_enabled": false }
+{ "auto_mp4_mode": "off" }
 ```
 
 On-demand conversion of all captures that do not already have a non-empty same-stem `.mp4` sidecar uses:
@@ -149,9 +150,10 @@ Daemon state includes:
 ```json
 {
   "conversion": {
-    "auto_mp4_enabled": false,
+    "auto_mp4_enabled": true,
+    "auto_mp4_mode": "background",
     "mp4_quality": "high",
-    "mp4_deinterlace_enabled": true,
+    "mp4_deinterlace_enabled": false,
     "active": false,
     "progress_percent": 0,
     "source": null,
@@ -161,7 +163,7 @@ Daemon state includes:
 }
 ```
 
-During export, `conversion.active` is `true`, `conversion.progress_percent` reports `0` through `100`, and `state.mode` becomes `converting` when the recorder is idle.
+During export, `conversion.active` is `true` and `conversion.progress_percent` reports `0` through `100`. `state.mode` becomes `converting` for Blocking conversion when the recorder is idle; Background conversion leaves the daemon otherwise recordable while `conversion.active` remains true.
 
 ## Notes and trade-offs
 

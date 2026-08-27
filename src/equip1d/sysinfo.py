@@ -85,7 +85,7 @@ def _read_model() -> str:
         try:
             model = path.read_text(encoding="utf-8", errors="ignore").replace("\x00", "").strip()
             if model:
-                return model
+                return _short_model(model)
         except OSError:
             pass
     try:
@@ -93,10 +93,19 @@ def _read_model() -> str:
             if line.lower().startswith(("model", "hardware")) and ":" in line:
                 value = line.split(":", 1)[1].strip()
                 if value:
-                    return value
+                    return _short_model(value)
     except OSError:
         pass
     return "ROCK compute"
+
+
+def _short_model(value: str) -> str:
+    clean = value.replace("Radxa ", "").strip()
+    if "ROCK 2F" in clean:
+        return "ROCK 2F"
+    if "/" in clean:
+        clean = clean.split("/", 1)[0].strip()
+    return clean or "ROCK compute"
 
 
 def _clamp(value: float) -> int:

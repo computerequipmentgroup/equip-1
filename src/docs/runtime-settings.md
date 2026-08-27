@@ -28,26 +28,32 @@ The default file is stored in the Buildroot overlay at `src/buildroot/overlay/et
 | `auto_storage_cooldown_seconds` | `EQUIP1_AUTO_STORAGE_COOLDOWN_SECONDS` | Minimum spacing between auto-switch attempts |
 | `normalize_dif_headers` | `EQUIP1_DV_NORMALIZE_DIF` | Enable DV DIF header normalization |
 | `recording_format` | `EQUIP1_RECORDING_FORMAT` | Full-quality DV recording container: `mov`, `dv`, or `avi`; default `mov` |
-| `auto_convert_mp4` | `EQUIP1_AUTO_CONVERT_MP4` | Convert completed captures to sidecar `.mp4` files; default `false` |
+| `auto_convert_mp4` | `EQUIP1_AUTO_CONVERT_MP4` | Legacy boolean for completed-capture sidecar `.mp4` conversion; `true` maps to the default `background` mode when no explicit mode is set; default `true` |
+| `auto_convert_mp4_mode` | `EQUIP1_AUTO_CONVERT_MP4_MODE` | Auto-conversion mode: `off`, Blocking (`foreground`), or `background`; default `background` |
 | `mp4_quality` | `EQUIP1_MP4_QUALITY` | MP4 preset: `small`, `balanced`, `high`, or `max`; default `high` |
-| `mp4_deinterlace` | `EQUIP1_MP4_DEINTERLACE` | Apply FFmpeg `nnedi` deinterlacing during MP4 export; default `true` |
+| `mp4_deinterlace` | `EQUIP1_MP4_DEINTERLACE` | Apply FFmpeg `nnedi` deinterlacing during MP4 export; default `false` |
 | `nnedi_weights` | `EQUIP1_NNEDI_WEIGHTS` | NNEDI weights file for MP4 deinterlacing, default `/opt/equip1/share/nnedi3_weights.bin` |
 
-DV recordings default to `.mov`, with `.dv` and `.avi` available for users who prefer raw DV or AVI containers. `.mov` and `.avi` use FFmpeg stream copy, preserving the original DV video/audio essence without transcoding. HDV sources still record as native `.m2t`. MP4 export preset labels on the OLED are x264 CRF values: `28` (`small`), `23` (`balanced`), `18` (`high`), and `14` (`max`). Lower CRF means higher quality and larger files. The default is `[OFF]`. The OLED settings screen also exposes `Record fmt [MOV/DV/AVI]`, `MP4 deint [ON/OFF]` for export deinterlacing, and `Convert all` for on-demand sidecar creation. See [MP4 export options](mp4-export.md) for the full export flow and preset table.
+DV recordings default to `.mov`, with `.dv` and `.avi` available for users who prefer raw DV or AVI containers. `.mov` and `.avi` use FFmpeg stream copy, preserving the original DV video/audio essence without transcoding. HDV sources still record as native `.m2t`. The MP4 export mode labels on the OLED are `[OFF]`, `[FG]` (blocks the next recording while converting), and `[BG]` (background, allows another recording while converting). MP4 quality still uses `mp4_quality`; lower CRF means higher quality and larger files. The OLED settings screen also exposes `FORMAT [MOV/DV/AVI]` and `MP4 deint [ON/OFF]` for export deinterlacing. On-demand Convert all remains available through the API, but not the OLED settings list. See [MP4 export options](mp4-export.md) for the full export flow and preset table.
 
 ### `[network]`
 
 | Key | Common env override | Purpose |
 | --- | --- | --- |
-| `wifi_mode` | `EQUIP1_WIFI_MODE` | `ap`, `client`, or `off` |
+| `wifi_mode` | `EQUIP1_WIFI_MODE` | `ap`, `client`, or `off`; default `ap` so Wi-Fi setup is skippable |
+| `client_ssid` | `EQUIP1_WIFI_CLIENT_SSID` | Saved client Wi-Fi SSID shown in status; credentials live in `/etc/wpa_supplicant.conf` |
+| `client_fallback_ap` | `EQUIP1_CLIENT_FALLBACK_AP` | Return to AP mode if client Wi-Fi does not get an IP; default `true` |
 | `host` | `EQUIP1_HOST` | Daemon bind host, default `0.0.0.0` |
-| `port` | `EQUIP1_PORT` | Daemon/API port, default `8000` |
+| `port` | `EQUIP1_PORT` | Daemon/API port, default `80` in the Buildroot image |
 | `ap_enabled` | `EQUIP1_AP_ENABLED` | Include AP details in daemon state |
 | `ap_iface` | `EQUIP1_AP_IFACE` | AP network interface, default `wlan0` |
 | `ap_ssid` | `EQUIP1_AP_SSID` | Access-point SSID |
 | `ap_password` | `EQUIP1_AP_PASSWORD` | Access-point password |
 | `ap_ip` | `EQUIP1_AP_IP` | Access-point IP, default `10.42.0.1` |
+| `captive_enabled` | `EQUIP1_CAPTIVE_ENABLED` | Optional captive redirect server, disabled by default |
 | `captive_port` | `EQUIP1_CAPTIVE_PORT` | Optional captive redirect server port |
+
+The web dashboard includes a skippable Network section. Users can stay on the Equip-1 AP for normal recording control, or enter local Wi-Fi credentials so the device itself can reach GitHub for software updates. Dashboard URLs use the device IP address without an explicit port: `http://10.42.0.1` in AP mode, or the LAN IP shown by state/OLED in client mode. The Wi-Fi join UI scans visible SSIDs with a best-effort AP-mode scan where the wireless driver supports it. If client connection fails, the network init script rewrites `wifi_mode = ap` and restores the Equip-1 AP.
 
 ### `[preview]`
 
@@ -84,7 +90,7 @@ DV recordings default to `.mov`, with `.dv` and `.avi` available for users who p
 
 The web UI changes these values over `WS /api/events`; the daemon writes them atomically. The OLED settings screen can also toggle LEDs through the daemon REST API.
 
-The OLED settings screen exposes recording format, auto-MP4 conversion, MP4 quality, MP4 deinterlacing, on-demand Convert all, auto storage switch, HDMI preview, OLED 180-degree rotation, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original full-quality capture and writes a same-stem `.mp4` file after recording finalization. Conversion runs in the background and publishes capture-list/state updates when it starts and finishes.
+The OLED settings screen exposes recording format, auto-MP4 conversion mode, MP4 deinterlacing, on-demand Convert all, auto storage switch, HDMI preview, OLED 180-degree flip, and LED toggles. When auto-MP4 conversion is enabled, the daemon keeps the original full-quality capture and writes a same-stem `.mp4` file after recording finalization. Blocking conversion blocks starting the next recording; background conversion allows it. Both modes publish capture-list/state updates when conversion starts and finishes.
 
 ### `[hdmi]`
 

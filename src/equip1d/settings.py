@@ -10,11 +10,13 @@ LEGACY_LIGHTS_CONFIG_DEFAULT = "/etc/equip1/lights.json"
 LIGHTS_BRIGHTNESS_DEFAULT = 0.25
 CAPTURE_FILENAME_PREFIX_DEFAULT = "capture_"
 CAPTURE_FILENAME_TEMPLATE_DEFAULT = "{date}_{time}"
-AUTO_CONVERT_MP4_DEFAULT = False
+AUTO_CONVERT_MP4_DEFAULT = True
+AUTO_CONVERT_MP4_MODE_DEFAULT = "background"
+AUTO_CONVERT_MP4_MODE_OPTIONS = ("off", "foreground", "background")
 RECORDING_FORMAT_DEFAULT = "mov"
 RECORDING_FORMAT_OPTIONS = ("dv", "mov", "avi")
 MP4_QUALITY_DEFAULT = "high"
-MP4_DEINTERLACE_DEFAULT = True
+MP4_DEINTERLACE_DEFAULT = False
 MP4_QUALITY_OPTIONS = ("small", "balanced", "high", "max")
 
 
@@ -135,16 +137,37 @@ class Equip1Settings:
     def save_recording_format(self, value: str) -> None:
         self.save_value("recording", "recording_format", normalize_recording_format(value))
 
-    def load_auto_convert_mp4(self) -> bool:
-        return self.get_bool(
+    def load_auto_convert_mp4_mode(self) -> str:
+        mode = self.get(
+            "recording",
+            "auto_convert_mp4_mode",
+            None,
+            env="EQUIP1_AUTO_CONVERT_MP4_MODE",
+        )
+        if mode is not None:
+            return normalize_auto_convert_mp4_mode(mode)
+        enabled = self.get_bool(
             "recording",
             "auto_convert_mp4",
             AUTO_CONVERT_MP4_DEFAULT,
             env="EQUIP1_AUTO_CONVERT_MP4",
         )
+        return AUTO_CONVERT_MP4_MODE_DEFAULT if enabled else "off"
+
+    def load_auto_convert_mp4(self) -> bool:
+        return self.load_auto_convert_mp4_mode() != "off"
+
+    def save_auto_convert_mp4_mode(self, mode: str) -> None:
+        clean = normalize_auto_convert_mp4_mode(mode)
+        parser = self._read()
+        if not parser.has_section("recording"):
+            parser.add_section("recording")
+        parser.set("recording", "auto_convert_mp4_mode", clean)
+        parser.set("recording", "auto_convert_mp4", _format_bool(clean != "off"))
+        self._write(parser)
 
     def save_auto_convert_mp4(self, enabled: bool) -> None:
-        self.save_value("recording", "auto_convert_mp4", _format_bool(enabled))
+        self.save_auto_convert_mp4_mode("foreground" if enabled else "off")
 
     def load_mp4_quality(self) -> str:
         quality = self.get("recording", "mp4_quality", MP4_QUALITY_DEFAULT, env="EQUIP1_MP4_QUALITY")
@@ -211,6 +234,33 @@ def normalize_recording_format(value: str | None) -> str:
     }
     recording_format = aliases.get(recording_format, recording_format)
     return recording_format if recording_format in RECORDING_FORMAT_OPTIONS else RECORDING_FORMAT_DEFAULT
+
+
+def normalize_auto_convert_mp4_mode(value: str | None) -> str:
+    mode = (value or AUTO_CONVERT_MP4_MODE_DEFAULT).strip().lower().replace("-", "_")
+    aliases = {
+        "0": "off",
+        "false": "off",
+        "no": "off",
+        "disabled": "off",
+        "disable": "off",
+        "on": "foreground",
+        "1": "foreground",
+        "true": "foreground",
+        "yes": "foreground",
+        "fg": "foreground",
+        "front": "foreground",
+        "blocking": "foreground",
+        "block": "foreground",
+        "backgrounded": "background",
+        "bg": "background",
+        "back": "background",
+        "nonblocking": "background",
+        "non_blocking": "background",
+        "nonblock": "background",
+    }
+    mode = aliases.get(mode, mode)
+    return mode if mode in AUTO_CONVERT_MP4_MODE_OPTIONS else AUTO_CONVERT_MP4_MODE_DEFAULT
 
 
 def normalize_mp4_quality(value: str | None) -> str:

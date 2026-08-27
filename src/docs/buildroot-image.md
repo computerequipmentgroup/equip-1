@@ -18,6 +18,16 @@ xz -T0 -9 -c src/buildroot/output/sdcard.img > src/buildroot/output/equip-1-v0.1
 
 `build.sh` expects the `equip1-builder` VM workflow used by this repository. It builds the Nuxt dashboard on the host, stages app sources into the overlay, syncs Buildroot inputs to the VM, runs Buildroot, and writes artifacts under `src/buildroot/output/`.
 
+## Web self-updates
+
+The web dashboard can automatically update a running device from one release tag to the next, for example `v0.1.0` → `v0.1.1`, when the newer GitHub release includes an app update bundle. Build and attach the bundle with:
+
+```sh
+EQUIP1_VERSION_TAG=v0.1.1 ./src/scripts/package-update.sh
+```
+
+The script writes both `dist/equip1-update.tar.gz` and `dist/equip-1-v0.1.1-update.tar.gz`. Attach either to the GitHub release. Full `.img.xz` release assets are still for manual flashing and are intentionally ignored by the in-place updater.
+
 ## Important paths
 
 | Path | Purpose |
@@ -55,8 +65,8 @@ BusyBox init runs scripts in lexical order:
 | `S10loopback` | Bring up loopback networking |
 | `S15data` | Prepare `/data` from USB-A storage or SD fallback |
 | `S20boot-debug` | Optional early debug breadcrumbs |
-| `S50network` | Start Wi-Fi AP, client mode, or disabled networking |
-| `S60equip1d` | Start FastAPI daemon on port `8000` |
+| `S50network` | Start Wi-Fi AP, client mode, or disabled networking; reports IP URLs and falls back to AP if client Wi-Fi fails |
+| `S60equip1d` | Start FastAPI daemon on port `80` |
 | `S61equip1-oled` | Start OLED/buttons UI |
 | `S62equip1-hdmi-preview` | Start HDMI framebuffer preview watcher |
 | `S98equip1-log-export` | Mirror logs from `/var/log/equip1/` into `/data/logs/` |

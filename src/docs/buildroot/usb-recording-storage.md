@@ -78,8 +78,8 @@ S15data: using SD fallback data partition /dev/mmcblk0p2 label EQUIP1
 Manual commands are still available:
 
 ```sh
-curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-usb
-curl -X POST http://127.0.0.1:8000/api/commands/storage-switch-sd
+curl -X POST http://127.0.0.1/api/commands/storage-switch-usb
+curl -X POST http://127.0.0.1/api/commands/storage-switch-sd
 ```
 
 Pressing select on the OLED `STORAGE` screen also asks for a USB switch. The helper refuses to switch while recording or while USB-C transfer mode is active. On failure it attempts to restore the previous `/data` mount or the SD fallback partition.

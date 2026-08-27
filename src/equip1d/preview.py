@@ -49,14 +49,8 @@ class MjpegPreview:
         self.recording_size = settings.get(
             "preview", "recording_size", "480:360", env="EQUIP1_PREVIEW_RECORDING_SIZE"
         ) or "480:360"
-        default_filter = (
-            f"fps={self.fps},scale={self.size}:force_original_aspect_ratio=increase,"
-            f"crop={self.size},setsar=1"
-        )
-        default_recording_filter = (
-            f"fps={self.recording_fps},scale={self.recording_size}:"
-            f"force_original_aspect_ratio=increase,crop={self.recording_size},setsar=1"
-        )
+        default_filter = self._aspect_preserving_filter(self.fps, self.size)
+        default_recording_filter = self._aspect_preserving_filter(self.recording_fps, self.recording_size)
         self.video_filter = (
             settings.get("preview", "filter", default_filter, env="EQUIP1_PREVIEW_FILTER") or default_filter
         )
@@ -170,6 +164,14 @@ class MjpegPreview:
     async def _multipart_mjpeg(self, stream: asyncio.StreamReader) -> AsyncIterator[bytes]:
         async for frame in self._jpeg_frames(stream):
             yield self._multipart_frame(frame)
+
+    @staticmethod
+    def _aspect_preserving_filter(fps: str, size: str) -> str:
+        # Scale to the configured width and derive height from the source display
+        # aspect ratio. This avoids cropping DV/HDV material and lets the browser
+        # resize the preview height when the source changes between 4:3 and 16:9.
+        width = str(size or "720:540").split(":", 1)[0] or "720"
+        return f"fps={fps},scale={width}:trunc({width}/dar/2)*2,setsar=1"
 
     def _ffmpeg_stdin_command(
         self,

@@ -19,16 +19,18 @@ class MountInfo:
 DV_BYTES_PER_MINUTE = 216 * 1024 * 1024
 CAPTURE_EXTENSIONS = {".dv", ".dif", ".m2t", ".mts", ".ts", ".avi", ".mov", ".mp4", ".mkv"}
 THUMBNAIL_EXTENSION = ".jpg"
+SIDECAR_EXTENSIONS = {".mp4"}
+PRIMARY_CAPTURE_EXTENSIONS = CAPTURE_EXTENSIONS - SIDECAR_EXTENSIONS
 NNEDI_WEIGHTS_DEFAULT = "/opt/equip1/share/nnedi3_weights.bin"
 MP4_SCALE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2"
 MP4_YADIF_FILTER = "yadif=mode=send_frame:parity=auto:deint=all"
 
 
-def _mp4_video_filter_candidates(deinterlace: bool, nnedi_weights: str | os.PathLike[str] | None) -> list[str]:
+def _mp4_video_filter_candidates(deinterlace: bool, nnedi_weights: str | os.PathLike[str] | None) -> list[tuple[str, str]]:
     if not deinterlace:
-        return [MP4_SCALE_FILTER]
+        return [("off", MP4_SCALE_FILTER)]
 
-    filters: list[str] = []
+    filters: list[tuple[str, str]] = []
     weights_path = Path(nnedi_weights).expanduser() if nnedi_weights else None
     if weights_path and weights_path.is_file():
         # DV is normally bottom-field-first, but using frame flags lets FFmpeg
@@ -36,12 +38,12 @@ def _mp4_video_filter_candidates(deinterlace: bool, nnedi_weights: str | os.Path
         # emits both fields, so interlaced 25/29.97 fps DV exports as smooth
         # 50/59.94 fps progressive video.
         nnedi = f"nnedi=weights='{_ffmpeg_filter_escape(str(weights_path))}':deint=interlaced:field=af:qual=fast"
-        filters.append(f"{nnedi},{MP4_SCALE_FILTER}")
+        filters.append(("nnedi3", f"{nnedi},{MP4_SCALE_FILTER}"))
 
     # Keep the existing FFmpeg deinterlacer as a compatibility fallback for
     # builds without the nnedi filter or devices missing the weights file.
-    filters.append(f"{MP4_YADIF_FILTER},{MP4_SCALE_FILTER}")
-    filters.append(MP4_SCALE_FILTER)
+    filters.append(("yadif", f"{MP4_YADIF_FILTER},{MP4_SCALE_FILTER}"))
+    filters.append(("off", MP4_SCALE_FILTER))
     return filters
 
 
@@ -181,7 +183,11 @@ class StorageManager:
                     file_stat = path.stat()
                 except OSError:
                     continue
-                if not S_ISREG(file_stat.st_mode) or path.suffix.lower() not in CAPTURE_EXTENSIONS:
+                if (
+                    not S_ISREG(file_stat.st_mode)
+                    or path.suffix.lower() not in CAPTURE_EXTENSIONS
+                    or self._is_temporary_capture_path(path)
+                ):
                     continue
                 entries.append((path, file_stat))
         except OSError:
@@ -189,12 +195,17 @@ class StorageManager:
 
         for path, file_stat in sorted(entries, key=lambda item: item[1].st_mtime, reverse=True):
             thumbnail_path = self._thumbnail_path_for_capture(path)
+            is_conversion = path.suffix.lower() in SIDECAR_EXTENSIONS
             capture = {
                 "name": path.name,
                 "path": str(path),
                 "size_bytes": file_stat.st_size,
                 "modified_at": file_stat.st_mtime,
+                "duration_seconds": self._estimate_capture_duration_seconds(path),
+                "is_conversion": is_conversion,
+                "conversion_of": path.stem if is_conversion else None,
                 "download_url": f"/api/captures/{path.name}/download",
+                "watch_url": f"/api/captures/{path.name}/watch",
             }
             try:
                 thumbnail_exists = thumbnail_path.exists()
@@ -216,7 +227,11 @@ class StorageManager:
             return None
         if resolved_path.parent != resolved_dir:
             return None
-        if not resolved_path.is_file() or resolved_path.suffix.lower() not in CAPTURE_EXTENSIONS:
+        if (
+            not resolved_path.is_file()
+            or resolved_path.suffix.lower() not in CAPTURE_EXTENSIONS
+            or self._is_temporary_capture_path(resolved_path)
+        ):
             return None
         return resolved_path
 
@@ -228,6 +243,22 @@ class StorageManager:
         if not thumbnail.is_file():
             return None
         return thumbnail
+
+    def delete_capture(self, name: str, *, include_related: bool = False) -> bool:
+        capture = self.capture_path(name)
+        if capture is None:
+            return False
+        targets = [capture]
+        if include_related and capture.suffix.lower() not in SIDECAR_EXTENSIONS:
+            targets.extend(
+                path
+                for path in sorted(self.capture_dir.glob(f"{capture.stem}.*"))
+                if path.is_file() and path.suffix.lower() in SIDECAR_EXTENSIONS
+            )
+        for target in targets:
+            target.unlink(missing_ok=True)
+            self._thumbnail_path_for_capture(target).unlink(missing_ok=True)
+        return True
 
     def generate_thumbnails_for_prefix(self, prefix: str | None, ffmpeg_bin: str = "ffmpeg") -> list[Path]:
         if not prefix:
@@ -290,6 +321,7 @@ class StorageManager:
         progress_callback: Callable[[int], None] | None = None,
         deinterlace: bool = True,
         nnedi_weights: str | os.PathLike[str] | None = NNEDI_WEIGHTS_DEFAULT,
+        algorithm_callback: Callable[[str], None] | None = None,
     ) -> Path | None:
         if not capture_path.is_file() or capture_path.suffix.lower() not in CAPTURE_EXTENSIONS:
             return None
@@ -313,8 +345,8 @@ class StorageManager:
         quality_name = str(quality).lower()
         preset = presets.get(quality_name, presets["high"])
         command_variants = [
-            command
-            for video_filter in _mp4_video_filter_candidates(deinterlace, nnedi_weights)
+            (algorithm, command)
+            for algorithm, video_filter in _mp4_video_filter_candidates(deinterlace, nnedi_weights)
             for command in (
                 [
                     ffmpeg_bin,
@@ -381,7 +413,9 @@ class StorageManager:
         last_error = "ffmpeg conversion failed"
         if progress_callback is not None:
             progress_callback(0)
-        for command in command_variants:
+        for algorithm, command in command_variants:
+            if algorithm_callback is not None:
+                algorithm_callback(algorithm)
             try:
                 return_code, output = self._run_ffmpeg_progress(command, duration_seconds, progress_callback)
             except OSError as exc:
@@ -444,6 +478,10 @@ class StorageManager:
             return (int(hours) * 3600) + (int(minutes) * 60) + float(seconds)
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _is_temporary_capture_path(path: Path) -> bool:
+        return path.stem.endswith(".tmp")
 
     def _thumbnail_path_for_capture(self, capture_path: Path) -> Path:
         return capture_path.with_suffix(THUMBNAIL_EXTENSION)

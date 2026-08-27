@@ -31,7 +31,7 @@ class CaptivePortalHandler(BaseHTTPRequestHandler):
             super().log_message(fmt, *args)
 
     def _dashboard_url(self) -> str:
-        return getattr(self.server, "dashboard_url", "http://10.42.0.1:8000/")
+        return getattr(self.server, "dashboard_url", "http://10.42.0.1/")
 
     def _redirect_to_dashboard(self) -> None:
         dashboard_url = self._dashboard_url()
@@ -74,7 +74,7 @@ def _portal_page(dashboard_url: str) -> str:
 def _start_captive_portal(settings: Equip1Settings) -> None:
     wifi_mode = (settings.get("network", "wifi_mode", "ap", env="EQUIP1_WIFI_MODE") or "ap").strip().lower()
     if wifi_mode != "ap" or not settings.get_bool(
-        "network", "captive_enabled", True, env="EQUIP1_CAPTIVE_ENABLED"
+        "network", "captive_enabled", False, env="EQUIP1_CAPTIVE_ENABLED"
     ):
         return
 
@@ -83,8 +83,9 @@ def _start_captive_portal(settings: Equip1Settings) -> None:
     dashboard_url = settings.get("network", "captive_dashboard_url", None, env="EQUIP1_CAPTIVE_DASHBOARD_URL")
     if not dashboard_url:
         ap_ip = settings.get("network", "ap_ip", "10.42.0.1", env="EQUIP1_AP_IP") or "10.42.0.1"
-        dashboard_port = settings.get_int("network", "port", 8000, env="EQUIP1_PORT")
-        dashboard_url = f"http://{ap_ip}:{dashboard_port}/"
+        dashboard_port = settings.get_int("network", "port", 80, env="EQUIP1_PORT")
+        port_suffix = "" if dashboard_port == 80 else f":{dashboard_port}"
+        dashboard_url = f"http://{ap_ip}{port_suffix}/"
 
     try:
         server = ThreadingHTTPServer((host, port), CaptivePortalHandler)
@@ -101,7 +102,7 @@ def _start_captive_portal(settings: Equip1Settings) -> None:
 def main() -> None:
     settings = Equip1Settings()
     host = settings.get("network", "host", "0.0.0.0", env="EQUIP1_HOST") or "0.0.0.0"
-    port = settings.get_int("network", "port", 8000, env="EQUIP1_PORT")
+    port = settings.get_int("network", "port", 80, env="EQUIP1_PORT")
     _start_captive_portal(settings)
     uvicorn_log_level = "critical" if not should_log("info") else "debug" if should_log("debug") else "info"
     uvicorn.run("equip1d.api:app", host=host, port=port, log_level=uvicorn_log_level)

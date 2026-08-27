@@ -164,6 +164,26 @@ rsync -a --delete \
 rsync -a --delete "$ROOT_DIR/fonts" "$OVERLAY_DIR/opt/equip1/"
 cp "$ROOT_DIR/requirements.txt" "$OVERLAY_DIR/opt/equip1/requirements.txt"
 
+GIT_ROOT="$(git -C "$ROOT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "$GIT_ROOT" ]; then
+    GIT_COMMIT="$(git -C "$GIT_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+    GIT_TAG="$(git -C "$GIT_ROOT" describe --tags --exact-match HEAD 2>/dev/null || true)"
+    GIT_VERSION_TAG="${EQUIP1_VERSION_TAG:-${GIT_TAG:-$(git -C "$GIT_ROOT" describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || echo v0.1.0)}}"
+    GIT_BRANCH="$(git -C "$GIT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    GIT_DIRTY="$(git -C "$GIT_ROOT" diff --quiet --ignore-submodules HEAD -- 2>/dev/null && echo false || echo true)"
+    cat > "$OVERLAY_DIR/opt/equip1/version.json" <<EOF
+{
+  "version": "${GIT_VERSION_TAG}",
+  "tag": "${GIT_VERSION_TAG}",
+  "commit": "$GIT_COMMIT",
+  "branch": "$GIT_BRANCH",
+  "dirty": $GIT_DIRTY,
+  "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "repo": "computerequipmentgroup/equip-1"
+}
+EOF
+fi
+
 stage_pisugar_manager() {
     local version="${PISUGAR_VERSION:-v2.3.2}"
     local url="https://github.com/PiSugar/pisugar-power-manager-rs/releases/download/${version}/pisugar_aarch64-unknown-linux-musl.tar.gz"
@@ -394,6 +414,12 @@ else
     echo "ERROR: BR2_PACKAGE_DNSMASQ is not enabled after olddefconfig"
     exit 1
 fi
+if grep -q '^BR2_PACKAGE_CA_CERTIFICATES=y$' .config; then
+    echo "==> Config verified: CA certificates enabled for updater HTTPS"
+else
+    echo "ERROR: BR2_PACKAGE_CA_CERTIFICATES is not enabled after olddefconfig"
+    exit 1
+fi
 if grep -q '^BR2_PACKAGE_FFMPEG_SWSCALE=y$' .config; then
     echo "==> Config verified: ffmpeg swscale enabled"
 else
@@ -406,15 +432,21 @@ else
     echo "ERROR: BR2_PACKAGE_FFMPEG_OUTDEVS is not enabled after olddefconfig"
     exit 1
 fi
+if grep -q '^BR2_PACKAGE_FFMPEG_GPL=y$' .config; then
+    echo "==> Config verified: ffmpeg GPL filters enabled"
+else
+    echo "ERROR: BR2_PACKAGE_FFMPEG_GPL is not enabled after olddefconfig"
+    exit 1
+fi
 if [ "$FORCE_PYTHON_CLEAN" = "1" ]; then
     echo "==> Cleaning Python build so SSL/zlib extensions are rebuilt..."
     make python3-dirclean 2>/dev/null || true
 fi
 
 # Buildroot does not rebuild a package when only a Config.in option changes, so a
-# previously-built ffmpeg can linger with swscale disabled (breaking thumbnail
-# generation). Self-heal by forcing a clean when the built binary disagrees with
-# the current .config.
+# previously-built ffmpeg can linger with required features disabled (breaking
+# thumbnails, HDMI output, or NNEDI deinterlacing). Self-heal by forcing a clean
+# when the built binary disagrees with the current .config.
 FFMPEG_TARGET_BIN=output/target/usr/bin/ffmpeg
 if grep -q '^BR2_PACKAGE_FFMPEG_SWSCALE=y$' .config \
     && [ -f "$FFMPEG_TARGET_BIN" ] \
@@ -428,8 +460,14 @@ if grep -q '^BR2_PACKAGE_FFMPEG_OUTDEVS=y$' .config \
     echo "==> ffmpeg was built without output devices but config now enables them; forcing rebuild."
     FORCE_FFMPEG_CLEAN=1
 fi
+if grep -q '^BR2_PACKAGE_FFMPEG_GPL=y$' .config \
+    && [ -f "$FFMPEG_TARGET_BIN" ] \
+    && grep -a -q -- '--disable-gpl' "$FFMPEG_TARGET_BIN"; then
+    echo "==> ffmpeg was built without GPL filters but config now enables them; forcing rebuild."
+    FORCE_FFMPEG_CLEAN=1
+fi
 if [ "$FORCE_FFMPEG_CLEAN" = "1" ]; then
-    echo "==> Cleaning ffmpeg build so swscale is rebuilt..."
+    echo "==> Cleaning ffmpeg build so required features are rebuilt..."
     make ffmpeg-dirclean 2>/dev/null || true
 fi
 

@@ -9,7 +9,7 @@ APPDIR=/opt/equip1
 if [ -r /etc/equip1/settings-env.sh ]; then
     . /etc/equip1/settings-env.sh
     equip1_ini_default EQUIP1_HDMI_PREVIEW_ENABLED hdmi enabled 1
-    equip1_ini_default EQUIP1_HDMI_STREAM_URL hdmi stream_url 'http://127.0.0.1:8000/api/stream.mkv?takeover=1'
+    equip1_ini_default EQUIP1_HDMI_STREAM_URL hdmi stream_url 'http://127.0.0.1/api/stream.mkv?takeover=1'
     equip1_ini_default EQUIP1_HDMI_FBDEV hdmi fbdev /dev/fb0
     equip1_ini_default EQUIP1_HDMI_POLL_SECONDS hdmi poll_seconds 1
     equip1_ini_default EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM hdmi assume_connected_without_drm 0
@@ -22,7 +22,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
 fi
 
 export EQUIP1_HDMI_PREVIEW_ENABLED="${EQUIP1_HDMI_PREVIEW_ENABLED:-1}"
-export EQUIP1_HDMI_STREAM_URL="${EQUIP1_HDMI_STREAM_URL:-http://127.0.0.1:8000/api/stream.mkv?takeover=1}"
+export EQUIP1_HDMI_STREAM_URL="${EQUIP1_HDMI_STREAM_URL:-http://127.0.0.1/api/stream.mkv?takeover=1}"
 export EQUIP1_HDMI_FBDEV="${EQUIP1_HDMI_FBDEV:-/dev/fb0}"
 export EQUIP1_HDMI_POLL_SECONDS="${EQUIP1_HDMI_POLL_SECONDS:-1}"
 export EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM="${EQUIP1_HDMI_ASSUME_CONNECTED_WITHOUT_DRM:-0}"

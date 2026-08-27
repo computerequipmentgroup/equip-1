@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
+from pathlib import Path
 
 from equip1d.logging import log, perf_enabled
 from equip1d.settings import Equip1Settings, LIGHTS_BRIGHTNESS_DEFAULT
@@ -30,7 +32,7 @@ class OledApp:
         self.board = get_board_config()
         log(f"OLED board config: {self.board.name}")
         settings = Equip1Settings()
-        api_base = settings.get("ui", "api_base", "http://127.0.0.1:8000/api", env="EQUIP1_API_BASE") or "http://127.0.0.1:8000/api"
+        api_base = settings.get("ui", "api_base", "http://127.0.0.1/api", env="EQUIP1_API_BASE") or "http://127.0.0.1/api"
         api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="EQUIP1_API_TIMEOUT")
         self.api = Equip1ApiClient(api_base, timeout=api_timeout)
         self.state_fetch_interval = settings.get_float("ui", "state_fetch_interval", 1.0, env="EQUIP1_STATE_FETCH_INTERVAL")
@@ -60,7 +62,7 @@ class OledApp:
         self._game_unlock_triggered = False
         self.boot_screen = BootScreen()
         self.boot_started_at = time.monotonic()
-        self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 3.0, env="EQUIP1_BOOT_DURATION_SECONDS")
+        self.boot_duration_seconds = settings.get_float("ui", "boot_duration_seconds", 1.0, env="EQUIP1_BOOT_DURATION_SECONDS")
         self.boot_hold_seconds = settings.get_float("ui", "boot_hold_seconds", 1.1, env="EQUIP1_BOOT_HOLD_SECONDS")
         oled_fps = settings.get_float("ui", "oled_fps", 8.0, env="EQUIP1_OLED_FPS")
         self.frame_interval = 1.0 / oled_fps if oled_fps > 0 else 0.0
@@ -75,6 +77,9 @@ class OledApp:
         self._pending_command: str | None = None
         self._state_fetch_thread: threading.Thread | None = None
         self._stop_recording_requested_at: float | None = None
+        self._last_network_mode: str | None = None
+        self._last_network_ip: str | None = None
+        self._network_prompt_marker = Path(os.environ.get("EQUIP1_OLED_NETWORK_PROMPT", "/tmp/equip1-oled-network-url-qr"))
 
     @property
     def current_screen(self):
@@ -104,12 +109,43 @@ class OledApp:
             print(f"[PERF] {name} {elapsed_ms:.1f}ms", flush=True)
 
     def _set_state(self, state: dict) -> None:
+        previous_network_mode = self._last_network_mode
+        previous_network_ip = self._last_network_ip
+        network = state.get("network") or {}
+        network_mode = str(network.get("mode") or "")
+        network_ip = str(network.get("ip") or "")
         self.state = state
+        self._last_network_mode = network_mode
+        self._last_network_ip = network_ip
         if state.get("mode") == "recording":
             self.game_screen_active = False
             self.current_screen_idx = 0
         else:
             self._stop_recording_requested_at = None
+        if (
+            previous_network_mode is not None
+            and previous_network_mode in {"access_point", "ap", "offline"}
+            and network_mode not in {"access_point", "ap", "offline"}
+            and network_ip
+            and network_ip != previous_network_ip
+        ):
+            self._show_network_url_qr()
+
+    def _show_network_url_qr(self) -> None:
+        self.game_screen_active = False
+        self.current_screen_idx = 1
+        screen = self.screens[self.current_screen_idx]
+        if isinstance(screen, NetworkScreen):
+            screen.qr_mode = "url"
+
+    def _consume_network_prompt_marker(self) -> None:
+        try:
+            if not self._network_prompt_marker.exists():
+                return
+            self._network_prompt_marker.unlink(missing_ok=True)
+        except OSError:
+            return
+        self._show_network_url_qr()
 
     def _recording_active(self) -> bool:
         return (self.state or {}).get("mode") == "recording"
@@ -429,6 +465,7 @@ class OledApp:
                 frame_started = time.monotonic()
                 if not self.is_booting:
                     self.fetch_state_in_background_if_due()
+                    self._consume_network_prompt_marker()
                     self.poll_buttons()
                 self.render()
                 if self.frame_interval > 0:
