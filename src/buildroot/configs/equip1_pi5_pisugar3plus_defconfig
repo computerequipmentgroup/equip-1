@@ -62,10 +62,11 @@ BR2_PACKAGE_ZLIB=y
 # I2C tools (OLED + PiSugar)
 BR2_PACKAGE_I2C_TOOLS=y
 
-# Recordings partition tooling: sgdisk (create), mkfs.exfat (format), partprobe
+# Recordings partition tooling: sgdisk repairs compressed-image GPTs,
+# parted/partprobe creates the first-boot data partition, and mkfs.exfat
+# formats it as EQUIP1.
 BR2_PACKAGE_GPTFDISK=y
-# Recordings partition tooling: parted/partprobe creates the first-boot data partition,
-# mkfs.exfat formats it as EQUIP1.
+BR2_PACKAGE_GPTFDISK_SGDISK=y
 BR2_PACKAGE_EXFATPROGS=y
 BR2_PACKAGE_PARTED=y
 

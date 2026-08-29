@@ -4,9 +4,12 @@ set -euo pipefail
 
 TARGET_DIR="${TARGET_DIR:?}"
 
-# Incremental Buildroot target trees can keep generated/stale scripts that race
-# the Equip-1 networking/app stack.
+# Incremental Buildroot target trees can keep generated/stale scripts and Rock
+# Wi-Fi payloads when switching targets. Remove them so the Pi image does not
+# try to insert AIC8800 modules built for a different kernel.
 rm -f "${TARGET_DIR}/etc/init.d/S40network"
+find "${TARGET_DIR}/lib/modules" -type f \( -name 'aic_load_fw.ko' -o -name 'aic8800_fdrv.ko' \) -delete 2>/dev/null || true
+rm -rf "${TARGET_DIR}/lib/firmware/aic8800_fw"
 
 # Select the Raspberry Pi GPIO/I2C mapping at runtime. The same source tree also
 # supports ROCK 2F, so this image flips only the generated target settings.
@@ -36,4 +39,4 @@ if [ ! -f "${TARGET_DIR}/etc/pisugar-server/config.json" ]; then
     exit 1
 fi
 
-echo "==> Pi 5 post-build OK: board_type=rpi, PiSugar server staged."
+echo "==> Pi 5 post-build OK: board_type=rpi, PiSugar server staged, Rock Wi-Fi payloads removed."

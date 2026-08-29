@@ -28,6 +28,7 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_CLIENT_FALLBACK_AP network client_fallback_ap 1
     equip1_ini_default EQUIP1_SETTINGS_FILE paths settings_file /etc/equip1/equip-1.ini
     equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
+    equip1_ini_default EQUIP_1_BOARD_TYPE ui board_type rock2f
 fi
 
 WIFI_MODE="${EQUIP1_WIFI_MODE:-ap}"
@@ -44,6 +45,7 @@ AP_COUNTRY="${EQUIP1_AP_COUNTRY:-}"
 NETWORK_BACKGROUND="${EQUIP1_NETWORK_BACKGROUND:-1}"
 CLIENT_FALLBACK_AP="${EQUIP1_CLIENT_FALLBACK_AP:-1}"
 SETTINGS_FILE="${EQUIP1_SETTINGS_FILE:-/etc/equip1/equip-1.ini}"
+BOARD_TYPE="$(printf '%s' "${EQUIP_1_BOARD_TYPE:-rock2f}" | tr 'A-Z' 'a-z')"
 LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
 if [ "$LOG_LEVEL" = "quiet" ]; then
     LOGFILE=/dev/null
@@ -63,6 +65,13 @@ redact_value() {
 }
 
 load_wifi_modules() {
+    case "$BOARD_TYPE" in
+        rpi|pi5|raspberrypi|raspberry-pi*)
+            modprobe brcmfmac >>"$LOGFILE" 2>&1 || true
+            return 0
+            ;;
+    esac
+
     load_fw_module="$(find /lib/modules -type f -name aic_load_fw.ko | head -1)"
     wlan_module="$(find /lib/modules -type f -name aic8800_fdrv.ko | head -1)"
 

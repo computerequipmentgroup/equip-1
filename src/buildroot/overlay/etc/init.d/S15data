@@ -119,15 +119,49 @@ reread_partitions() {
 
 last_free_region_sectors() {
     disk="$1"
-    # parted -m prints lines like: "1048576s:1000214527s:999165952s:free;".
-    # Use the last free region so existing boot/rootfs partitions remain intact.
+    # parted -m prints free-space lines like:
+    #   1:2115003s:62333918s:60218916s:free;
+    # where field 2 is the start sector and field 4 is the size. Use the last
+    # free region so existing boot/rootfs partitions remain intact.
     parted -m -s "$disk" unit s print free 2>/dev/null \
-        | awk -F: '/:free;$/ { start=$1; size=$3 } END { if (start != "" && size != "") { sub(/s$/, "", start); sub(/s$/, "", size); print start " " size } }'
+        | awk -F: '/:free;$/ { start=$2; size=$4 } END { if (start != "" && size != "") { sub(/s$/, "", start); sub(/s$/, "", size); print start " " size } }'
 }
 
 partition_table_type() {
     disk="$1"
     parted -m -s "$disk" print 2>/dev/null | awk -F: 'NR == 2 { print $6; exit }'
+}
+
+disk_has_gpt_header() {
+    disk="$1"
+    sig="$(dd if="$disk" bs=512 skip=1 count=1 2>/dev/null | dd bs=8 count=1 2>/dev/null || true)"
+    [ "$sig" = "EFI PART" ]
+}
+
+repair_gpt_backup_header() {
+    disk="$1"
+
+    # Compressed-image flashers write the small image GPT verbatim to larger SD
+    # cards. The backup GPT then remains at the old image end, so parted may not
+    # see the unallocated card space. Move the backup GPT to the real device end
+    # before looking for a free region, matching scripts/flash.sh's host path.
+    disk_has_gpt_header "$disk" || return 0
+
+    if ! command -v sgdisk >/dev/null 2>&1; then
+        log "cannot repair GPT on $disk: sgdisk is not installed"
+        return 1
+    fi
+
+    log "ensuring GPT backup header on $disk is at end of device"
+    if sgdisk -e "$disk" >/run/S15data.sgdisk.out 2>&1; then
+        reread_partitions "$disk"
+        return 0
+    fi
+
+    while IFS= read -r line; do
+        log "sgdisk -e error for $disk: $line"
+    done </run/S15data.sgdisk.out
+    return 1
 }
 
 provision_sd_data_part() {
@@ -148,6 +182,10 @@ provision_sd_data_part() {
     fi
     if ! command -v mkfs.exfat >/dev/null 2>&1; then
         log "cannot provision SD data partition: mkfs.exfat is not installed"
+        return 1
+    fi
+    if ! repair_gpt_backup_header "$disk"; then
+        log "cannot provision SD data partition on $disk: GPT backup-header repair failed"
         return 1
     fi
 

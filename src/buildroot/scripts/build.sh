@@ -17,12 +17,14 @@ case "$DEFCONFIG_BASENAME" in
     *pi5*)
         TARGET_BOARD="pi5"
         KERNEL_HEADERS_LINE="BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_6=y"
+        KERNEL_CONFIG_FRAGMENT="linux-pi5.config"
         POST_BUILD_SCRIPT="post-build-pi5.sh"
         GENIMAGE_CFG="genimage-pi5.cfg"
         ;;
     *)
         TARGET_BOARD="rock2f"
         KERNEL_HEADERS_LINE="BR2_KERNEL_HEADERS_6_1=y"
+        KERNEL_CONFIG_FRAGMENT="linux.config"
         POST_BUILD_SCRIPT="post-build.sh"
         GENIMAGE_CFG="genimage.cfg"
         ;;
@@ -276,6 +278,7 @@ run_build_attempt() {
     $SSH \
         DEFCONFIG_BASENAME="$DEFCONFIG_BASENAME" \
         TARGET_BOARD="$TARGET_BOARD" \
+        KERNEL_CONFIG_FRAGMENT="$KERNEL_CONFIG_FRAGMENT" \
         GENIMAGE_CFG="$GENIMAGE_CFG" \
         BUILD_JOBS="$BUILD_JOBS" \
         FORCE_KERNEL_CLEAN="$attempt_force_kernel_clean" \
@@ -288,6 +291,7 @@ set -euo pipefail
 
 DEFCONFIG_BASENAME="${DEFCONFIG_BASENAME:-equip1_defconfig}"
 TARGET_BOARD="${TARGET_BOARD:-rock2f}"
+KERNEL_CONFIG_FRAGMENT="${KERNEL_CONFIG_FRAGMENT:-linux.config}"
 GENIMAGE_CFG="${GENIMAGE_CFG:-genimage.cfg}"
 BUILD_JOBS="${BUILD_JOBS:-4}"
 FORCE_KERNEL_CLEAN="${FORCE_KERNEL_CLEAN:-0}"
@@ -334,12 +338,11 @@ fi
 
 # Copy configs into buildroot source tree
 cp ~/staging/"$DEFCONFIG_BASENAME" ~/buildroot/configs/
+cp ~/staging/"$KERNEL_CONFIG_FRAGMENT" ~/buildroot/
 if [ "$TARGET_BOARD" = "pi5" ]; then
-    cp ~/staging/linux-pi5.config ~/buildroot/
     cp ~/staging/config_5_pisugar.txt ~/buildroot/
     cp ~/staging/cmdline_5.txt ~/buildroot/
 else
-    cp ~/staging/linux.config ~/buildroot/
     if [ -f ~/staging/u-boot.config ]; then
         cp ~/staging/u-boot.config ~/buildroot/
     fi
@@ -350,6 +353,19 @@ chmod +x ~/buildroot/post-build.sh
 
 cd ~/buildroot
 
+BOARD_STAMP="output/.equip1-target-board"
+if [ -d output ]; then
+    if [ ! -f "$BOARD_STAMP" ]; then
+        echo "==> Buildroot output tree is unmarked; cleaning once to avoid cross-board leftovers."
+        rm -rf output .config
+    elif [ "$(cat "$BOARD_STAMP" 2>/dev/null || true)" != "$TARGET_BOARD" ]; then
+        echo "==> Buildroot output tree was built for $(cat "$BOARD_STAMP" 2>/dev/null || echo unknown); cleaning for $TARGET_BOARD."
+        rm -rf output .config
+    fi
+fi
+mkdir -p output
+printf '%s\n' "$TARGET_BOARD" > "$BOARD_STAMP"
+
 # br2-external tree providing the vendored DV capture packages (dvgrab + libs).
 export BR2_EXTERNAL="$HOME/external"
 
@@ -358,7 +374,7 @@ echo "==> Loading defconfig..."
 make BR2_EXTERNAL="$BR2_EXTERNAL" "$DEFCONFIG_BASENAME"
 # Patch paths to use absolute VM paths
 sed -i "s|^BR2_ROOTFS_OVERLAY=.*|BR2_ROOTFS_OVERLAY=\"$HOME/overlay\"|" .config
-sed -i "s|^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=.*|BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=\"$HOME/buildroot/linux.config\"|" .config
+sed -i "s|^BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=.*|BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=\"$HOME/buildroot/$KERNEL_CONFIG_FRAGMENT\"|" .config
 sed -i "s|^BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES=.*|BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES=\"$HOME/buildroot/u-boot.config\"|" .config
 sed -i "s|RKBIN_PATH|$HOME/rkbin|g" .config
 sed -i "s|^BR2_ROOTFS_POST_BUILD_SCRIPT=.*|BR2_ROOTFS_POST_BUILD_SCRIPT=\"$HOME/buildroot/post-build.sh\"|" .config
@@ -421,6 +437,12 @@ else
     echo "ERROR: BR2_PACKAGE_CA_CERTIFICATES is not enabled after olddefconfig"
     exit 1
 fi
+if grep -q '^BR2_PACKAGE_GPTFDISK_SGDISK=y$' .config; then
+    echo "==> Config verified: sgdisk enabled for SD-card GPT repair"
+else
+    echo "ERROR: BR2_PACKAGE_GPTFDISK_SGDISK is not enabled after olddefconfig"
+    exit 1
+fi
 if grep -q '^BR2_PACKAGE_FFMPEG_SWSCALE=y$' .config; then
     echo "==> Config verified: ffmpeg swscale enabled"
 else
@@ -467,6 +489,12 @@ if grep -q '^BR2_PACKAGE_FFMPEG_GPL=y$' .config \
     echo "==> ffmpeg was built without GPL filters but config now enables them; forcing rebuild."
     FORCE_FFMPEG_CLEAN=1
 fi
+if grep -q '^BR2_PACKAGE_GPTFDISK_SGDISK=y$' .config \
+    && [ -d output/build/gptfdisk-1.0.10 ] \
+    && [ ! -x output/target/usr/sbin/sgdisk ]; then
+    echo "==> gptfdisk was built without sgdisk but config now enables it; forcing rebuild."
+    make gptfdisk-dirclean 2>/dev/null || true
+fi
 if [ "$FORCE_FFMPEG_CLEAN" = "1" ]; then
     echo "==> Cleaning ffmpeg build so required features are rebuilt..."
     make ffmpeg-dirclean 2>/dev/null || true
@@ -509,6 +537,12 @@ done
 
 echo "==> Building..."
 make -j"$BUILD_JOBS"
+
+if grep -q '^BR2_PACKAGE_GPTFDISK_SGDISK=y$' .config \
+    && [ ! -x output/target/usr/sbin/sgdisk ]; then
+    echo "ERROR: /usr/sbin/sgdisk is missing from target despite BR2_PACKAGE_GPTFDISK_SGDISK=y"
+    exit 1
+fi
 
 echo "==> Build complete."
 ls -lh output/images/
