@@ -23,15 +23,21 @@ Community Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
 
 ## Getting started
 
-### 1. Get or build an image
+### 1. Download and flash a release image
 
-Equip-1 is Buildroot-first. The image contains the recorder daemon, OLED/buttons UI, static web dashboard, Wi-Fi AP, storage handling, and HDMI preview service.
+The recommended way to get started is to use a prebuilt Equip-1 image from GitHub Releases.
 
-Prebuilt images are attached to GitHub releases:
+1. Open the releases page:
 
-<https://github.com/computerequipmentgroup/equip-1/releases>
+   <https://github.com/computerequipmentgroup/equip-1/releases>
 
-Download the image for your hardware, decompress it if needed, and flash it to a microSD card. To build from source instead:
+2. Download the latest image for your hardware; Equip-1 uses the Rock 2F image.
+3. balenaEtcher can usually flash compressed images directly; if it does not accept the file, decompress it first so you have a `.img` file.
+4. Install and open [balenaEtcher](https://etcher.balena.io/).
+5. In Etcher, choose the Equip-1 image, choose your microSD card, then click **Flash**.
+6. When flashing is complete, eject the card, insert it into Equip-1, and power the device over USB-C.
+
+To build and flash an image from source instead:
 
 ```bash
 ./src/buildroot/scripts/build.sh
