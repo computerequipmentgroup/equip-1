@@ -27,15 +27,11 @@ Community Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
 
 The recommended way to get started is to use a prebuilt Equip-1 image from GitHub Releases.
 
-1. Open the releases page:
-
-   <https://github.com/computerequipmentgroup/equip-1/releases>
-
+1. Open the releases page: <https://github.com/computerequipmentgroup/equip-1/releases>
 2. Download the latest image for your hardware; Equip-1 uses the Rock 2F image.
-3. balenaEtcher can usually flash compressed images directly; if it does not accept the file, decompress it first so you have a `.img` file.
-4. Install and open [balenaEtcher](https://etcher.balena.io/).
-5. In Etcher, choose the Equip-1 image, choose your microSD card, then click **Flash**.
-6. When flashing is complete, eject the card, insert it into Equip-1, and power the device over USB-C.
+3. Install and open [balenaEtcher](https://etcher.balena.io/).
+4. In Etcher, choose the Equip-1 image, choose your microSD card, then click **Flash**.
+5. When flashing is complete, eject the card, insert it into Equip-1, and power the device over USB-C.
 
 To build and flash an image from source instead:
 
