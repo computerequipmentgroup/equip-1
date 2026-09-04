@@ -19,7 +19,7 @@ Community Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
 - Full-quality `.mov`, `.dv`, `.avi`, or native HDV `.m2t` recordings.
 - On-demand or automatic MP4 conversions for easy previewing and sharing.
 - Optional MP4 deinterlacing for cleaner playback from interlaced DV sources.
-- USB/SD capture storage handling with HDMI preview support.
+- USB/SD capture storage handling, in-app updates, and HDMI preview support.
 
 ## Getting started
 
