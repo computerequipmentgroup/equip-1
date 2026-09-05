@@ -9,7 +9,7 @@ The project is for camera enthusiasts, videographers, film schools, archivists, 
 The [Firehat](https://github.com/computerequipmentgroup/firehat) is also available standalone. It works as a HAT for the ROCK 2F, Raspberry Pi 5, and other SBCs.
 
 Website: <https://www.equip-1.c-e.group/>  
-Community Discord: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
+Community: [discord.gg/wpXmcb5mvK](https://discord.gg/wpXmcb5mvK)
 
 ## Features
 
