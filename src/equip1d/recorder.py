@@ -86,8 +86,13 @@ class RecordingTracker:
         return self.state
 
     def poll(self) -> int | None:
-        # Surfaces an unexpected loss of the recording (e.g. dvgrab died or a
-        # disk write failed) the same way the old dvgrab-exit poll did.
+        # Surfaces an unexpected loss of the recording (e.g. dvgrab died, a disk
+        # write failed, or no bytes are reaching the sink while the timer is
+        # running) the same way the old dvgrab-exit poll did.
+        if self._intent:
+            health_error = self.source.recording_health_error()
+            if health_error and not self.source.recording_error:
+                self.source.recording_error = health_error
         if self._intent and self.source.recording_error:
             self.source.stop_recording()
             self._intent = False

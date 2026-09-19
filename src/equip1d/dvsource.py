@@ -120,6 +120,23 @@ class DvSource:
         self._rec_path: Path | None = None
         self._rec_maxsize = int(os.environ.get("EQUIP1_DV_RECORD_QUEUE", "2048"))
         self._rec_dropped = 0
+        # A recording is not healthy just because the UI intent is active. These
+        # watchdogs verify that live stream bytes actually reach the writer soon
+        # after start and continue flowing while the timer is running.
+        self._recording_first_bytes_timeout = float(
+            os.environ.get("EQUIP1_RECORDING_FIRST_BYTES_TIMEOUT", "5.0")
+        )
+        self._recording_stall_timeout = float(
+            os.environ.get("EQUIP1_RECORDING_STALL_TIMEOUT", "8.0")
+        )
+        self._rec_stats_lock = threading.Lock()
+        self._rec_started_at: float | None = None
+        self._rec_bytes_queued = 0
+        self._rec_bytes_written = 0
+        self._rec_bytes_on_disk = 0
+        self._rec_last_chunk_at: float | None = None
+        self._rec_last_write_at: float | None = None
+        self._rec_last_disk_progress_at: float | None = None
         self.recording_error: str | None = None
 
         self._date_scanner = DvRecordingDateScanner()
@@ -333,6 +350,9 @@ class DvSource:
                     # dvgrab's buffers absorb it instead of creating silent gaps in
                     # the capture file.
                     rec.put(chunk)
+                    with self._rec_stats_lock:
+                        self._rec_bytes_queued += len(chunk)
+                        self._rec_last_chunk_at = time.monotonic()
                 if self._subscribers:
                     loop.call_soon_threadsafe(self._fanout, chunk)
         finally:
@@ -488,6 +508,15 @@ class DvSource:
             raise RuntimeError("Already recording")
         self.recording_error = None
         self._rec_dropped = 0
+        now = time.monotonic()
+        with self._rec_stats_lock:
+            self._rec_started_at = now
+            self._rec_bytes_queued = 0
+            self._rec_bytes_written = 0
+            self._rec_bytes_on_disk = 0
+            self._rec_last_chunk_at = None
+            self._rec_last_write_at = None
+            self._rec_last_disk_progress_at = None
         self._rec_path = path
         self._rec_proc = None
         self._rec_handle = self._open_recording_sink(path, ffmpeg_bin)
@@ -532,6 +561,65 @@ class DvSource:
         self._rec_proc = proc
         return proc.stdin
 
+    def recording_stats(self) -> dict[str, float | int | None]:
+        with self._rec_stats_lock:
+            return {
+                "started_at_monotonic": self._rec_started_at,
+                "bytes_queued": self._rec_bytes_queued,
+                "bytes_written": self._rec_bytes_written,
+                "bytes_on_disk": self._rec_bytes_on_disk,
+                "last_chunk_at_monotonic": self._rec_last_chunk_at,
+                "last_write_at_monotonic": self._rec_last_write_at,
+                "last_disk_progress_at_monotonic": self._rec_last_disk_progress_at,
+            }
+
+    def _refresh_recording_disk_progress(self, now: float) -> None:
+        path = self._rec_path
+        if path is None:
+            return
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        with self._rec_stats_lock:
+            if size > self._rec_bytes_on_disk:
+                self._rec_bytes_on_disk = size
+                self._rec_last_disk_progress_at = now
+
+    def recording_health_error(self) -> str | None:
+        if not self.recording:
+            return self.recording_error
+        if self.recording_error:
+            return self.recording_error
+        proc = self._rec_proc
+        if proc is not None:
+            return_code = proc.poll()
+            if return_code is not None:
+                return f"ffmpeg recording muxer exited with status {return_code}"
+        now = time.monotonic()
+        self._refresh_recording_disk_progress(now)
+        stats = self.recording_stats()
+        started_at = stats["started_at_monotonic"]
+        bytes_written = int(stats["bytes_written"] or 0)
+        bytes_on_disk = int(stats["bytes_on_disk"] or 0)
+        last_write_at = stats["last_write_at_monotonic"]
+        last_disk_progress_at = stats["last_disk_progress_at_monotonic"]
+        if started_at is not None:
+            age = now - float(started_at)
+            if bytes_written <= 0 and age >= self._recording_first_bytes_timeout:
+                return f"No DV/HDV bytes reached the recording writer for {age:.1f}s"
+            if bytes_on_disk <= 0 and age >= self._recording_first_bytes_timeout:
+                return f"Recording file did not grow for {age:.1f}s"
+        if bytes_written > 0 and last_write_at is not None:
+            idle = now - float(last_write_at)
+            if idle >= self._recording_stall_timeout:
+                return f"Recording writer stalled for {idle:.1f}s"
+        if bytes_on_disk > 0 and last_disk_progress_at is not None:
+            idle = now - float(last_disk_progress_at)
+            if idle >= self._recording_stall_timeout:
+                return f"Recording file stopped growing for {idle:.1f}s"
+        return None
+
     def stop_recording(self) -> None:
         rec_queue = self._rec_queue
         self._rec_queue = None
@@ -560,7 +648,7 @@ class DvSource:
             except subprocess.TimeoutExpired:
                 proc.kill()
                 return_code = proc.wait(timeout=5.0)
-            if return_code != 0:
+            if return_code != 0 and not self.recording_error:
                 self.recording_error = f"ffmpeg recording muxer exited with status {return_code}"
         if self._rec_dropped:
             self._log(f"recording dropped {self._rec_dropped} chunk(s) under disk stall", always=True)
@@ -573,6 +661,9 @@ class DvSource:
                 return
             try:
                 handle.write(item)
+                with self._rec_stats_lock:
+                    self._rec_bytes_written += len(item)
+                    self._rec_last_write_at = time.monotonic()
             except OSError as exc:
                 self.recording_error = f"recording write failed: {exc}"
                 return

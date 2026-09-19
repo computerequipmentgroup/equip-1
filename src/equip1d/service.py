@@ -1193,7 +1193,8 @@ class Equip1Daemon:
             pid = self.recorder.state.pid
             rc = self.recorder.poll()
             if rc is not None:
-                self.error = ErrorState(message="Recording stopped", detail=f"dvgrab exited with status {rc} (pid {pid})")
+                detail = self.dv.recording_error or f"recording exited with status {rc} (pid {pid})"
+                self.error = ErrorState(message="Recording failed", detail=detail)
 
     async def _auto_switch_storage_if_needed(self, state: dict[str, Any]) -> bool:
         if not self.auto_storage_switch or self._storage_switch_lock.locked():

@@ -13,7 +13,7 @@ Current design:
 3. A dedicated OS thread drains the stdout pipe with blocking reads and classifies the first bytes as `dv` or `hdv`.
 4. Recording is toggled by opening or closing a file sink on the already-flowing bytes.
 5. Preview subscribers receive copies through bounded queues.
-6. If the camera disappears or `dvgrab` exits unexpectedly while recording, the recorder reports an error state.
+6. If the camera disappears, `dvgrab` exits unexpectedly, the muxer/writer fails, no bytes reach the recording writer, or the output file stops growing while the timer is running, the recorder reports an error state.
 
 ## Recording path
 
@@ -67,6 +67,8 @@ Some camcorders emit DV DIF blocks that are playable but rejected by parts of `f
 | `EQUIP1_DV_PIPE_BYTES` | `1048576` | Target kernel pipe size between `dvgrab` and reader |
 | `EQUIP1_DV_FORMAT_PROBE_BYTES` | `4096` | Accumulated bytes to sniff before defaulting an unrecognized stream to DV |
 | `EQUIP1_DV_RECORD_QUEUE` | `2048` | Recording writer queue length |
+| `EQUIP1_RECORDING_FIRST_BYTES_TIMEOUT` | `5.0` | Seconds after record start before failing if no bytes reach the writer or output file |
+| `EQUIP1_RECORDING_STALL_TIMEOUT` | `8.0` | Seconds before failing if an active recording stops writing bytes or growing on disk |
 | `EQUIP1_DV_PREVIEW_QUEUE` | `32` | Preview subscriber queue length |
 | `EQUIP1_PREVIEW_FPS` | `25` | Idle browser preview FPS |
 | `EQUIP1_PREVIEW_SIZE` | `720:540` | Idle browser preview size |
