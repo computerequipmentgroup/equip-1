@@ -199,7 +199,11 @@ stage_pisugar_manager() {
     tar -xzf "$tmp/pisugar.tar.gz" -C "$tmp"
     local src="$tmp/aarch64-unknown-linux-musl"
 
-    mkdir -p "$OVERLAY_DIR/usr/bin" "$OVERLAY_DIR/etc/pisugar-server" "$OVERLAY_DIR/etc/default"
+    mkdir -p \
+        "$OVERLAY_DIR/usr/bin" \
+        "$OVERLAY_DIR/etc/pisugar-server" \
+        "$OVERLAY_DIR/etc/default" \
+        "$OVERLAY_DIR/usr/share/pisugar-server/web"
     cp "$src/pisugar-server" "$OVERLAY_DIR/usr/bin/pisugar-server"
     chmod 0755 "$OVERLAY_DIR/usr/bin/pisugar-server"
     cp "$src/pisugar-server-conf/config.json" "$OVERLAY_DIR/etc/pisugar-server/config.json"
