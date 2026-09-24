@@ -325,6 +325,7 @@ fi
 # aarch64 CPython 3.12; install matching wheels even when the builder host is
 # x86_64, otherwise native extensions such as pydantic-core/Pillow are unusable
 # on the device.
+PYTHON_DEPS_REINSTALLED=0
 if [ -f ~/overlay/opt/equip1/requirements.txt ]; then
     PYTHON_DEPS_PLATFORM="${PYTHON_DEPS_PLATFORM:-manylinux2014_aarch64}"
     PYTHON_DEPS_IMPLEMENTATION="${PYTHON_DEPS_IMPLEMENTATION:-cp}"
@@ -348,10 +349,16 @@ if [ -f ~/overlay/opt/equip1/requirements.txt ]; then
             --only-binary=:all: \
             -r ~/overlay/opt/equip1/requirements.txt
         echo "$REQUIREMENTS_KEY" > "$REQUIREMENTS_STAMP"
+        PYTHON_DEPS_REINSTALLED=1
         echo "==> Python deps installed for $PYTHON_DEPS_PLATFORM / $PYTHON_DEPS_ABI."
     else
         echo "==> Python deps unchanged; reusing cached overlay libs."
     fi
+fi
+
+if [ "$PYTHON_DEPS_REINSTALLED" = "1" ] && [ -d ~/buildroot/output/target/opt/equip1 ]; then
+    rm -rf ~/buildroot/output/target/opt/equip1/lib ~/buildroot/output/target/opt/equip1/.requirements.sha256
+    echo "==> Removed stale Python deps from existing Buildroot target."
 fi
 
 # Copy configs into buildroot source tree
