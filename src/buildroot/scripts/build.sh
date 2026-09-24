@@ -321,20 +321,34 @@ if [ "$TARGET_BOARD" = "rock2f" ]; then
     echo "==> DTS overlays compiled."
 fi
 
-# Install Python dependencies into overlay
+# Install Python dependencies into overlay. The Buildroot target runs
+# aarch64 CPython 3.12; install matching wheels even when the builder host is
+# x86_64, otherwise native extensions such as pydantic-core/Pillow are unusable
+# on the device.
 if [ -f ~/overlay/opt/equip1/requirements.txt ]; then
+    PYTHON_DEPS_PLATFORM="${PYTHON_DEPS_PLATFORM:-manylinux2014_aarch64}"
+    PYTHON_DEPS_IMPLEMENTATION="${PYTHON_DEPS_IMPLEMENTATION:-cp}"
+    PYTHON_DEPS_VERSION="${PYTHON_DEPS_VERSION:-3.12}"
+    PYTHON_DEPS_ABI="${PYTHON_DEPS_ABI:-cp312}"
     REQUIREMENTS_HASH="$(hash_file ~/overlay/opt/equip1/requirements.txt)"
+    REQUIREMENTS_KEY="${REQUIREMENTS_HASH} ${PYTHON_DEPS_PLATFORM} ${PYTHON_DEPS_IMPLEMENTATION} ${PYTHON_DEPS_VERSION} ${PYTHON_DEPS_ABI}"
     REQUIREMENTS_STAMP=~/overlay/opt/equip1/.requirements.sha256
     if [ "$FORCE_PYTHON_DEPS" = "1" ] \
         || [ ! -d ~/overlay/opt/equip1/lib ] \
         || [ ! -f "$REQUIREMENTS_STAMP" ] \
-        || [ "$(cat "$REQUIREMENTS_STAMP" 2>/dev/null)" != "$REQUIREMENTS_HASH" ]; then
+        || [ "$(cat "$REQUIREMENTS_STAMP" 2>/dev/null)" != "$REQUIREMENTS_KEY" ]; then
+        rm -rf /tmp/equip1-venv ~/overlay/opt/equip1/lib
         python3 -m venv /tmp/equip1-venv
         /tmp/equip1-venv/bin/pip install --upgrade \
             --target ~/overlay/opt/equip1/lib \
+            --platform "$PYTHON_DEPS_PLATFORM" \
+            --implementation "$PYTHON_DEPS_IMPLEMENTATION" \
+            --python-version "$PYTHON_DEPS_VERSION" \
+            --abi "$PYTHON_DEPS_ABI" \
+            --only-binary=:all: \
             -r ~/overlay/opt/equip1/requirements.txt
-        echo "$REQUIREMENTS_HASH" > "$REQUIREMENTS_STAMP"
-        echo "==> Python deps installed."
+        echo "$REQUIREMENTS_KEY" > "$REQUIREMENTS_STAMP"
+        echo "==> Python deps installed for $PYTHON_DEPS_PLATFORM / $PYTHON_DEPS_ABI."
     else
         echo "==> Python deps unchanged; reusing cached overlay libs."
     fi
