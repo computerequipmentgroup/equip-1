@@ -67,6 +67,7 @@ src/buildroot/overlay/opt/equip1/equip1d/
 src/buildroot/overlay/opt/equip1/uis/
 src/buildroot/overlay/opt/equip1/fonts/
 src/buildroot/overlay/opt/equip1/requirements.txt
+src/buildroot/overlay/opt/equip1/version.json
 
 # PiSugar power-manager payload staged from upstream release tarball
 src/buildroot/overlay/etc/default/pisugar-server

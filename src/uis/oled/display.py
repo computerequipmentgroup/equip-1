@@ -124,16 +124,30 @@ def render_oled_image(
 class OledDisplay:
     def __init__(self, board: BoardConfig):
         from luma.core.interface.serial import i2c
-        from luma.oled.device import sh1106
+        from luma.oled import device as oled_device
 
+        self.reset_gpio = self._init_reset_gpio(board)
         serial = i2c(port=board.i2c_port, address=board.oled_address)
-        self.device = sh1106(serial)
+        device_cls = getattr(oled_device, board.oled_driver)
+        self.device = device_cls(serial)
         self.width = self.device.width
         self.height = self.device.height
         self.fonts = OledFontSet()
         self.font_small = self.fonts.font_small
         self.font_medium = self.fonts.font_medium
         self.font_big = self.fonts.font_big
+
+    def _init_reset_gpio(self, board: BoardConfig):
+        if board.oled_reset is None:
+            return None
+        from periphery import GPIO
+
+        gpio = GPIO(board.gpiochip, board.oled_reset, "out")
+        gpio.write(False)
+        time.sleep(0.01)
+        gpio.write(True)
+        time.sleep(0.10)
+        return gpio
 
     def clear(self) -> None:
         from PIL import Image

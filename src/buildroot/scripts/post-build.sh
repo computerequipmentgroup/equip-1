@@ -51,13 +51,11 @@ build_and_stage_aic8800() {
     local firmware_dest
     local cross_compile
 
-    kernel_dir="$(find "${BUILD_DIR}" -maxdepth 1 -type d -name 'linux-*' ! -name 'linux-headers-*' | head -1)"
+    kernel_dir="$(find "${BUILD_DIR}"/linux-* -maxdepth 3 -type f -path '*/include/config/auto.conf' 2>/dev/null \
+        | sed 's#/include/config/auto.conf$##' \
+        | head -1)"
     if [ -z "${kernel_dir}" ]; then
-        echo "ERROR: Could not find built kernel tree under ${BUILD_DIR}"
-        return 1
-    fi
-    if [ ! -f "${kernel_dir}/include/config/auto.conf" ]; then
-        echo "ERROR: Kernel tree ${kernel_dir} is missing include/config/auto.conf"
+        echo "ERROR: Could not find configured kernel tree under ${BUILD_DIR}"
         return 1
     fi
 

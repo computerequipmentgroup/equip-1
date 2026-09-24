@@ -32,7 +32,7 @@ BR2_TARGET_UBOOT_BOARD_DEFCONFIG="generic-rk3528"
 BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES="u-boot.config"
 BR2_TARGET_UBOOT_NEEDS_DTC=y
 BR2_TARGET_UBOOT_USE_BINMAN=y
-BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.21.elf ROCKCHIP_TPL=RKBIN_PATH/bin/rk35/rk3528_ddr_1056MHz_v1.13.bin"
+BR2_TARGET_UBOOT_CUSTOM_MAKEOPTS="BL31=RKBIN_PATH/bin/rk35/rk3528_bl31_v1.21.elf ROCKCHIP_TPL=RKBIN_PATH/bin/rk35/rk3528_ddr_1056MHz_v1.14.bin"
 # Filesystem — ~1GB system partition; recordings live on a separate exFAT
 # partition created from the rest of the SD on first boot (see S15data).
 BR2_TARGET_ROOTFS_EXT2=y

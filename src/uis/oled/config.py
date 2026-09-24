@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,8 @@ class BoardConfig:
     btn_select: int
     btn_down: int
     oled_address: int = 0x3C
+    oled_driver: str = "sh1106"
+    oled_reset: int | None = None
 
 
 BOARDS: dict[str, BoardConfig] = {
@@ -25,6 +27,8 @@ BOARDS: dict[str, BoardConfig] = {
         btn_up=15,
         btn_select=16,
         btn_down=22,
+        oled_driver="ssd1306",
+        oled_reset=6,
     ),
     "rpi": BoardConfig(
         name="rpi",
@@ -41,7 +45,18 @@ BOARDS: dict[str, BoardConfig] = {
 def get_board_config(name: str | None = None) -> BoardConfig:
     board = name or os.environ.get("EQUIP_1_BOARD_TYPE", "rock2f")
     try:
-        return BOARDS[board]
+        config = BOARDS[board]
     except KeyError as exc:
         valid = ", ".join(sorted(BOARDS))
         raise ValueError(f"Unknown board {board!r}. Expected one of: {valid}") from exc
+
+    oled_driver = os.environ.get("EQUIP1_OLED_DRIVER")
+    oled_reset = os.environ.get("EQUIP1_OLED_RESET_LINE")
+    if oled_driver or oled_reset is not None:
+        reset_line = None if oled_reset == "" else int(oled_reset) if oled_reset is not None else config.oled_reset
+        config = replace(
+            config,
+            oled_driver=oled_driver or config.oled_driver,
+            oled_reset=reset_line,
+        )
+    return config
