@@ -84,12 +84,14 @@ class Buzzer:
         self,
         board: BoardConfig,
         beep_seconds: float = DEFAULT_BUZZER_BEEP_SECONDS,
-        active_low: bool = True,
+        active_low: bool | None = None,
     ):
         from periphery import GPIO
 
         self.gpio = GPIO(board.gpiochip, board.buzzer, "out")
         self.beep_seconds = max(0.0, beep_seconds)
+        if active_low is None:
+            active_low = board.buzzer_active_low
         self.active_value = not active_low
         self.idle_value = active_low
         self._silence()

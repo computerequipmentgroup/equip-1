@@ -16,6 +16,7 @@ class BoardConfig:
     oled_address: int = 0x3C
     oled_driver: str = "sh1106"
     oled_reset: int | None = None
+    buzzer_active_low: bool = True
 
 
 BOARDS: dict[str, BoardConfig] = {
@@ -29,6 +30,7 @@ BOARDS: dict[str, BoardConfig] = {
         btn_down=22,
         oled_driver="ssd1306",
         oled_reset=6,
+        buzzer_active_low=False,
     ),
     "rpi": BoardConfig(
         name="rpi",
@@ -52,11 +54,16 @@ def get_board_config(name: str | None = None) -> BoardConfig:
 
     oled_driver = os.environ.get("EQUIP1_OLED_DRIVER")
     oled_reset = os.environ.get("EQUIP1_OLED_RESET_LINE")
-    if oled_driver or oled_reset is not None:
+    buzzer_active_low = os.environ.get("EQUIP1_BUZZER_ACTIVE_LOW")
+    if oled_driver or oled_reset is not None or buzzer_active_low is not None:
         reset_line = None if oled_reset == "" else int(oled_reset) if oled_reset is not None else config.oled_reset
+        active_low = config.buzzer_active_low
+        if buzzer_active_low is not None:
+            active_low = buzzer_active_low.strip().lower() in {"1", "true", "yes", "on"}
         config = replace(
             config,
             oled_driver=oled_driver or config.oled_driver,
             oled_reset=reset_line,
+            buzzer_active_low=active_low,
         )
     return config
