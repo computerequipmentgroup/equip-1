@@ -187,7 +187,8 @@ const mockState = (): Equip1State => ({
     auto_storage_switch: true,
     hdmi_preview_enabled: true,
     oled_rotate_180: false,
-    recording_format: defaultRecordingFormat
+    recording_format: defaultRecordingFormat,
+    timezone: 'Europe/Berlin'
   },
   error: null
 })

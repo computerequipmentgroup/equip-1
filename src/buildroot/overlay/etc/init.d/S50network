@@ -27,6 +27,11 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_NETWORK_BACKGROUND network startup_background 1
     equip1_ini_default EQUIP1_CLIENT_FALLBACK_AP network client_fallback_ap 1
     equip1_ini_default EQUIP1_SETTINGS_FILE paths settings_file /etc/equip1/equip-1.ini
+    equip1_ini_default EQUIP1_NTP_ENABLED time enabled 1
+    equip1_ini_default EQUIP1_NTP_SERVERS time servers "time.google.com,pool.ntp.org,time.cloudflare.com"
+    equip1_ini_default EQUIP1_NTP_TIMEOUT time timeout 3
+    equip1_ini_default EQUIP1_NTP_RETRIES time retries 3
+    equip1_ini_default EQUIP1_NTP_WRITE_RTC time write_rtc 1
     equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
     equip1_ini_default EQUIP_1_BOARD_TYPE ui board_type rock2f
 fi
@@ -45,6 +50,11 @@ AP_COUNTRY="${EQUIP1_AP_COUNTRY:-}"
 NETWORK_BACKGROUND="${EQUIP1_NETWORK_BACKGROUND:-1}"
 CLIENT_FALLBACK_AP="${EQUIP1_CLIENT_FALLBACK_AP:-1}"
 SETTINGS_FILE="${EQUIP1_SETTINGS_FILE:-/etc/equip1/equip-1.ini}"
+NTP_ENABLED="${EQUIP1_NTP_ENABLED:-1}"
+NTP_SERVERS="${EQUIP1_NTP_SERVERS:-time.google.com,pool.ntp.org,time.cloudflare.com}"
+NTP_TIMEOUT="${EQUIP1_NTP_TIMEOUT:-3}"
+NTP_RETRIES="${EQUIP1_NTP_RETRIES:-3}"
+NTP_WRITE_RTC="${EQUIP1_NTP_WRITE_RTC:-1}"
 BOARD_TYPE="$(printf '%s' "${EQUIP_1_BOARD_TYPE:-rock2f}" | tr 'A-Z' 'a-z')"
 LOG_LEVEL="$(printf '%s' "${EQUIP1_LOG_LEVEL:-info}" | tr 'A-Z' 'a-z')"
 if [ "$LOG_LEVEL" = "quiet" ]; then
@@ -240,6 +250,23 @@ wait_for_client_ip() {
     return 1
 }
 
+start_time_sync() {
+    case "$(printf '%s' "$NTP_ENABLED" | tr 'A-Z' 'a-z')" in
+        1|true|yes|on) ;;
+        *) log "NTP time sync disabled"; return 0 ;;
+    esac
+    if ! command -v equip1-sync-time >/dev/null 2>&1; then
+        log "equip1-sync-time missing; cannot sync time"
+        return 0
+    fi
+    log "Starting NTP time sync; will update DS1307 RTC after network time is valid"
+    EQUIP1_NTP_SERVERS="$NTP_SERVERS" \
+    EQUIP1_NTP_TIMEOUT="$NTP_TIMEOUT" \
+    EQUIP1_NTP_RETRIES="$NTP_RETRIES" \
+    EQUIP1_NTP_WRITE_RTC="$NTP_WRITE_RTC" \
+        /usr/sbin/equip1-sync-time >>"$LOGFILE" 2>&1 &
+}
+
 wpa_status() {
     if command -v wpa_cli >/dev/null 2>&1; then
         wpa_cli -i "$AP_IFACE" status >>"$LOGFILE" 2>&1 || true
@@ -296,6 +323,8 @@ start_client() {
             set_wifi_mode_ap
             start_ap
         fi
+    else
+        start_time_sync
     fi
 }
 

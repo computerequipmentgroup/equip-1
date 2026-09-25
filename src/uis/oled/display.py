@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -126,16 +127,21 @@ class OledDisplay:
         from luma.core.interface.serial import i2c
         from luma.oled import device as oled_device
 
-        self.reset_gpio = self._init_reset_gpio(board)
-        serial = i2c(port=board.i2c_port, address=board.oled_address)
-        device_cls = getattr(oled_device, board.oled_driver)
-        self.device = device_cls(serial)
-        self.width = self.device.width
-        self.height = self.device.height
-        self.fonts = OledFontSet()
-        self.font_small = self.fonts.font_small
-        self.font_medium = self.fonts.font_medium
-        self.font_big = self.fonts.font_big
+        self.reset_gpio = None
+        try:
+            self.reset_gpio = self._init_reset_gpio(board)
+            serial = i2c(port=board.i2c_port, address=board.oled_address)
+            device_cls = getattr(oled_device, board.oled_driver)
+            self.device = device_cls(serial)
+            self.width = self.device.width
+            self.height = self.device.height
+            self.fonts = OledFontSet()
+            self.font_small = self.fonts.font_small
+            self.font_medium = self.fonts.font_medium
+            self.font_big = self.fonts.font_big
+        except Exception:
+            self.close()
+            raise
 
     def _init_reset_gpio(self, board: BoardConfig):
         if board.oled_reset is None:
@@ -153,6 +159,11 @@ class OledDisplay:
         from PIL import Image
 
         self.device.display(Image.new("1", self.device.size))
+
+    def close(self) -> None:
+        if self.reset_gpio is not None:
+            self.reset_gpio.close()
+            self.reset_gpio = None
 
     def render(self, draw_func: DrawFunc, context: dict) -> None:
         started = time.perf_counter()
@@ -180,6 +191,28 @@ class ConsoleDisplay:
         log(f"OLED {state.get('mode', 'offline')} {state.get('recording', {}).get('elapsed_seconds', '')}", level="debug")
 
 
+def _oled_address_candidates(board: BoardConfig) -> list[int]:
+    configured = os.environ.get("EQUIP1_OLED_ADDRESSES", "").strip()
+    addresses: list[int] = []
+    if configured:
+        for item in configured.replace(";", ",").split(","):
+            item = item.strip()
+            if item:
+                addresses.append(int(item, 0))
+    else:
+        addresses.append(board.oled_address)
+        # SSD1306 modules commonly use either 0x3c or 0x3d depending on the
+        # address-select pin. Try both before giving up; the RTC at 0x68 is a
+        # separate I2C slave and does not conflict with either OLED address.
+        addresses.append(0x3D if board.oled_address == 0x3C else 0x3C)
+
+    deduped: list[int] = []
+    for address in addresses:
+        if address not in deduped:
+            deduped.append(address)
+    return deduped
+
+
 def make_display(board: BoardConfig):
     if os.environ.get("EQUIP1_OLED_MOCK") == "1":
         return ConsoleDisplay()
@@ -187,26 +220,34 @@ def make_display(board: BoardConfig):
     settle_delay = float(os.environ.get("EQUIP1_OLED_SETTLE_DELAY", "0"))
     attempts = int(os.environ.get("EQUIP1_OLED_INIT_ATTEMPTS", "120"))
     delay = float(os.environ.get("EQUIP1_OLED_INIT_DELAY", "1"))
+    addresses = _oled_address_candidates(board)
     if settle_delay > 0:
         log(f"Waiting {settle_delay:g}s before OLED init")
         time.sleep(settle_delay)
+    log(
+        "OLED init candidates: "
+        f"i2c-{board.i2c_port} addresses={','.join(f'0x{address:02x}' for address in addresses)} "
+        f"reset_line={board.oled_reset if board.oled_reset is not None else '<disabled>'}"
+    )
 
     last_error: OSError | None = None
     for attempt in range(1, attempts + 1):
-        try:
-            display = OledDisplay(board)
-            if attempt > 1:
-                log(f"OLED init succeeded on attempt {attempt}/{attempts}")
-            return display
-        except OSError as exc:
-            last_error = exc
-            log(
-                f"OLED init failed on i2c-{board.i2c_port} address 0x{board.oled_address:02x} "
-                f"(attempt {attempt}/{attempts}): {exc}",
-                level="warning",
-            )
-            if attempt < attempts:
-                time.sleep(delay)
+        for address in addresses:
+            candidate = replace(board, oled_address=address)
+            try:
+                display = OledDisplay(candidate)
+                if attempt > 1 or address != board.oled_address:
+                    log(f"OLED init succeeded on i2c-{board.i2c_port} address 0x{address:02x} attempt {attempt}/{attempts}")
+                return display
+            except OSError as exc:
+                last_error = exc
+                log(
+                    f"OLED init failed on i2c-{board.i2c_port} address 0x{address:02x} "
+                    f"(attempt {attempt}/{attempts}): {exc}",
+                    level="warning",
+                )
+        if attempt < attempts:
+            time.sleep(delay)
 
     assert last_error is not None
     raise last_error

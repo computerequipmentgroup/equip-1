@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Synchronize system time from NTP and persist it to the hardware RTC."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import struct
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+LOG_DIR = Path(os.environ.get("EQUIP1_LOG_DIR", "/var/log/equip1"))
+LOG_FILE = LOG_DIR / "time-sync.log"
+NTP_EPOCH_DELTA = 2_208_988_800
+MIN_VALID_UNIX = 1_577_836_800  # 2020-01-01T00:00:00Z
+
+
+def log(message: str) -> None:
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())} {message}"
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+    print(message, flush=True)
+
+
+def query_ntp(server: str, timeout: float) -> float:
+    packet = bytearray(48)
+    packet[0] = 0x1B  # LI=0, VN=3, Mode=3 client
+    started = time.monotonic()
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.settimeout(timeout)
+        sock.sendto(packet, (server, 123))
+        data, _ = sock.recvfrom(48)
+    elapsed = time.monotonic() - started
+    if len(data) < 48:
+        raise RuntimeError(f"short NTP response: {len(data)} bytes")
+    seconds, fraction = struct.unpack("!II", data[40:48])
+    unix_time = seconds - NTP_EPOCH_DELTA + fraction / 2**32
+    if unix_time < MIN_VALID_UNIX:
+        raise RuntimeError(f"invalid NTP time: {unix_time}")
+    log(f"NTP response from {server} in {elapsed:.3f}s: {datetime.fromtimestamp(unix_time, timezone.utc).isoformat()}")
+    return unix_time
+
+
+def set_system_time(unix_time: float) -> None:
+    stamp = datetime.fromtimestamp(unix_time, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    subprocess.run(["date", "-u", "-s", stamp], check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    log(f"system clock set to {stamp} UTC")
+
+
+def write_rtc() -> None:
+    if not Path("/dev/rtc0").exists() and not Path("/dev/rtc").exists():
+        log("RTC device missing; skipping hwclock write")
+        return
+    result = subprocess.run(["hwclock", "-w", "-u"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"hwclock -w failed ({result.returncode}): {result.stdout.strip()}")
+    log("hardware RTC updated from system clock")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--servers", default=os.environ.get("EQUIP1_NTP_SERVERS", "time.google.com,pool.ntp.org,time.cloudflare.com"))
+    parser.add_argument("--timeout", type=float, default=float(os.environ.get("EQUIP1_NTP_TIMEOUT", "3")))
+    parser.add_argument("--retries", type=int, default=int(os.environ.get("EQUIP1_NTP_RETRIES", "3")))
+    parser.add_argument("--no-rtc", action="store_true", help="Set only the system clock, not the hardware RTC")
+    args = parser.parse_args()
+
+    servers = [item.strip() for item in args.servers.replace(";", ",").split(",") if item.strip()]
+    if not servers:
+        log("no NTP servers configured")
+        return 2
+
+    last_error: Exception | None = None
+    for attempt in range(1, max(1, args.retries) + 1):
+        for server in servers:
+            try:
+                log(f"time sync attempt {attempt}/{args.retries} via {server}")
+                unix_time = query_ntp(server, args.timeout)
+                set_system_time(unix_time)
+                if not args.no_rtc and os.environ.get("EQUIP1_NTP_WRITE_RTC", "1").lower() not in {"0", "false", "no", "off"}:
+                    write_rtc()
+                return 0
+            except Exception as exc:  # noqa: BLE001 - log every failure and try next server.
+                last_error = exc
+                log(f"time sync failed via {server}: {exc}")
+        if attempt < args.retries:
+            time.sleep(2)
+
+    log(f"time sync failed after {args.retries} attempts: {last_error}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

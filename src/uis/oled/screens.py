@@ -4,6 +4,8 @@ import random
 import time
 from typing import Any
 
+from equip1d.timezone import TIMEZONE_OPTIONS, local_datetime, timezone_label
+
 from .formatting import bytes_gb, hhmmss, percent
 from .leds import Rgb
 
@@ -186,6 +188,21 @@ class RecordingScreen(Screen):
             _center(draw, width, CONTENT_Y + 30, "transfer mode", font_medium)
         else:
             _center(draw, width, CONTENT_Y, "00:00:00", font_big)
+
+
+class TimeScreen(Screen):
+    title = "TIME"
+
+    def render(self, draw, width: int, height: int, context: dict) -> None:
+        font_medium = _font(context, "font_medium")
+        font_big = _font(context, "font_big")
+        settings = (context.get("state") or {}).get("settings") or {}
+        timezone_name = settings.get("timezone")
+        now, abbreviation = local_datetime(timezone_name)
+        draw.text((0, HEADER_Y), "TIME", font=font_medium, fill=255)
+        _right(draw, width, HEADER_Y, abbreviation or timezone_label(timezone_name), font_medium, fill=255)
+        _center(draw, width, CONTENT_Y, now.strftime("%H:%M:%S"), font_big)
+        _center(draw, width, CONTENT_Y + 32, now.strftime("%Y-%m-%d"), font_medium)
 
 
 class StorageScreen(Screen):
@@ -441,7 +458,7 @@ class SettingsScreen(Screen):
     def __init__(self) -> None:
         self.controlling = False
         self.selected = 0
-        self.base_options = ["LEDs", "OLED flip", "FORMAT", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview"]
+        self.base_options = ["LEDs", "TZ", "OLED flip", "FORMAT", "MP4 export", "MP4 deint", "STORAGE auto", "HDMI preview"]
 
     def _wifi_client_mode(self, state: dict[str, Any]) -> bool:
         network = state.get("network") or {}
@@ -476,6 +493,8 @@ class SettingsScreen(Screen):
                 app.use_access_point_wifi()
         elif option == "LEDs":
             app.set_setting("/settings/lights", {"enabled": not bool(lights.get("enabled", True))})
+        elif option == "TZ":
+            app.set_setting("/settings/timezone", {"timezone": self._next_timezone(settings)})
         elif option == "OLED flip":
             app.set_setting("/settings/oled-rotation", {"rotate_180": not bool(settings.get("oled_rotate_180", False))})
         elif option == "FORMAT":
@@ -533,6 +552,14 @@ class SettingsScreen(Screen):
         value = str(settings.get("recording_format") or "mov").lower().lstrip(".")
         return value.upper() if value in {"dv", "mov", "avi"} else "MOV"
 
+    def _next_timezone(self, settings: dict[str, Any]) -> str:
+        current = str(settings.get("timezone") or "Europe/Berlin")
+        try:
+            idx = TIMEZONE_OPTIONS.index(current)
+        except ValueError:
+            idx = 0
+        return TIMEZONE_OPTIONS[(idx + 1) % len(TIMEZONE_OPTIONS)]
+
     def _next_recording_format(self, settings: dict[str, Any]) -> str:
         options = ("mov", "dv", "avi")
         current = str(settings.get("recording_format") or "mov").lower().lstrip(".")
@@ -554,6 +581,8 @@ class SettingsScreen(Screen):
             return f"AP mode [{ssid}]"
         if option == "LEDs":
             return f"LEDs [{self._on_off(lights.get('enabled'), True)}]"
+        if option == "TZ":
+            return f"TZ [{timezone_label(settings.get('timezone'))}]"
         if option == "OLED flip":
             return f"OLED flip [{'BL' if bool(settings.get('oled_rotate_180', False)) else 'BR'}]"
         if option == "FORMAT":

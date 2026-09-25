@@ -18,6 +18,7 @@ RECORDING_FORMAT_OPTIONS = ("dv", "mov", "avi")
 MP4_QUALITY_DEFAULT = "high"
 MP4_DEINTERLACE_DEFAULT = False
 MP4_QUALITY_OPTIONS = ("small", "balanced", "high", "max")
+TIMEZONE_DEFAULT = "Europe/Berlin"
 
 
 class Equip1Settings:
@@ -186,6 +187,16 @@ class Equip1Settings:
 
     def save_mp4_deinterlace(self, enabled: bool) -> None:
         self.save_value("recording", "mp4_deinterlace", _format_bool(enabled))
+
+    def load_timezone(self) -> str:
+        from .timezone import normalize_timezone
+
+        return normalize_timezone(self.get("time", "timezone", TIMEZONE_DEFAULT, env="EQUIP1_TIMEZONE"))
+
+    def save_timezone(self, timezone: str) -> None:
+        from .timezone import normalize_timezone
+
+        self.save_value("time", "timezone", normalize_timezone(timezone))
 
     def save_value(self, section: str, option: str, value: str) -> None:
         parser = self._read()

@@ -172,6 +172,14 @@ async def set_oled_rotation(payload: dict) -> dict:
     return await daemon.set_oled_rotate_180(payload.get("rotate_180", payload.get("enabled")))
 
 
+@app.post("/api/settings/timezone")
+async def set_timezone(payload: dict) -> dict:
+    try:
+        return await daemon.set_timezone(payload.get("timezone"))
+    except CommandError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/settings/lights")
 async def set_lights_settings(payload: dict) -> dict:
     if "enabled" in payload:

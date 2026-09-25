@@ -7,6 +7,7 @@ from pathlib import Path
 
 from equip1d.logging import log, perf_enabled
 from equip1d.settings import Equip1Settings, LIGHTS_BRIGHTNESS_DEFAULT
+from equip1d.timezone import apply_process_timezone
 
 from .api_client import Equip1ApiClient
 from .config import get_board_config
@@ -20,7 +21,7 @@ from .input import (
 )
 from .leds import STANDARD_LED_SCALE, STATUS_MOUNTING, STATUS_NO_CAMERA, STATUS_READY, STATUS_RECORDING, Rgb, make_boot_leds
 from .power import draw_battery_indicator
-from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, SettingsScreen, StorageScreen, UsbTransferScreen
+from .screens import BootScreen, GameScreen, NetworkScreen, RecordingScreen, SettingsScreen, StorageScreen, TimeScreen, UsbTransferScreen
 
 
 GAME_SCREEN_HOLD_SECONDS = 4.0
@@ -32,6 +33,7 @@ class OledApp:
         self.board = get_board_config()
         log(f"OLED board config: {self.board.name}")
         settings = Equip1Settings()
+        self.timezone = apply_process_timezone(settings.load_timezone())
         api_base = settings.get("ui", "api_base", "http://127.0.0.1/api", env="EQUIP1_API_BASE") or "http://127.0.0.1/api"
         api_timeout = settings.get_float("ui", "api_timeout", 5.0, env="EQUIP1_API_TIMEOUT")
         self.api = Equip1ApiClient(api_base, timeout=api_timeout)
@@ -55,7 +57,7 @@ class OledApp:
         self.buzzer = make_buzzer(self.board, beep_seconds=button_beep_ms / 1000.0)
         self.leds = make_boot_leds()
         log("OLED LEDs initialized")
-        self.screens = [RecordingScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), SettingsScreen()]
+        self.screens = [RecordingScreen(), TimeScreen(), NetworkScreen(), UsbTransferScreen(), StorageScreen(), SettingsScreen()]
         self.game_screen = GameScreen()
         self.game_screen_active = False
         self._game_unlock_started_at: float | None = None
@@ -133,10 +135,11 @@ class OledApp:
 
     def _show_network_url_qr(self) -> None:
         self.game_screen_active = False
-        self.current_screen_idx = 1
-        screen = self.screens[self.current_screen_idx]
-        if isinstance(screen, NetworkScreen):
-            screen.qr_mode = "url"
+        for idx, screen in enumerate(self.screens):
+            if isinstance(screen, NetworkScreen):
+                self.current_screen_idx = idx
+                screen.qr_mode = "url"
+                return
 
     def _consume_network_prompt_marker(self) -> None:
         try:
@@ -504,6 +507,9 @@ class OledApp:
             pass
         finally:
             self.display.clear()
+            display_close = getattr(self.display, "close", None)
+            if display_close is not None:
+                display_close()
             self.buttons.close()
             self.buzzer.close()
             self.leds.close()

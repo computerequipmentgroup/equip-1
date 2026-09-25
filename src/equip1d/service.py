@@ -34,6 +34,7 @@ from .preview import MjpegPreview
 from .power import PiSugarPowerMonitor
 from .recorder import RecordingTracker
 from .storage import NNEDI_WEIGHTS_DEFAULT, StorageManager
+from .timezone import TIMEZONE_OPTIONS, apply_process_timezone, normalize_timezone
 from .settings import (
     CAPTURE_FILENAME_PREFIX_DEFAULT,
     CAPTURE_FILENAME_TEMPLATE_DEFAULT,
@@ -239,6 +240,7 @@ class Equip1Daemon:
             "hdmi", "enabled", True, env="EQUIP1_HDMI_PREVIEW_ENABLED"
         )
         self.oled_rotate_180 = self.settings.get_bool("ui", "oled_rotate_180", False, env="EQUIP1_OLED_ROTATE_180")
+        self.timezone = apply_process_timezone(self.settings.load_timezone())
         self._conversion_active = False
         self._conversion_progress_percent = 0
         self._conversion_source: str | None = None
@@ -461,6 +463,17 @@ class Equip1Daemon:
         # the RTC if one exists (harmless no-op otherwise).
         subprocess.run(["date", "-u", "-s", stamp], check=False, timeout=10)
         subprocess.run(["hwclock", "-w"], check=False, timeout=10)
+
+    async def set_timezone(self, timezone_name: str | None) -> dict[str, Any]:
+        clean = normalize_timezone(timezone_name)
+        if timezone_name is not None and str(timezone_name).strip() and clean not in TIMEZONE_OPTIONS:
+            raise CommandError("Invalid timezone")
+        async with self._lock:
+            self.timezone = apply_process_timezone(clean)
+            await asyncio.to_thread(self.settings.save_timezone, self.timezone)
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        return state
 
     async def clear_error(self) -> dict[str, Any]:
         async with self._lock:
@@ -1422,6 +1435,7 @@ class Equip1Daemon:
                 hdmi_preview_enabled=self.hdmi_preview_enabled,
                 oled_rotate_180=self.oled_rotate_180,
                 recording_format=self.recording_format,
+                timezone=self.timezone,
             ),
             error=self.error,
         )

@@ -10,6 +10,21 @@
             status = "okay";
             pinctrl-names = "default";
             pinctrl-0 = <&i2c0m1_xfer>;
+
+            /* DS1307DTR RTC on the Equip-1 peripheral I2C bus. */
+            ds1307_rtc: rtc@68 {
+                compatible = "dallas,ds1307";
+                reg = <0x68>;
+            };
+        };
+    };
+
+    fragment@1 {
+        target-path = "/";
+        __overlay__ {
+            aliases {
+                rtc0 = &ds1307_rtc;
+            };
         };
     };
 };

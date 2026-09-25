@@ -13,6 +13,7 @@ from .settings import (
     MP4_DEINTERLACE_DEFAULT,
     MP4_QUALITY_DEFAULT,
     RECORDING_FORMAT_DEFAULT,
+    TIMEZONE_DEFAULT,
 )
 
 RecorderMode = Literal[
@@ -143,6 +144,7 @@ class SettingsState:
     hdmi_preview_enabled: bool = True
     oled_rotate_180: bool = False
     recording_format: str = RECORDING_FORMAT_DEFAULT
+    timezone: str = TIMEZONE_DEFAULT
 
 
 @dataclass

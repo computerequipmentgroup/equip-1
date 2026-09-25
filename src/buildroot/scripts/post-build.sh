@@ -95,7 +95,8 @@ merge_dt_overlays() {
     local dtb="${TARGET_DIR}/boot/rk3528-rock-2f.dtb"
     local overlay_dir="${TARGET_DIR}/boot/overlay-user"
     # Overlays to bake in (filenames in overlay-user, without path).
-    #   rk3528-i2c0-m1 : OLED bus (40-pin header pins 3/5)
+    #   rk3528-i2c0-m1 : peripheral I2C bus (40-pin header pins 3/5) with the
+    #                    DS1307DTR RTC at address 0x68.
     #   pcie-enable    : pcie_en regulator (GPIO1_A4) powering the Equip-1's VIA
     #                    VT6315N FireWire controller — without it PCIe never links.
     #   rk3528-pwm0-m0    : PWM0 on GPIO4_C3 for hardware-PWM buzzer drive.
@@ -127,6 +128,21 @@ merge_dt_overlays() {
         echo "==> DTB merge OK: i2c0 status=okay"
     else
         echo "ERROR: i2c0 not enabled after merge"
+        return 1
+    fi
+
+    # Sanity check: confirm the DS1307DTR RTC node landed on i2c0 and is aliased
+    # as rtc0 so the kernel's HCTOSYS path reads the battery-backed clock.
+    if fdtget "$dtb" /i2c@ffa50000/rtc@68 compatible 2>/dev/null | grep -q dallas,ds1307; then
+        echo "==> DTB merge OK: DS1307 RTC present at i2c0/0x68"
+    else
+        echo "ERROR: DS1307 RTC missing after merge"
+        return 1
+    fi
+    if fdtget "$dtb" /aliases rtc0 2>/dev/null | grep -q /rtc@68; then
+        echo "==> DTB merge OK: rtc0 alias points at DS1307"
+    else
+        echo "ERROR: rtc0 alias missing after merge"
         return 1
     fi
 

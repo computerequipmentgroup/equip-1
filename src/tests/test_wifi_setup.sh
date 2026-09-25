@@ -8,6 +8,7 @@ cd "$root"
 grep -q '@app.get("/api/network/wifi/scan")' src/equip1d/api.py || fail "daemon must expose Wi-Fi scan API"
 grep -q '@app.post("/api/network/wifi")' src/equip1d/api.py || fail "daemon must expose Wi-Fi setup API"
 grep -q '@app.post("/api/network/ap")' src/equip1d/api.py || fail "daemon must expose AP fallback API"
+grep -q '@app.post("/api/settings/timezone")' src/equip1d/api.py || fail "daemon must expose timezone settings API"
 grep -q 'class WifiManager' src/equip1d/wifi.py || fail "daemon must include Wi-Fi manager"
 grep -q 'ap-force' src/equip1d/wifi.py || fail "Wi-Fi scan should support AP-mode scan"
 grep -q 'env\["EQUIP1_WIFI_MODE"\] = wifi_mode' src/equip1d/wifi.py || fail "network restart must override stale daemon Wi-Fi mode env"
@@ -19,6 +20,9 @@ grep -q 'port = 80' src/buildroot/overlay/etc/equip1/equip-1.ini || fail "produc
 grep -q 'client_fallback_ap = true' src/buildroot/overlay/etc/equip1/equip-1.ini || fail "client Wi-Fi must fall back to AP by default"
 grep -q 'Falling back to Equip-1 AP mode' src/buildroot/overlay/etc/init.d/S50network || fail "network init must fall back to AP on client failure"
 grep -q 'ip addr flush dev "$AP_IFACE"' src/buildroot/overlay/etc/init.d/S50network || fail "client Wi-Fi startup must clear stale AP address"
+grep -q 'equip1-sync-time' src/buildroot/overlay/etc/init.d/S50network || fail "client Wi-Fi must trigger network time sync"
+grep -q 'hwclock.*-w' src/buildroot/overlay/usr/sbin/equip1-sync-time || fail "time sync must persist valid time to hardware RTC"
+grep -q 'timezone = Europe/Berlin' src/buildroot/overlay/etc/equip1/equip-1.ini || fail "default timezone must be configurable"
 grep -q 'EQUIP1_PORT network port 80' src/buildroot/overlay/etc/init.d/S60equip1d || fail "daemon init must default to HTTP port 80"
 grep -q 'http://$AP_IP/' src/buildroot/overlay/etc/init.d/S50network || fail "AP mode must report IP URL without a port"
 grep -q '_http_url(ap_ip, port)' src/equip1d/network.py || fail "AP network state must use IP URL"
@@ -46,18 +50,22 @@ grep -q 'showNativeMessage(message)' src/uis/web/pages/index.vue || fail "Wi-Fi 
 grep -q 'v-if="!wifiSwitchPending" class="actions two system-actions"' src/uis/web/pages/index.vue || fail "Join/update buttons must hide while Wi-Fi switch is pending"
 
 sh -n src/buildroot/overlay/etc/init.d/S50network
-grep -q 'current_screen_idx = 1' src/uis/oled/app.py || fail "OLED must jump to Network screen after Wi-Fi joins"
+grep -q 'isinstance(screen, NetworkScreen)' src/uis/oled/app.py || fail "OLED must locate Network screen by type after Wi-Fi joins"
+grep -q 'current_screen_idx = idx' src/uis/oled/app.py || fail "OLED must jump to the detected Network screen after Wi-Fi joins"
 grep -q 'qr_mode = "url"' src/uis/oled/app.py || fail "OLED must open Network screen directly in URL QR mode"
 grep -q 'use_access_point_wifi' src/uis/oled/app.py || fail "OLED app must expose AP mode switch action"
 grep -q 'options.insert(0, "AP mode")' src/uis/oled/screens.py || fail "OLED Settings must put AP mode first while in Wi-Fi mode"
 grep -q 'app.use_access_point_wifi()' src/uis/oled/screens.py || fail "OLED Settings AP mode option must call AP fallback API"
-PYTHONPATH=src python3 - <<'PY' || fail "OLED AP mode option must appear at top only in Wi-Fi/client mode"
+grep -q '"/settings/timezone"' src/uis/oled/screens.py || fail "OLED Settings must expose timezone setting"
+PYTHONPATH=src python3 - <<'PY' || fail "OLED AP mode option and timezone setting must be wired"
 from uis.oled.screens import SettingsScreen
 screen = SettingsScreen()
 client_state = {"network": {"mode": "client", "ssid": "Studio Wi-Fi"}}
 ap_state = {"network": {"mode": "access_point", "ssid": "Equip-1"}}
 assert screen._options(client_state)[0] == "AP mode"
 assert screen._options(ap_state)[0] == "LEDs"
+assert "TZ" in screen._options(ap_state)
+assert "Berlin" in screen._option_label({"settings": {"timezone": "Europe/Berlin"}}, "TZ")
 PY
 grep -q 'mode in {"access_point", "ap"}' src/uis/oled/screens.py || fail "OLED AP QR must only be available in AP mode"
 grep -q 'self.qr_mode == "wifi" and mode in {"access_point", "ap"}' src/uis/oled/screens.py || fail "OLED must not render stale AP QR outside AP mode"

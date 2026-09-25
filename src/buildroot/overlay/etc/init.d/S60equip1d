@@ -59,8 +59,10 @@ case "$1" in
             exit 0
         fi
         cd "$APPDIR" || exit 1
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) launching equip1d: host=$EQUIP1_HOST port=$EQUIP1_PORT capture_dir=$EQUIP1_CAPTURE_DIR" >>"$LOGFILE" 2>&1 || true
         /usr/bin/python3 -m equip1d.main >>"$LOGFILE" 2>&1 &
         echo $! > "$PIDFILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) equip1d pid=$(cat "$PIDFILE" 2>/dev/null)" >>"$LOGFILE" 2>&1 || true
         ;;
     stop)
         echo "Stopping equip1d..."

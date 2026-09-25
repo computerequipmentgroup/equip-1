@@ -63,6 +63,7 @@ BusyBox init runs scripts in lexical order:
 | Script | Responsibility |
 | --- | --- |
 | `S10loopback` | Bring up loopback networking |
+| Kernel RTC HCTOSYS | Restore system time from the DS1307DTR RTC exposed as `/dev/rtc0` before BusyBox init scripts run |
 | `S15data` | Prepare `/data` from USB-A storage or SD fallback |
 | `S20boot-debug` | Optional early debug breadcrumbs |
 | `S50network` | Start Wi-Fi AP, client mode, or disabled networking; reports IP URLs and falls back to AP if client Wi-Fi fails |
@@ -95,6 +96,17 @@ Useful device commands:
 tail -f /var/log/equip1/daemon.log
 tail -f /var/log/equip1/oled.log
 ```
+
+RTC verification on ROCK 2F images with the DS1307DTR installed:
+
+```sh
+ls -l /dev/rtc* /sys/class/rtc/
+cat /sys/class/rtc/rtc0/name
+cat /sys/class/rtc/rtc0/date /sys/class/rtc/rtc0/time
+hwclock -r 2>/dev/null || true
+```
+
+`rtc0/name` should identify the `ds1307` driver. On Wi-Fi client boots, `S50network` runs `/usr/sbin/equip1-sync-time` after DHCP succeeds; it obtains NTP time, sets the system clock, and writes the validated time into the DS1307 with `hwclock -w -u`. Check `/var/log/equip1/time-sync.log` and `/var/log/equip1/network.log` if the clock remains near 1970.
 
 ## Related docs
 

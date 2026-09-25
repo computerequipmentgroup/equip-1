@@ -15,6 +15,9 @@ if [ -r /etc/equip1/settings-env.sh ]; then
     equip1_ini_default EQUIP1_STATE_FETCH_INTERVAL ui state_fetch_interval 1.0
     equip1_ini_default EQUIP1_BOOT_DURATION_SECONDS ui boot_duration_seconds 1.0
     equip1_ini_default EQUIP1_BOOT_HOLD_SECONDS ui boot_hold_seconds 1.1
+    equip1_ini_default EQUIP1_OLED_ADDRESS ui oled_address 0x3c
+    equip1_ini_default EQUIP1_OLED_ADDRESSES ui oled_addresses "0x3c,0x3d"
+    equip1_ini_default EQUIP1_OLED_RESET_LINE ui oled_reset_line 6
     equip1_ini_default EQUIP1_OLED_FPS ui oled_fps 8
     equip1_ini_default EQUIP1_BUZZER_ACTIVE_LOW ui buzzer_active_low 0
     equip1_ini_default EQUIP1_LOG_LEVEL logging log_level info
@@ -28,6 +31,9 @@ export EQUIP1_STATE_FETCH_INTERVAL="${EQUIP1_STATE_FETCH_INTERVAL:-1.0}"
 export EQUIP1_FONT_DIR="${EQUIP1_FONT_DIR:-$APPDIR/fonts}"
 export EQUIP1_BOOT_DURATION_SECONDS="${EQUIP1_BOOT_DURATION_SECONDS:-1.0}"
 export EQUIP1_BOOT_HOLD_SECONDS="${EQUIP1_BOOT_HOLD_SECONDS:-1.1}"
+export EQUIP1_OLED_ADDRESS="${EQUIP1_OLED_ADDRESS:-0x3c}"
+export EQUIP1_OLED_ADDRESSES="${EQUIP1_OLED_ADDRESSES:-0x3c,0x3d}"
+export EQUIP1_OLED_RESET_LINE="${EQUIP1_OLED_RESET_LINE:-6}"
 export EQUIP1_OLED_FPS="${EQUIP1_OLED_FPS:-8}"
 export EQUIP1_BUZZER_ACTIVE_LOW="${EQUIP1_BUZZER_ACTIVE_LOW:-0}"
 export EQUIP1_LOG_LEVEL="${EQUIP1_LOG_LEVEL:-info}"
@@ -60,8 +66,10 @@ case "$1" in
             exit 0
         fi
         cd "$APPDIR" || exit 1
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) launching OLED UI: address=$EQUIP1_OLED_ADDRESS reset_line=${EQUIP1_OLED_RESET_LINE:-<disabled>} fps=$EQUIP1_OLED_FPS" >>"$LOGFILE" 2>&1 || true
         /usr/bin/python3 -m uis.oled >>"$LOGFILE" 2>&1 &
         echo $! > "$PIDFILE"
+        echo "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null) OLED UI pid=$(cat "$PIDFILE" 2>/dev/null)" >>"$LOGFILE" 2>&1 || true
         ;;
     stop)
         echo "Stopping equip1 OLED UI..."

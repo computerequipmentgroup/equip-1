@@ -28,6 +28,7 @@ BOARDS: dict[str, BoardConfig] = {
         btn_up=15,
         btn_select=16,
         btn_down=22,
+        oled_address=0x3C,
         oled_driver="ssd1306",
         oled_reset=6,
         buzzer_active_low=False,
@@ -52,16 +53,19 @@ def get_board_config(name: str | None = None) -> BoardConfig:
         valid = ", ".join(sorted(BOARDS))
         raise ValueError(f"Unknown board {board!r}. Expected one of: {valid}") from exc
 
+    oled_address = os.environ.get("EQUIP1_OLED_ADDRESS")
     oled_driver = os.environ.get("EQUIP1_OLED_DRIVER")
     oled_reset = os.environ.get("EQUIP1_OLED_RESET_LINE")
     buzzer_active_low = os.environ.get("EQUIP1_BUZZER_ACTIVE_LOW")
-    if oled_driver or oled_reset is not None or buzzer_active_low is not None:
+    if oled_address or oled_driver or oled_reset is not None or buzzer_active_low is not None:
+        address = int(oled_address, 0) if oled_address else config.oled_address
         reset_line = None if oled_reset == "" else int(oled_reset) if oled_reset is not None else config.oled_reset
         active_low = config.buzzer_active_low
         if buzzer_active_low is not None:
             active_low = buzzer_active_low.strip().lower() in {"1", "true", "yes", "on"}
         config = replace(
             config,
+            oled_address=address,
             oled_driver=oled_driver or config.oled_driver,
             oled_reset=reset_line,
             buzzer_active_low=active_low,
