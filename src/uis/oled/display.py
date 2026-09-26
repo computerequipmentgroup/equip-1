@@ -123,29 +123,93 @@ def render_oled_image(
 
 class OledDisplay:
     def __init__(self, board: BoardConfig):
-        from luma.core.interface.serial import i2c
-        from luma.oled.device import sh1106
-
-        serial = i2c(port=board.i2c_port, address=board.oled_address)
-        self.device = sh1106(serial)
-        self.width = self.device.width
-        self.height = self.device.height
+        self.board = board
+        self.device = None
+        self.width = 128
+        self.height = 64
         self.fonts = OledFontSet()
         self.font_small = self.fonts.font_small
         self.font_medium = self.fonts.font_medium
         self.font_big = self.fonts.font_big
+        self._failure_count = 0
+        self._next_i2c_attempt_at = 0.0
+        self._recover_base_delay = float(os.environ.get("EQUIP1_OLED_RECOVER_BASE_DELAY", "1.0"))
+        self._recover_max_delay = float(os.environ.get("EQUIP1_OLED_RECOVER_MAX_DELAY", "15.0"))
+        self._open()
+
+    def _open(self) -> None:
+        from luma.core.interface.serial import i2c
+        from luma.oled.device import sh1106
+
+        serial = i2c(port=self.board.i2c_port, address=self.board.oled_address)
+        self.device = sh1106(serial)
+        self.width = self.device.width
+        self.height = self.device.height
+        self._failure_count = 0
+        self._next_i2c_attempt_at = 0.0
+
+    def _schedule_recovery_backoff(self) -> float:
+        self._failure_count += 1
+        delay = min(self._recover_max_delay, self._recover_base_delay * (2 ** min(self._failure_count - 1, 6)))
+        self._next_i2c_attempt_at = time.monotonic() + delay
+        return delay
+
+    def _recover(self, exc: Exception) -> bool:
+        now = time.monotonic()
+        if now < self._next_i2c_attempt_at:
+            return False
+        self.device = None
+        log(
+            f"OLED I2C transaction failed on i2c-{self.board.i2c_port} "
+            f"address 0x{self.board.oled_address:02x}; attempting display reinit: {exc}",
+            level="warning",
+        )
+        try:
+            self._open()
+            log("OLED display reinitialized after I2C error", level="warning")
+            return True
+        except Exception as reinit_exc:
+            delay = self._schedule_recovery_backoff()
+            log(f"OLED display reinit failed: {reinit_exc}; backing off {delay:g}s", level="warning")
+            return False
 
     def clear(self) -> None:
         from PIL import Image
 
-        self.device.display(Image.new("1", self.device.size))
+        if self.device is None:
+            return
+        try:
+            self.device.display(Image.new("1", self.device.size))
+        except Exception as exc:
+            self._recover(exc)
 
     def render(self, draw_func: DrawFunc, context: dict) -> None:
+        if time.monotonic() < self._next_i2c_attempt_at:
+            return
+        if self.device is None:
+            try:
+                self._open()
+                log("OLED display reinitialized after backoff", level="warning")
+            except Exception as exc:
+                delay = self._schedule_recovery_backoff()
+                log(f"OLED display reinit after backoff failed: {exc}; backing off {delay:g}s", level="warning")
+                return
         started = time.perf_counter()
         img = render_oled_image(draw_func, context, self.width, self.height, self.fonts)
         _perf_log("oled.render_image", started)
         started = time.perf_counter()
-        self.device.display(img)
+        try:
+            self.device.display(img)
+        except Exception as exc:
+            if not self._recover(exc) or self.device is None:
+                return
+            try:
+                self.device.display(img)
+            except Exception as retry_exc:
+                delay = self._schedule_recovery_backoff()
+                self.device = None
+                log(f"OLED render skipped after retry failed: {retry_exc}; backing off {delay:g}s", level="warning")
+                return
         _perf_log("oled.flush", started)
 
 

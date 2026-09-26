@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import perf
+from .logging import log
 from .service import CommandError, Equip1Daemon
 from .sysinfo import get_system_stats
 from .updater import AppUpdater, UpdateError
@@ -427,8 +428,12 @@ async def events(websocket: WebSocket) -> None:
 def _mount_static_web() -> None:
     default_web_dir = Path(__file__).resolve().parents[1] / "uis" / "web" / ".output" / "public"
     web_dir = Path(os.environ.get("EQUIP1_WEB_DIR", str(default_web_dir)))
-    if web_dir.exists():
+    index = web_dir / "index.html"
+    if index.exists():
         app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+        log(f"Web UI mounted from {web_dir}")
+    else:
+        log(f"Web UI not mounted; missing {index}", level="warning")
 
 
 _mount_static_web()

@@ -14,11 +14,24 @@ rm -rf "${TARGET_DIR}/lib/firmware/aic8800_fw"
 # Select the Raspberry Pi GPIO/I2C mapping at runtime. The same source tree also
 # supports ROCK 2F, so this image flips only the generated target settings.
 if [ -f "${TARGET_DIR}/etc/equip1/equip-1.ini" ]; then
-    if grep -q '^board_type[[:space:]]*=' "${TARGET_DIR}/etc/equip1/equip-1.ini"; then
-        sed -i 's/^board_type[[:space:]]*=.*/board_type = rpi/' "${TARGET_DIR}/etc/equip1/equip-1.ini"
-    elif grep -q '^\[ui\]' "${TARGET_DIR}/etc/equip1/equip-1.ini"; then
-        sed -i '/^\[ui\]/a board_type = rpi' "${TARGET_DIR}/etc/equip1/equip-1.ini"
-    fi
+    set_ini_key() {
+        local key="$1"
+        local value="$2"
+        if grep -q "^${key}[[:space:]]*=" "${TARGET_DIR}/etc/equip1/equip-1.ini"; then
+            sed -i "s/^${key}[[:space:]]*=.*/${key} = ${value}/" "${TARGET_DIR}/etc/equip1/equip-1.ini"
+        elif grep -q '^\[ui\]' "${TARGET_DIR}/etc/equip1/equip-1.ini"; then
+            sed -i "/^\[ui\]/a ${key} = ${value}" "${TARGET_DIR}/etc/equip1/equip-1.ini"
+        fi
+    }
+
+    set_ini_key board_type rpi
+    # The Pi 5/PiSugar stack brings up PiSugar RTC/battery I2C and the OLED on
+    # the same bus. Give PiSugar time to settle and run the OLED at a lower
+    # cadence on this recovery image to avoid hammering a marginal bus.
+    set_ini_key oled_fps 2
+    set_ini_key oled_settle_delay 15
+    set_ini_key oled_recover_base_delay 2.0
+    set_ini_key oled_recover_max_delay 20.0
 fi
 
 # The Pi 5 image carries the PiSugar server binary in the overlay. Make startup

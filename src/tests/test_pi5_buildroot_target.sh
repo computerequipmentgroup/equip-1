@@ -30,6 +30,27 @@ grep -q 'modprobe brcmfmac' "$network_script" || fail "Pi network init should us
 grep -q 'aic_load_fw.ko' "$pi_post" || fail "Pi post-build must delete stale AIC load module"
 grep -q 'aic8800_fdrv.ko' "$pi_post" || fail "Pi post-build must delete stale AIC WLAN module"
 grep -q 'lib/firmware/aic8800_fw' "$pi_post" || fail "Pi post-build must delete stale AIC firmware"
+grep -q 'set_ini_key board_type rpi' "$pi_post" || fail "Pi post-build must set rpi board type"
+grep -q 'set_ini_key oled_fps 2' "$pi_post" || fail "Pi post-build must lower OLED FPS for shared I2C bus"
+grep -q 'set_ini_key oled_settle_delay 15' "$pi_post" || fail "Pi post-build must delay OLED startup for PiSugar I2C settle"
+grep -q 'set_ini_key oled_recover_max_delay 20.0' "$pi_post" || fail "Pi post-build must back off OLED I2C recovery on Pi 5"
+
+# Pi 5 images use BusyBox modprobe, so kernel modules must be plain .ko files;
+# compressed .ko.xz modules produced the observed invalid-ELF/rfkill boot error.
+grep -q '^CONFIG_MODULE_COMPRESS_NONE=y$' src/buildroot/configs/linux-pi5.config || fail "Pi kernel modules must be uncompressed"
+grep -q 'compressed kernel modules' "$build_script" || fail "build must reject compressed Pi kernel modules"
+grep -q "name '\*.ko.xz'" "$build_script" || fail "build must scan for .ko.xz modules"
+
+# PiSugar/OLED need /dev/i2c-1 on header pins 3/5; keep the compatible dtparam
+# and verify the generated Pi boot config before publishing an image. Pi 5 header
+# I2C is on the RP1 DesignWare controller, not only the older BCM controller.
+grep -q '^dtparam=pciex1$' src/buildroot/configs/config_5_pisugar.txt || fail "Pi boot config must enable external PCIe"
+grep -q '^dtparam=pciex1_gen=1$' src/buildroot/configs/config_5_pisugar.txt || fail "Pi test image must force external PCIe Gen 1 for signal-margin diagnosis"
+grep -q '^dtparam=i2c_arm=on$' src/buildroot/configs/config_5_pisugar.txt || fail "Pi boot config must enable header I2C"
+grep -q '^dtoverlay=i2c1-pi5' src/buildroot/configs/config_5_pisugar.txt || fail "Pi boot config should pin Pi 5 I2C1 overlay"
+grep -q '^CONFIG_I2C_DESIGNWARE_PLATFORM=y$' src/buildroot/configs/linux-pi5.config || fail "Pi kernel must enable RP1 DesignWare I2C"
+grep -q 'dtparam=i2c_arm=on' "$build_script" || fail "build must verify Pi I2C boot config"
+grep -q 'CONFIG_I2C_DESIGNWARE_PLATFORM' "$build_script" || fail "build must verify Pi DesignWare I2C"
 
 bash -n "$build_script"
 bash -n "$pi_post"

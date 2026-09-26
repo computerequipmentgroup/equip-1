@@ -461,6 +461,15 @@ else
     echo "ERROR: BR2_PACKAGE_FFMPEG_GPL is not enabled after olddefconfig"
     exit 1
 fi
+if [ "$TARGET_BOARD" = "pi5" ]; then
+    if grep -q '^CONFIG_I2C_DESIGNWARE_PLATFORM=y$' output/build/linux-custom/.config 2>/dev/null \
+        || grep -q '^CONFIG_I2C_DESIGNWARE_PLATFORM=y$' "$HOME/buildroot/$KERNEL_CONFIG_FRAGMENT"; then
+        echo "==> Config verified: Pi 5 RP1 DesignWare I2C enabled"
+    else
+        echo "ERROR: CONFIG_I2C_DESIGNWARE_PLATFORM is required for Pi 5 header I2C"
+        exit 1
+    fi
+fi
 if [ "$FORCE_PYTHON_CLEAN" = "1" ]; then
     echo "==> Cleaning Python build so SSL/zlib extensions are rebuilt..."
     make python3-dirclean 2>/dev/null || true
@@ -498,6 +507,11 @@ fi
 if [ "$FORCE_FFMPEG_CLEAN" = "1" ]; then
     echo "==> Cleaning ffmpeg build so required features are rebuilt..."
     make ffmpeg-dirclean 2>/dev/null || true
+fi
+
+if [ "$TARGET_BOARD" = "pi5" ]; then
+    echo "==> Cleaning rpi-firmware so Pi boot config changes are restaged..."
+    make rpi-firmware-dirclean 2>/dev/null || true
 fi
 
 if [ "$FORCE_KERNEL_CLEAN" = "1" ]; then
@@ -542,6 +556,51 @@ if grep -q '^BR2_PACKAGE_GPTFDISK_SGDISK=y$' .config \
     && [ ! -x output/target/usr/sbin/sgdisk ]; then
     echo "ERROR: /usr/sbin/sgdisk is missing from target despite BR2_PACKAGE_GPTFDISK_SGDISK=y"
     exit 1
+fi
+
+if [ "$TARGET_BOARD" = "pi5" ]; then
+    if ! grep -q '^CONFIG_I2C_DESIGNWARE_PLATFORM=y$' output/build/linux-custom/.config; then
+        echo "ERROR: built Pi 5 kernel is missing CONFIG_I2C_DESIGNWARE_PLATFORM=y for RP1 header I2C"
+        exit 1
+    fi
+
+    COMPRESSED_MODULES="$(find output/target/lib/modules -type f \( -name '*.ko.xz' -o -name '*.ko.gz' -o -name '*.ko.zst' \) -print 2>/dev/null | head -20 || true)"
+    if [ -n "$COMPRESSED_MODULES" ]; then
+        echo "ERROR: Pi 5 target contains compressed kernel modules, which BusyBox modprobe cannot load reliably:"
+        printf '%s\n' "$COMPRESSED_MODULES"
+        echo "Set CONFIG_MODULE_COMPRESS_NONE=y in linux-pi5.config and force a kernel clean rebuild."
+        exit 1
+    fi
+
+    STALE_AIC_MODULES="$(find output/target/lib/modules -type f \( -name 'aic_load_fw.ko*' -o -name 'aic8800_fdrv.ko*' \) -print 2>/dev/null | head -20 || true)"
+    if [ -n "$STALE_AIC_MODULES" ]; then
+        echo "ERROR: Pi 5 target still contains Rock 2F AIC8800 Wi-Fi modules:"
+        printf '%s\n' "$STALE_AIC_MODULES"
+        exit 1
+    fi
+
+    PI_BOOT_CONFIG=output/images/rpi-firmware/config.txt
+    if [ ! -f "$PI_BOOT_CONFIG" ]; then
+        echo "ERROR: Pi 5 boot config missing from $PI_BOOT_CONFIG"
+        exit 1
+    fi
+    if ! grep -q '^dtparam=pciex1$' "$PI_BOOT_CONFIG"; then
+        echo "ERROR: Pi 5 boot config does not enable external PCIe with dtparam=pciex1"
+        exit 1
+    fi
+    if ! grep -q '^dtparam=pciex1_gen=1$' "$PI_BOOT_CONFIG"; then
+        echo "ERROR: Pi 5 diagnostic image must force external PCIe Gen 1 with dtparam=pciex1_gen=1"
+        exit 1
+    fi
+    if ! grep -q '^dtparam=i2c_arm=on$' "$PI_BOOT_CONFIG"; then
+        echo "ERROR: Pi 5 boot config does not enable header I2C with dtparam=i2c_arm=on"
+        exit 1
+    fi
+    if grep -q '^dtoverlay=i2c1-pi5' "$PI_BOOT_CONFIG" \
+        && [ ! -f output/images/rpi-firmware/overlays/i2c1-pi5.dtbo ]; then
+        echo "ERROR: Pi 5 boot config references dtoverlay=i2c1-pi5 but i2c1-pi5.dtbo is missing"
+        exit 1
+    fi
 fi
 
 echo "==> Build complete."

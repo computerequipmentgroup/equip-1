@@ -81,6 +81,29 @@ except Exception as exc:
 PY
 }
 
+capture_web_ui_probe() {
+    section "equip1 Web UI probe"
+    python3 - <<'PY' >>"$LOG" 2>&1 || true
+import time
+import urllib.request
+
+for url in ("http://127.0.0.1/", "http://10.42.0.1/"):
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "equip1-late-debug/1"})
+        with urllib.request.urlopen(req, timeout=8.0) as response:
+            body = response.read(4096).decode("utf-8", errors="replace")
+            status = response.status
+            ctype = response.headers.get("content-type")
+        elapsed = time.monotonic() - started
+        print(f"{url} status={status} content_type={ctype!r} elapsed={elapsed:.3f}s bytes_sample={len(body)}")
+        print(f"contains_dashboard_title={'Equip-1' in body}")
+    except Exception as exc:
+        elapsed = time.monotonic() - started
+        print(f"{url} failed elapsed={elapsed:.3f}s error={exc!r}")
+PY
+}
+
 capture_wifi_details() {
     section "wifi details"
     if [ -e /sys/class/net/wlan0 ]; then
@@ -134,6 +157,8 @@ run_capture() {
     capture_wifi_details
     capture_cmd ip addr
     capture_cmd ip route
+    capture_cmd ip neigh
+    [ -f /var/lib/misc/dnsmasq.leases ] && capture_cmd cat /var/lib/misc/dnsmasq.leases
 
     section "device nodes"
     ls -l /dev/fw* /dev/i2c* /dev/gpiochip* /dev/spidev* /dev/input* >>"$LOG" 2>&1 || true
@@ -158,6 +183,7 @@ run_capture() {
     append_file /var/log/equip1/network.log
     append_file /var/log/equip1/usb-storage.log
     capture_api_state
+    capture_web_ui_probe
     append_file /var/log/equip1/hdmi-preview.log
     append_file /var/log/equip1/boot-debug.log
 

@@ -27,7 +27,7 @@ Important files:
 | `leds.py` | RGB LED SPI backend, boot marquee, status colors |
 | `designer.py` | Browser-based OLED screen designer |
 
-The OLED app polls `/api/state` at `ui.state_fetch_interval` and keeps a fallback offline state if the daemon is unreachable. If `state.power.available` is true, it also overlays a centered PiSugar battery percentage/icon in the header; otherwise the header is unchanged. When `ui.oled_rotate_180` is enabled, the app rotates the framebuffer and flips the up/down button mapping so navigation still follows the visible screen orientation.
+The OLED app polls `/api/state` at `ui.state_fetch_interval` and keeps a fallback offline state if the daemon is unreachable. While recording, it extrapolates the elapsed timer locally between state polls so a slow or missed poll does not make the visible timestamp skip seconds. If `state.power.available` is true, it also overlays a centered PiSugar battery percentage/icon in the header; otherwise the header is unchanged. When `ui.oled_rotate_180` is enabled, the app rotates the framebuffer and flips the up/down button mapping so navigation still follows the visible screen orientation. OLED startup and recovery can be slowed with `ui.oled_settle_delay`, `ui.oled_recover_base_delay`, and `ui.oled_recover_max_delay`; the Pi 5/PiSugar image sets a longer settle delay and lower OLED FPS because PiSugar and OLED share the header I2C bus.
 
 ### OLED screens
 
@@ -108,7 +108,10 @@ Common settings live in `/etc/equip1/equip-1.ini` under `[ui]`, with environment
 | `state_fetch_interval` | `EQUIP1_STATE_FETCH_INTERVAL` | `1.0` |
 | `boot_duration_seconds` | `EQUIP1_BOOT_DURATION_SECONDS` | `3.0` |
 | `boot_hold_seconds` | `EQUIP1_BOOT_HOLD_SECONDS` | `1.1` |
-| `oled_fps` | `EQUIP1_OLED_FPS` | `8` |
+| `oled_fps` | `EQUIP1_OLED_FPS` | `8` (`2` in Pi 5/PiSugar image) |
+| `oled_settle_delay` | `EQUIP1_OLED_SETTLE_DELAY` | `0` (`15` in Pi 5/PiSugar image) |
+| `oled_recover_base_delay` | `EQUIP1_OLED_RECOVER_BASE_DELAY` | `1.0` (`2.0` in Pi 5/PiSugar image) |
+| `oled_recover_max_delay` | `EQUIP1_OLED_RECOVER_MAX_DELAY` | `15.0` (`20.0` in Pi 5/PiSugar image) |
 | `oled_rotate_180` | `EQUIP1_OLED_ROTATE_180` | `false` |
 | `recording_format` (`[recording]`) | `EQUIP1_RECORDING_FORMAT` | `mov` |
 | `pisugar_enabled` (`[power]`) | `EQUIP1_PISUGAR_ENABLED` | `true` |

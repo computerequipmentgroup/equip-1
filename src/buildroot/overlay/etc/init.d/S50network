@@ -191,6 +191,9 @@ start_ap() {
         --address="/equip-1/$AP_IP" \
         --address="/equip-1.local/$AP_IP" \
         --address="/equip1.local/$AP_IP" \
+        --dhcp-authoritative \
+        --log-dhcp \
+        --log-queries=extra \
         --pid-file="$DNSMASQ_PID" \
         --log-facility="$DNSMASQ_LOG" >>"$LOGFILE" 2>&1 || {
             log "dnsmasq failed; see $DNSMASQ_LOG"

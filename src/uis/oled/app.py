@@ -77,6 +77,8 @@ class OledApp:
         self._pending_command: str | None = None
         self._state_fetch_thread: threading.Thread | None = None
         self._stop_recording_requested_at: float | None = None
+        self._recording_elapsed_base_seconds = 0
+        self._recording_elapsed_base_at: float | None = None
         self._last_network_mode: str | None = None
         self._last_network_ip: str | None = None
         self._network_prompt_marker = Path(os.environ.get("EQUIP1_OLED_NETWORK_PROMPT", "/tmp/equip1-oled-network-url-qr"))
@@ -120,8 +122,16 @@ class OledApp:
         if state.get("mode") == "recording":
             self.game_screen_active = False
             self.current_screen_idx = 0
+            recording = state.get("recording") or {}
+            try:
+                self._recording_elapsed_base_seconds = int(recording.get("elapsed_seconds") or 0)
+            except (TypeError, ValueError):
+                self._recording_elapsed_base_seconds = 0
+            self._recording_elapsed_base_at = time.monotonic()
         else:
             self._stop_recording_requested_at = None
+            self._recording_elapsed_base_seconds = 0
+            self._recording_elapsed_base_at = None
         if (
             previous_network_mode is not None
             and previous_network_mode in {"access_point", "ap", "offline"}
@@ -444,6 +454,29 @@ class OledApp:
                 return self._dim_led(STATUS_READY)
         return None
 
+    def _state_for_render(self, fallback_state: dict) -> dict:
+        state = self.state or fallback_state
+        if state.get("mode") != "recording" or self._recording_elapsed_base_at is None:
+            return state
+        recording = state.get("recording")
+        if not isinstance(recording, dict):
+            return state
+        estimated_elapsed = self._recording_elapsed_base_seconds + int(
+            time.monotonic() - self._recording_elapsed_base_at
+        )
+        try:
+            state_elapsed = int(recording.get("elapsed_seconds") or 0)
+        except (TypeError, ValueError):
+            state_elapsed = 0
+        estimated_elapsed = max(state_elapsed, estimated_elapsed)
+        if estimated_elapsed == state_elapsed:
+            return state
+        render_state = dict(state)
+        render_recording = dict(recording)
+        render_recording["elapsed_seconds"] = estimated_elapsed
+        render_state["recording"] = render_recording
+        return render_state
+
     def render(self) -> None:
         started = time.monotonic()
         boot_elapsed = time.monotonic() - self.boot_started_at
@@ -473,7 +506,7 @@ class OledApp:
             if not self.is_booting:
                 draw_battery_indicator(draw, width, height, context)
 
-        state = self.state or fallback_state
+        state = self._state_for_render(fallback_state)
         oled_rotate_180 = self._oled_rotate_180_enabled()
         self.display.render(
             render_screen,

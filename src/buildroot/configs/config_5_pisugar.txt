@@ -3,13 +3,16 @@
 kernel=Image
 disable_overscan=1
 
-# Firehat on Raspberry Pi 5 uses the PCIe FFC path. Gen 2 is the Pi 5 default
-# and is more conservative than forcing uncertified Gen 3 operation.
+# Firehat on Raspberry Pi 5 uses the external PCIe FFC path. The OLED-settle
+# logs still showed that host at link-down, so this diagnostic image forces Gen
+# 1 to maximize signal margin while users validate cable/orientation/power.
 dtparam=pciex1
+dtparam=pciex1_gen=1
 
 # PiSugar 3 Plus uses I2C on header pins 3/5 (GPIO2/GPIO3), with devices at
-# 0x57 and 0x68. On Pi 5 the explicit i2c1-pi5 overlay is more reliable than
-# the older dtparam=i2c_arm=on spelling.
+# 0x57 and 0x68. Keep the standard i2c_arm dtparam as a firmware-compatible
+# baseline, then pin the Pi 5 header I2C bus explicitly when the overlay exists.
+dtparam=i2c_arm=on
 dtoverlay=i2c1-pi5,pins_2_3,baudrate=100000
 
 # RGB LEDs use SPI0 MOSI on header pin 19 when present.
