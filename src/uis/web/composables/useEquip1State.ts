@@ -488,6 +488,22 @@ export const useEquip1State = () => {
     return state.value
   }
 
+  const setManualTime = async (payload: { date: string, time: string }) => {
+    const clean = {
+      date: String(payload.date || '').slice(0, 10),
+      time: String(payload.time || '').slice(0, 5)
+    }
+    if (mock.value) {
+      if (!state.value) state.value = mockState()
+      return state.value
+    }
+    state.value = await timedFetch<Equip1State>('time.manual', `${apiBase}/time/manual`, {
+      method: 'POST',
+      body: clean
+    })
+    return state.value
+  }
+
   // The device has no clock; hand it the browser's time so captures are stamped
   // with a real date. Best-effort — the daemon only applies it when its own
   // clock is still unset.
@@ -539,7 +555,7 @@ export const useEquip1State = () => {
     }
   }
 
-  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setRecordingFormat, setConversionSettings, setOledRotate180, setCaptureNaming, connectEvents, syncTime, mock }
+  return { state, connected, error, refresh, command, setLightColors, setLightsEnabled, setLightsBrightness, setRecordingFormat, setConversionSettings, setOledRotate180, setCaptureNaming, setManualTime, connectEvents, syncTime, mock }
 }
 
 export const useEquip1System = () => {

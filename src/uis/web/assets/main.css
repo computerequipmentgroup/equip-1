@@ -839,6 +839,12 @@ button:disabled {
   gap: 0.75rem;
   margin-top: 0.85rem;
 }
+.manual-time-fields {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr);
+  margin-top: 0.55rem;
+}
 .system-notification {
   margin-bottom: 0.8rem;
 }

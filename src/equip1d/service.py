@@ -34,7 +34,7 @@ from .preview import MjpegPreview
 from .power import PiSugarPowerMonitor
 from .recorder import RecordingTracker
 from .storage import NNEDI_WEIGHTS_DEFAULT, StorageManager
-from .timezone import TIMEZONE_OPTIONS, apply_process_timezone, normalize_timezone
+from .timezone import TIMEZONE_OPTIONS, apply_process_timezone, local_epoch_seconds, normalize_timezone
 from .settings import (
     CAPTURE_FILENAME_PREFIX_DEFAULT,
     CAPTURE_FILENAME_TEMPLATE_DEFAULT,
@@ -463,6 +463,39 @@ class Equip1Daemon:
         # the RTC if one exists (harmless no-op otherwise).
         subprocess.run(["date", "-u", "-s", stamp], check=False, timeout=10)
         subprocess.run(["hwclock", "-w"], check=False, timeout=10)
+
+    async def set_manual_time(self, payload: dict[str, Any]) -> dict[str, Any]:
+        manual_time = self._parse_manual_time_payload(payload)
+        epoch_seconds = local_epoch_seconds(self.timezone, manual_time)
+        try:
+            await asyncio.to_thread(self._apply_system_time, epoch_seconds)
+        except Exception as exc:
+            raise CommandError(f"Could not set time: {exc}") from exc
+        async with self._lock:
+            state = self._snapshot_unlocked().to_dict()
+        await self.events.publish({"type": "state", "state": state})
+        return state
+
+    @staticmethod
+    def _parse_manual_time_payload(payload: dict[str, Any]) -> datetime:
+        if not isinstance(payload, dict):
+            raise CommandError("Invalid time payload")
+        date_value = str(payload.get("date") or "").strip()
+        time_value = str(payload.get("time") or "").strip()
+        if not date_value or not time_value:
+            local_value = str(payload.get("local") or "").strip()
+            if "T" in local_value:
+                date_value, time_value = local_value.split("T", 1)
+            elif " " in local_value:
+                date_value, time_value = local_value.split(" ", 1)
+        time_value = time_value[:5]
+        try:
+            parsed = datetime.strptime(f"{date_value} {time_value}", "%Y-%m-%d %H:%M")
+        except ValueError as exc:
+            raise CommandError("Invalid date/time") from exc
+        if not 2020 <= parsed.year <= 2099:
+            raise CommandError("Year must be between 2020 and 2099")
+        return parsed.replace(second=0, microsecond=0)
 
     async def set_timezone(self, timezone_name: str | None) -> dict[str, Any]:
         clean = normalize_timezone(timezone_name)

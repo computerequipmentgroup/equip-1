@@ -125,6 +125,14 @@ async def sync_time(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail="Invalid 'now'") from exc
 
 
+@app.post("/api/time/manual")
+async def set_manual_time(payload: dict) -> dict:
+    try:
+        return await daemon.set_manual_time(payload)
+    except CommandError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/settings/capture-naming")
 async def set_capture_naming(payload: dict) -> dict:
     try:

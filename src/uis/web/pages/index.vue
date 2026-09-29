@@ -12,6 +12,7 @@ const {
   setConversionSettings,
   setOledRotate180,
   setCaptureNaming,
+  setManualTime,
   connectEvents,
   mock,
 } = useEquip1State();
@@ -389,6 +390,11 @@ const wifiMessage = ref<string | null>(null);
 const wifiError = ref<string | null>(null);
 const wifiSetupOpen = ref(false);
 const wifiSwitchPending = ref(false);
+const manualDate = ref("");
+const manualTime = ref("");
+const manualTimeSaving = ref(false);
+const manualTimeMessage = ref<string | null>(null);
+const manualTimeError = ref<string | null>(null);
 const updateChecking = ref(false);
 const updateApplying = ref(false);
 const updateUpToDateVisible = ref(false);
@@ -562,6 +568,30 @@ const onLightsBrightnessInput = (event: Event) => {
   const percent = Number((event.target as HTMLInputElement).value);
   if (!Number.isFinite(percent)) return;
   setLightsBrightness(percent / 100);
+};
+
+const currentDateTimeParts = (date = new Date()) => ({
+  date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+  time: `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`,
+});
+const fillManualTimeNow = () => {
+  const parts = currentDateTimeParts();
+  manualDate.value = parts.date;
+  manualTime.value = parts.time;
+};
+const saveManualTime = async () => {
+  manualTimeSaving.value = true;
+  manualTimeMessage.value = null;
+  manualTimeError.value = null;
+  try {
+    await setManualTime({ date: manualDate.value, time: manualTime.value });
+    manualTimeMessage.value = `Set to ${manualDate.value} ${manualTime.value}`;
+    await refresh();
+  } catch (err: any) {
+    manualTimeError.value = err?.data?.detail || err?.message || "Could not set time";
+  } finally {
+    manualTimeSaving.value = false;
+  }
 };
 
 const sizeGb = (bytes: number) =>
@@ -941,6 +971,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  fillManualTimeNow();
   loadClosedCards();
   await Promise.all([refresh(), load(), loadSystem(), loadUpdateStatus(false)]);
   connectEvents();
@@ -1401,6 +1432,30 @@ onMounted(async () => {
             <div class="storage-legend">
               <span>Network</span>
               <span>{{ connectedWifiSsid }}</span>
+            </div>
+          </div>
+          <div class="system-row manual-time-row">
+            <div class="storage-legend">
+              <span>Set Date & Time</span>
+              <span>{{ deviceSettings.timezone || "Europe/Berlin" }}</span>
+            </div>
+            <p v-if="manualTimeMessage" class="hero-subtitle system-notification">{{ manualTimeMessage }}</p>
+            <p v-if="manualTimeError" class="hero-subtitle update-error system-notification">{{ manualTimeError }}</p>
+            <div class="manual-time-fields">
+              <label class="field-row">
+                <input v-model="manualDate" class="text-input filename-label" type="date" aria-label="Manual date" />
+              </label>
+              <label class="field-row">
+                <input v-model="manualTime" class="text-input filename-label" type="time" aria-label="Manual time" />
+              </label>
+            </div>
+            <div class="actions two system-actions">
+              <button class="gloss-pill" type="button" :disabled="manualTimeSaving" @click="fillManualTimeNow">
+                <span>Now</span>
+              </button>
+              <button class="gloss-pill gloss-green" type="button" :disabled="manualTimeSaving || !manualDate || !manualTime" @click="saveManualTime">
+                <span>{{ manualTimeSaving ? "Setting…" : "Set time" }}</span>
+              </button>
             </div>
           </div>
           <div class="system-row">

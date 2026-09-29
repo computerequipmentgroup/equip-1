@@ -116,3 +116,21 @@ def local_datetime(value: str | None, epoch_seconds: float | None = None) -> tup
         is_dst = local.tm_isdst > 0
         abbr = time.tzname[1 if is_dst and len(time.tzname) > 1 else 0]
         return dt, abbr or timezone_label(timezone)
+
+
+def local_epoch_seconds(value: str | None, local: datetime) -> float:
+    """Convert a timezone-local naive datetime into epoch seconds.
+
+    Buildroot images may not ship the full zoneinfo database, so mirror
+    local_datetime(): prefer ZoneInfo when available and fall back to the POSIX
+    TZ rule used by the runtime process.
+    """
+    timezone = normalize_timezone(value)
+    naive = local.replace(tzinfo=None, second=0, microsecond=0)
+    try:
+        return naive.replace(tzinfo=ZoneInfo(timezone)).timestamp()
+    except ZoneInfoNotFoundError:
+        pass
+
+    with _temporary_tz(timezone_env(timezone)):
+        return time.mktime(naive.timetuple())

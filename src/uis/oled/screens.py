@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import calendar
 import random
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from equip1d.timezone import TIMEZONE_OPTIONS, local_datetime, timezone_label
@@ -192,6 +194,68 @@ class RecordingScreen(Screen):
 
 class TimeScreen(Screen):
     title = "TIME"
+    EDIT_FIELDS = ("year", "month", "day", "hour", "minute")
+
+    def __init__(self) -> None:
+        self.editing = False
+        self.edit_field = 0
+        self.edit_value: datetime | None = None
+
+    def on_select(self, app) -> None:
+        if not self.editing:
+            settings = (app.state or {}).get("settings") or {}
+            self.edit_value = local_datetime(settings.get("timezone"))[0].replace(second=0, microsecond=0)
+            self.edit_field = 0
+            self.editing = True
+            return
+        self.edit_field += 1
+        if self.edit_field < len(self.EDIT_FIELDS):
+            return
+        value = self.edit_value or datetime.now().replace(second=0, microsecond=0)
+        app.set_setting("/time/manual", {"date": value.strftime("%Y-%m-%d"), "time": value.strftime("%H:%M")})
+        self.editing = False
+        self.edit_field = 0
+        self.edit_value = None
+
+    def on_up(self, app) -> bool:
+        if not self.editing:
+            return False
+        self._adjust(1)
+        return True
+
+    def on_down(self, app) -> bool:
+        if not self.editing:
+            return False
+        self._adjust(-1)
+        return True
+
+    def can_navigate(self, state: dict[str, Any]) -> bool:
+        return not self.editing
+
+    def _adjust(self, delta: int) -> None:
+        value = self.edit_value or datetime.now().replace(second=0, microsecond=0)
+        field = self.EDIT_FIELDS[self.edit_field]
+        if field == "year":
+            self.edit_value = self._replace_clamped(value, year=max(2020, min(2099, value.year + delta)))
+        elif field == "month":
+            month = ((value.month - 1 + delta) % 12) + 1
+            self.edit_value = self._replace_clamped(value, month=month)
+        elif field == "day":
+            self.edit_value = value + timedelta(days=delta)
+        elif field == "hour":
+            self.edit_value = value + timedelta(hours=delta)
+        elif field == "minute":
+            self.edit_value = value + timedelta(minutes=delta)
+
+    @staticmethod
+    def _replace_clamped(value: datetime, **parts: int) -> datetime:
+        year = parts.get("year", value.year)
+        month = parts.get("month", value.month)
+        day = min(value.day, calendar.monthrange(year, month)[1])
+        return value.replace(year=year, month=month, day=day)
+
+    def _field_label(self) -> str:
+        return self.EDIT_FIELDS[self.edit_field].upper()[:3]
 
     def render(self, draw, width: int, height: int, context: dict) -> None:
         font_medium = _font(context, "font_medium")
@@ -199,10 +263,11 @@ class TimeScreen(Screen):
         settings = (context.get("state") or {}).get("settings") or {}
         timezone_name = settings.get("timezone")
         now, abbreviation = local_datetime(timezone_name)
-        draw.text((0, HEADER_Y), "TIME", font=font_medium, fill=255)
-        _right(draw, width, HEADER_Y, abbreviation or timezone_label(timezone_name), font_medium, fill=255)
-        _center(draw, width, CONTENT_Y, now.strftime("%H:%M:%S"), font_big)
-        _center(draw, width, CONTENT_Y + 32, now.strftime("%Y-%m-%d"), font_medium)
+        draw.text((0, HEADER_Y), "SET TIME" if self.editing else "TIME", font=font_medium, fill=255)
+        _right(draw, width, HEADER_Y, self._field_label() if self.editing else abbreviation or timezone_label(timezone_name), font_medium, fill=255)
+        shown = self.edit_value if self.editing and self.edit_value is not None else now
+        _center(draw, width, CONTENT_Y, shown.strftime("%H:%M") if self.editing else shown.strftime("%H:%M:%S"), font_big)
+        _center(draw, width, CONTENT_Y + 32, shown.strftime("%Y-%m-%d"), font_medium)
 
 
 class StorageScreen(Screen):
@@ -582,7 +647,9 @@ class SettingsScreen(Screen):
         if option == "LEDs":
             return f"LEDs [{self._on_off(lights.get('enabled'), True)}]"
         if option == "TZ":
-            return f"TZ [{timezone_label(settings.get('timezone'))}]"
+            timezone_name = settings.get("timezone")
+            label = timezone_label(timezone_name)
+            return f"TZ [{label if timezone_name else label[:3].upper()}]"
         if option == "OLED flip":
             return f"OLED flip [{'BL' if bool(settings.get('oled_rotate_180', False)) else 'BR'}]"
         if option == "FORMAT":
