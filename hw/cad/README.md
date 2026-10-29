@@ -6,6 +6,7 @@ files in `hw/` (`shell-top`, `shell-bot`, `buttons`, `screencover`) are referenc
 
 ## Versions
 
+- **V0.1.1** — slim case (21.7 mm) for Firehat Rev 4: glued OLED panel under the cover, switch actuators through the top, ports fitted to the real ROCK 2F. [README](designs/V0.1.1/README.md) · [validation](designs/V0.1.1/reports/validation.md)
 - **V0.1.0** — parametric rebuild of the reference enclosure (resin print, external USB-C). [README](designs/V0.1.0/README.md) · [validation](designs/V0.1.0/reports/validation.md)
 
 ## Board models
@@ -14,11 +15,11 @@ files in `hw/` (`shell-top`, `shell-bot`, `buttons`, `screencover`) are referenc
 
 ## Running scripts
 
-Headless: `FreeCADCmd designs/V0.1.0/scripts/verify.py`. In the FreeCAD GUI Python console:
+Headless: `FreeCADCmd designs/V0.1.1/scripts/verify.py`. In the FreeCAD GUI Python console:
 
 ```python
 from pathlib import Path
-root = Path('/path/to/equip-1/hw/cad/designs/V0.1.0')
+root = Path('/path/to/equip-1/hw/cad/designs/V0.1.1')
 s = root / 'scripts/verify.py'
 exec(compile(s.read_text(), str(s), 'exec'), {'__file__': str(s), '__name__': '__main__'})
 ```

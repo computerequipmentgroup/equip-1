@@ -1,0 +1,32 @@
+{
+  "version": "V0.1.1",
+  "document": "equip-1-V0.1.1.FCStd",
+  "predecessor": {
+    "kind": "fcstd",
+    "document": "../V0.1.0/equip-1-V0.1.0.FCStd",
+    "note": "SHA256 pinned in scripts/build.py; parameter values are read from it"
+  },
+  "intended_changes": ["ShellTop", "ShellBottom", "ScreenCover"],
+  "moved_only": ["ScreenCover"],
+  "removed": ["Button1", "Button2", "Button3"],
+  "parts": [
+    {"name": "ShellTop", "label": "Shell top", "group": "enclosure", "printed": true, "cut": "ShellTop"},
+    {"name": "ShellBottom", "label": "Shell bottom", "group": "enclosure", "printed": true, "cut": "ShellBottom"},
+    {"name": "ScreenCover", "label": "Screen cover (bought window part)", "group": "enclosure", "printed": false},
+    {"name": "OledPanel", "label": "OLED panel (reference, bought)", "group": "reference", "printed": false}
+  ],
+  "boards": {
+    "rock2f": "../../boards/.build/rock-2f/2F_pcba_20240401.stp",
+    "firehat": "../../boards/.build/firehat-rev4.step",
+    "accepted_contacts": [
+      {"board": "ROCK2F", "part": "ShellBottom", "near": "ROCK 2F left-edge part overhanging the board by 0.3 mm (avg. overlap ~0.004 mm)"}
+    ]
+  },
+  "groups": {
+    "parameters": "Parameters",
+    "preview": "Preview",
+    "outputs": "Outputs",
+    "assembly": "Assembly",
+    "construction": "Construction"
+  }
+}
