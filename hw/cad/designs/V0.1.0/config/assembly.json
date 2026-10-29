@@ -1,0 +1,24 @@
+{
+  "version": "V0.1.0",
+  "document": "equip-1-V0.1.0.FCStd",
+  "predecessor": {
+    "kind": "reference-step",
+    "note": "Reference STEP set in hw/ (product commit 0dcb520); hashes pinned in scripts/build.py"
+  },
+  "intended_changes": [],
+  "parts": [
+    {"name": "ShellTop", "label": "Shell top", "group": "enclosure", "reference": "../../../shell-top.step", "cut": "ShellTop"},
+    {"name": "ShellBottom", "label": "Shell bottom", "group": "enclosure", "reference": "../../../shell-bot.step", "cut": "ShellBottom"},
+    {"name": "ScreenCover", "label": "Screen cover", "group": "enclosure", "reference": "../../../screencover.step"},
+    {"name": "Button1", "label": "Button 1 (front)", "group": "controls", "reference": "../../../buttons.step", "reference_solid": "front"},
+    {"name": "Button2", "label": "Button 2", "group": "controls", "reference": "../../../buttons.step", "reference_solid": "middle"},
+    {"name": "Button3", "label": "Button 3 (back)", "group": "controls", "reference": "../../../buttons.step", "reference_solid": "back"}
+  ],
+  "groups": {
+    "parameters": "Parameters",
+    "preview": "Preview",
+    "outputs": "Outputs",
+    "assembly": "Assembly",
+    "construction": "Construction"
+  }
+}
