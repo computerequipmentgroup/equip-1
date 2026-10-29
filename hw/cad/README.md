@@ -8,6 +8,10 @@ files in `hw/` (`shell-top`, `shell-bot`, `buttons`, `screencover`) are referenc
 
 - **V0.1.0** — parametric rebuild of the reference enclosure (resin print, external USB-C). [README](designs/V0.1.0/README.md) · [validation](designs/V0.1.0/reports/validation.md)
 
+## Board models
+
+`boards/` builds checked STEP models of Firehat Rev 4 and the ROCK 2F for fit checks. See [boards/README.md](boards/README.md).
+
 ## Running scripts
 
 Headless: `FreeCADCmd designs/V0.1.0/scripts/verify.py`. In the FreeCAD GUI Python console:
