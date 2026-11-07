@@ -8,6 +8,7 @@ the board currently being ordered. Every source is SHA256-pinned, and none is mo
 | Board | Source | What the script does |
 |---|---|---|
 | Firehat Rev 4 | Internal KiCad 10 project (`firehat` wiki `raw/sources/2026-10-29-firehat-rev4/`, SHA256 `2e107eac…2809`) | Extracts a copy, applies the 3D fixes below, exports STEP with `kicad-cli` |
+| Firehat Rev 5 proposal | Same extracted Rev 4 copy | Moves SW1–SW3, R18–R20 and D2 by +2.71 mm X / −2.33 mm KiCad Y (`PROPOSAL_MOVES`); everything else is Rev 4. Copies the Firehat `.kicad_pro` so KiCad and DRC use its design rules, exports `firehat-rev5-proposal.step`. Tracks are not rerouted: it's a fit stand-in for the PCB change request in `designs/V0.1.4/README.md` |
 | ROCK 2F v1.0 | Radxa official PCBA model, `https://dl.radxa.com/rock2/2f/2F_pcba_20240401.zip` (SHA256 `af06e6c5…cbaa1`) | Downloads and unzips; no changes |
 
 ## Firehat Rev 4 3D fixes (copy only, KiCad source untouched)
@@ -22,7 +23,8 @@ the board currently being ordered. Every source is SHA256-pinned, and none is mo
 | Check | Result |
 |---|---|
 | Firehat outline | 65.00 × 56.00 × 1.51 mm |
-| SW1–SW3 | seated on the board, actuator top 5.195 mm above it |
+| SW1–SW3 | seated on the board, actuator top 5.195 mm above it (Rev 4 and Rev 5 proposal) |
+| Rev 5 proposal | exactly the listed group moved, by the listed offset |
 | BT2 | on the underside, body centre 0.20 mm from the footprint origin |
 | ROCK 2F | board 56.04 × 65.00 × **1.20** mm, mounting holes **58.0 × 49.0** mm |
 

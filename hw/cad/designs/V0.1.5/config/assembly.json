@@ -1,0 +1,152 @@
+{
+  "version": "V0.1.5",
+  "document": "equip-1-V0.1.5.FCStd",
+  "predecessor": {
+    "kind": "fcstd",
+    "document": "../V0.1.4/equip-1-V0.1.4.FCStd",
+    "note": "SHA256 pinned in scripts/build.py; parameter values are read from it"
+  },
+  "intended_changes": [
+    "ShellTop",
+    "ShellBottom",
+    "Spacer1",
+    "OledFpc",
+    "OledFpcContacts"
+  ],
+  "moved_only": [],
+  "removed": [],
+  "parts": [
+    {
+      "name": "ShellTop",
+      "label": "Shell top",
+      "group": "enclosure",
+      "printed": true,
+      "cut": "ShellTop"
+    },
+    {
+      "name": "ShellBottom",
+      "label": "Shell bottom",
+      "group": "enclosure",
+      "printed": true,
+      "cut": "ShellBottom"
+    },
+    {
+      "name": "ScreenCover",
+      "label": "Screen cover (bought window part)",
+      "group": "enclosure",
+      "printed": false
+    },
+    {
+      "name": "HeatSpreader",
+      "label": "Heat spreader (1 mm aluminium sheet, laser/waterjet cut)",
+      "group": "enclosure",
+      "printed": false,
+      "cut": "HeatSpreader"
+    },
+    {
+      "name": "ThermalPad",
+      "label": "Thermal pad (soft gap pad 14 x 14, 2 mm compressed to 1.6)",
+      "group": "enclosure",
+      "printed": false
+    },
+    {
+      "name": "Spacer1",
+      "label": "Corner spacer 1 + blower cradle (printed, resin; M2.5 screw passes through)",
+      "group": "enclosure",
+      "printed": true,
+      "cut": "Spacer1"
+    },
+    {
+      "name": "Spacer2",
+      "label": "Corner spacer 2 (printed, resin; M2.5 screw passes through)",
+      "group": "enclosure",
+      "printed": true,
+      "cut": "Spacer2"
+    },
+    {
+      "name": "Blower",
+      "label": "Blower (Sunon UB3H3-500, bought; edge envelope)",
+      "group": "reference",
+      "printed": false
+    },
+    {
+      "name": "ShoeMount",
+      "label": "Cold-shoe clip mount (printed accessory: PETG / nylon / tough resin)",
+      "group": "accessory",
+      "printed": true
+    },
+    {
+      "name": "OledPanel",
+      "label": "OLED panel (reference, bought)",
+      "group": "reference",
+      "printed": false
+    },
+    {
+      "name": "OledViewArea",
+      "label": "OLED viewing area V/A (marker)",
+      "group": "reference",
+      "printed": false
+    },
+    {
+      "name": "OledActiveArea",
+      "label": "OLED active area A/A (marker)",
+      "group": "reference",
+      "printed": false
+    },
+    {
+      "name": "OledFpc",
+      "label": "OLED FPC (reference, ends at the FPC2 face)",
+      "group": "reference",
+      "printed": false
+    },
+    {
+      "name": "OledFpcContacts",
+      "label": "OLED FPC contact end (reference, inside FPC2)",
+      "group": "reference",
+      "printed": false
+    },
+    {
+      "name": "GlassJig",
+      "label": "Glass placement jig (printed tool, not in the device)",
+      "group": "tool",
+      "printed": true,
+      "cut": "GlassJig"
+    },
+    {
+      "name": "Button1",
+      "label": "Button cap 1 (printed, TPU 95A)",
+      "group": "enclosure",
+      "printed": true
+    },
+    {
+      "name": "Button2",
+      "label": "Button cap 2 (printed, TPU 95A)",
+      "group": "enclosure",
+      "printed": true
+    },
+    {
+      "name": "Button3",
+      "label": "Button cap 3 (printed, TPU 95A)",
+      "group": "enclosure",
+      "printed": true
+    }
+  ],
+  "boards": {
+    "rock2f": "../../boards/.build/rock-2f/2F_pcba_20240401.stp",
+    "firehat": "../../boards/.build/firehat-rev5-proposal.step",
+    "accepted_contacts": [
+      {
+        "board": "ROCK2F",
+        "part": "ShellBottom",
+        "near": "ROCK 2F left-edge part overhanging the board by 0.3 mm (avg. overlap ~0.004 mm)"
+      }
+    ]
+  },
+  "groups": {
+    "parameters": "Parameters",
+    "preview": "Preview",
+    "outputs": "Outputs",
+    "assembly": "Assembly",
+    "construction": "Construction"
+  }
+}
