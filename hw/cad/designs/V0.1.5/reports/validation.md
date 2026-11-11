@@ -2,7 +2,7 @@
 
 - File: `equip-1-V0.1.5.FCStd`
 - SHA256: `4f3bcf25f86ee7adbdddf70afb0b1859b24fe44419dfd9e70b2e559c1a5bb93f`
-- Run: 2026-11-06 13:24 CET, FreeCAD 1.1.3, 899 s
+- Run: 2026-11-11 15:32 CET, FreeCAD 1.1.3, 1518 s
 - Result: **349/349 checks pass**, 18/18 negative controls fail as expected
 
 | Check | Pass | Fail |
@@ -30,7 +30,7 @@ None.
 
 ## Information (not counted)
 
-- fit — board files: 2F_pcba_20240401.stp cb231da3ac67, firehat-rev5-proposal.step 43d323b9b0ed
+- fit — board files: 2F_pcba_20240401.stp cb231da3ac67, firehat-rev5-proposal.step 745905ffe796
 
 ## Negative controls
 
