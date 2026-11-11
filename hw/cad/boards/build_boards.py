@@ -1,8 +1,8 @@
 """Build checked STEP models of the boards that go inside the enclosure.
 
   Firehat Rev 4  - exported from its KiCad project with 3D-model fixes applied to an extracted copy
-  Firehat Rev 5 proposal - the same copy with the switch group moved (PROPOSAL_MOVES); a CAD fit
-                   stand-in for a PCB change request, not a routed board
+  Firehat Rev 5  - the final routed board (2026-11-08, ordered for CE testing), exported as-is from its
+                   KiCad project; written to firehat-rev5-proposal.step, the name the V0.1.5 assembly loads
   ROCK 2F v1.0   - Radxa's official PCBA model, downloaded and SHA256-pinned
 
 Sources are never modified. Everything generated goes to hw/cad/boards/.build/.
@@ -23,12 +23,13 @@ import Part
 
 HERE = Path(os.environ.get('EQUIP1_BOARDS_ROOT') or Path(__file__).resolve().parent)
 OUT = HERE / '.build'
-REV5 = OUT / 'firehat-rev5-nov5'   # engineer's routed Rev 5 (2026-11-05), the working board (see firehat_proposal); firehat-rev5-clean/ and firehat-rev5/ are older copies
 KICAD_CLI = os.environ.get('KICAD_CLI', '/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli')
 EASYEDA_LIB = Path(os.environ.get('EASYEDA2KICAD', Path.home() / 'Documents/KiCad/easyeda2kicad'))
 
 FIREHAT_ZIP = Path(os.environ.get('FIREHAT_REV4_ZIP', Path.home() / 'Desktop/ceg/wikis/firehat/raw/sources/2026-10-29-firehat-rev4/firehat_rev4_internal.zip'))
 FIREHAT_SHA = '2e107eac7a18a76e8db7b6f86c0efbd62e55b626c84963af174ff741d9072809'
+FIREHAT_REV5_ZIP = Path(os.environ.get('FIREHAT_REV5_ZIP', Path.home() / 'Desktop/ceg/wikis/firehat/raw/sources/2026-11-08-firehat-rev5/firehat_rev5_proposal.zip'))
+FIREHAT_REV5_SHA = '994fbf83d99a9881492328af99c9cc31535044b80ea782f09a253b15900729fa'
 RADXA_URL = 'https://dl.radxa.com/rock2/2f/2F_pcba_20240401.zip'
 RADXA_SHA = 'af06e6c56419f8bf23275883289bf734e6ea7e97939cc741c1727fedbd832ccb'
 BT2_LCSC, BT2_SHA = 'C2926854', '4a16374e8759cd098da00ca4ed8b8878ee571304ad3d4b9e5357bd378caae033'
@@ -37,16 +38,11 @@ BT2_LCSC, BT2_SHA = 'C2926854', '4a16374e8759cd098da00ca4ed8b8878ee571304ad3d4b9
 VRML_ONLY = ['FPC-SMD_16P-P0.50_AFC07-S16FCC-00', 'HDR-TH_40P-P2.54-F-LI-2X20P', 'LED-SMD_4P-L2.0-W2.0-BR']
 SWITCH_Z = 1.7            # KSC4TE01J: model bottom on the board, actuator 5.2 mm above it (C&K KSC4 TE datasheet)
 SWITCH_HEIGHT = 5.2
-PROPOSAL_SWITCH_HEIGHT = 1.5   # Rev 5 proposal: G-Switch GT-TCA84C-H015-L10AA (C2896628), flat, under TPU caps in the case
+REV5_SWITCH_HEIGHT = 1.5   # Rev 5: G-Switch GT-TCA84C-H015-L10AA (C2896628), flat, under TPU caps in the case
 BT2_OFFSET = (-8.74, -7.09, -8.99)  # LOTES AAA-BAT-046: centre the locating pegs (8.00 apart) on the footprint, holder on the board
 BT2_HEIGHT = 3.70
+OLED_AT = (132.46, 74.04)  # OLED glass centre (footprint origin) on the 2026-11-05 Rev 5 working board; FPC2 is unchanged in the final
 TOL = 0.05
-
-# Rev 5 proposal (2026-10-30). Case-frame deltas (x, y); KiCad Y is flipped. Tracks are not rerouted.
-# Switch group: buttons on the case centre line, centred on the flat top beside the cover.
-# Everything else stays exactly as in Rev 4 (user decision 2026-10-30).
-PROPOSAL_MOVES = [((2.6, 2.33), ('SW1', 'SW2', 'SW3')), ((2.185, 2.33), ('R18', 'R19', 'R20', 'D2'))]
-PROPOSAL_REFS = tuple(r for _, refs in PROPOSAL_MOVES for r in refs)
 
 
 def sha256(p):
@@ -96,44 +92,44 @@ def firehat():
     missing = sorted({Path(m).name for m in re.findall(r'File not found: (\S+)', r.stdout + r.stderr)})
     if r.returncode or not step.exists():
         raise SystemExit(f'kicad-cli failed: {r.stderr[-2000:]}')
-    return step, missing, footprints(pcb), proj, env
+    return step, missing, footprints(pcb), env
 
 
-def firehat_proposal(proj, env):
-    """Firehat Rev 5 proposal, a KiCad project of its own in .build/firehat-rev5/ (never wiped).
-
-    First run: Rev 4 (with the 3D fixes) + PROPOSAL_MOVES. After that the board belongs to the user, who
-    edits it in KiCad: it is never regenerated (delete the folder to start over). The Rev 4 support files
-    (3D models, libraries, design rules) are refreshed on every run; the STEP is always re-exported.
-    """
-    REV5.mkdir(exist_ok=True)
-    for item in proj.iterdir():
-        if item.name.startswith(('firehat.', 'firehat-rev5-proposal.')) or item.name.endswith('-backups'):
-            continue
-        (shutil.copytree if item.is_dir() else shutil.copy)(item, REV5 / item.name, **({'dirs_exist_ok': True} if item.is_dir() else {}))
-    if not (REV5 / 'firehat-rev5-proposal.kicad_pro').exists():   # the user's project file names its own schematic
-        shutil.copy(proj / 'firehat.kicad_pro', REV5 / 'firehat-rev5-proposal.kicad_pro')   # same design rules for KiCad / DRC
-    board = REV5 / 'firehat-rev5-proposal.kicad_pcb'
-    generated = not board.exists()
-    if generated:
-        pcb = (proj / 'firehat.kicad_pcb').read_text()
-        moved = []
-        for (dx, dy), refs in PROPOSAL_MOVES:
-            for ref in refs:
-                m = re.search(r'\(footprint "[^"]+"\s*\(layer "[^"]+"\)(?:(?!\(footprint ).)*?\(property "Reference" "' + ref + '"', pcb, re.S)
-                at = re.compile(r'\(at ([-\d.]+) ([-\d.]+)').search(pcb, m.start())
-                x, y = float(at.group(1)) + dx, float(at.group(2)) - dy
-                pcb = pcb[:at.start()] + f'(at {x:g} {y:g}' + pcb[at.end():]
-                moved.append(ref)
-        assert moved == list(PROPOSAL_REFS), moved
-        board.write_text(pcb)
+def firehat_rev5(env):
+    """Firehat Rev 5, the final board: extracted from the pinned zip and exported unchanged (it ships its own 3D models)."""
+    work = OUT / 'firehat-rev5-final'
+    shutil.rmtree(work, ignore_errors=True)
+    with zipfile.ZipFile(pinned(FIREHAT_REV5_ZIP, FIREHAT_REV5_SHA)) as z:
+        z.extractall(work)
+    board = work / 'firehat-rev5-proposal.kicad_pcb'
     step = OUT / 'firehat-rev5-proposal.step'
-    # --no-dnp: leaves out the user's DNP reference parts (OLED1 = CAD panel + FPC), which the fit checks model themselves
     r = subprocess.run([KICAD_CLI, 'pcb', 'export', 'step', '--subst-models', '--no-dnp', '--force', '-o', str(step), str(board)],
+                       env=env, capture_output=True, text=True)
+    missing = sorted({Path(m).name for m in re.findall(r'File not found: (\S+)', r.stdout + r.stderr)})
+    if r.returncode or not step.exists():
+        raise SystemExit(f'kicad-cli failed: {r.stderr[-2000:]}')
+    return step, missing, footprints(board.read_text())
+
+
+def firehat_rev5_oled(env):
+    """Rev 5 with the bought OLED panel + its FPC fitted, for renders: puts the project's own OLED_ASSY_REFERENCE
+    footprint (custom CAD models, dropped from the final board) back into a copy at its 2026-11-05 position."""
+    work = OUT / 'firehat-rev5-final'
+    fp = (work / 'firehat.pretty' / 'OLED_ASSY_REFERENCE.kicad_mod').read_text()
+    fp = re.sub(r'\n\s*\((?:version|generator|generator_version) [^\n]*', '', fp)
+    fp = fp.replace(' dnp)', ')').replace('(layer "F.Cu")', '(layer "F.Cu")\n  (at %g %g)' % OLED_AT, 1)
+    fp, n = re.subn(r'\n\s*\(model "\$\{KIPRJMOD\}/oled-areas\.step"[^\n]*', '', fp)   # V/A, A/A markers aren't parts
+    assert n == 1 and fp.count('(model ') == 2, 'expected oled-panel + oled-fpc models'
+    pcb = (work / 'firehat-rev5-proposal.kicad_pcb').read_text().rstrip()
+    assert pcb.endswith(')') and 'OLED_ASSY_REFERENCE' not in pcb
+    board = work / 'firehat-rev5-with-oled.kicad_pcb'
+    board.write_text(pcb[:-1] + fp.replace('(footprint "OLED_ASSY_REFERENCE"', '(footprint "firehat:OLED_ASSY_REFERENCE"', 1) + '\n)\n')
+    step = OUT / 'firehat-rev5-with-oled.step'
+    r = subprocess.run([KICAD_CLI, 'pcb', 'export', 'step', '--subst-models', '--force', '-o', str(step), str(board)],
                        env=env, capture_output=True, text=True)
     if r.returncode or not step.exists():
         raise SystemExit(f'kicad-cli failed: {r.stderr[-2000:]}')
-    return step, footprints(board.read_text()), generated
+    return step
 
 
 def footprints(pcb):
@@ -184,17 +180,16 @@ def check_firehat(step, missing, fp, switch_height=SWITCH_HEIGHT):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    fh, missing, fp, proj, env = firehat()
+    fh, missing, fp, env = firehat()
     rows, fh_shape = check_firehat(fh, missing, fp)
-    fh5, fp5, generated = firehat_proposal(proj, env)
-    rows5, _ = check_firehat(fh5, missing, fp5, PROPOSAL_SWITCH_HEIGHT)
-    rows += [(f'Rev 5 proposal: {c}', ok, d) for c, ok, d in rows5 if c.startswith('SW')]
-    if generated:
-        for (dx, dy), refs in PROPOSAL_MOVES:
-            rows.append((f'Rev 5 proposal: {refs[0]} group moved', all(abs(fp5[r][0] - fp[r][0] - dx) < 1e-3 and abs(fp5[r][1] - fp[r][1] - dy) < 1e-3 for r in refs),
-                         f'{", ".join(refs)} by ({dx:+g}, {dy:+g}) mm'))
-    else:
-        rows.append(('Rev 5 proposal: user-edited board kept', True, f'{REV5.name}/firehat-rev5-proposal.kicad_pcb sha256 {sha256(REV5 / "firehat-rev5-proposal.kicad_pcb")[:12]}'))
+    fh5, missing5, fp5 = firehat_rev5(env)
+    rows5, _ = check_firehat(fh5, missing5, fp5, REV5_SWITCH_HEIGHT)
+    rows += [(f'Rev 5: {c}', ok, d) for c, ok, d in rows5]
+    fho = firehat_rev5_oled(env)
+    extra = [so for so in Part.read(str(fho)).Solids if so.BoundBox.ZMin > 1.5 and abs(so.BoundBox.Center.x - OLED_AT[0]) < 18 and abs(so.BoundBox.Center.y + OLED_AT[1]) < 15]
+    panel = max(extra, key=lambda so: so.BoundBox.XLength * so.BoundBox.YLength, default=None)
+    rows.append(('Rev 5 + OLED: panel fitted', panel is not None and abs(panel.BoundBox.XLength - 34.5) < 0.2 and abs(panel.BoundBox.YLength - 23) < 0.2,
+                 f'{panel.BoundBox.XLength:.2f} x {panel.BoundBox.YLength:.2f} mm, glass top {panel.BoundBox.ZMax:.2f} mm' if panel else 'panel not found'))
     rk = rock2f()
     rk_shape = Part.read(str(rk))
     rk_board = max(rk_shape.Solids, key=lambda so: so.Volume)
@@ -202,7 +197,7 @@ def main():
                     if type(f.Surface).__name__ == 'Cylinder' and abs(f.Surface.Radius - 1.75) < 0.01})
     xs, ys = sorted({h[0] for h in holes}), sorted({h[1] for h in holes})
     rows.append(('ROCK 2F mounting pattern', len(holes) == 4, f'{xs[-1] - xs[0]:.2f} x {ys[-1] - ys[0]:.2f} mm, board {rk_board.BoundBox.XLength:.2f} x {rk_board.BoundBox.YLength:.2f} x {rk_board.BoundBox.ZLength:.2f} mm'))
-    report = {'firehat_rev4_step': fh.name, 'firehat_sha256': sha256(fh), 'firehat_rev5_proposal_step': fh5.name, 'firehat_rev5_proposal_sha256': sha256(fh5), 'rock2f_step': rk.name, 'rock2f_sha256': sha256(rk),
+    report = {'firehat_rev4_step': fh.name, 'firehat_sha256': sha256(fh), 'firehat_rev5_step': fh5.name, 'firehat_rev5_sha256': sha256(fh5), 'rock2f_step': rk.name, 'rock2f_sha256': sha256(rk),
               'checks': [dict(check=c, ok=bool(ok), detail=d) for c, ok, d in rows]}
     (OUT / 'boards-report.json').write_text(json.dumps(report, indent=1))
     for c, ok, d in rows:
